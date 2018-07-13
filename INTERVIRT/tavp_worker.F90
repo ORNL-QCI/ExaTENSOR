@@ -131,6 +131,7 @@
          type(tens_resrc_t), private:: resource                                !tensor resource
          type(talsh_tens_t), private:: talsh_tens                              !TAL-SH tensor
          logical, private:: blocked=.FALSE.                                    !READ/WRITE block flag
+         real(8), private:: last_time_uploaded=-1d0                            !time stamp of the last upload
          contains
           procedure, private:: TensEntryWrkCtor                                !ctor
           procedure, public:: tens_entry_wrk_ctor=>TensEntryWrkCtor
@@ -138,6 +139,8 @@
           procedure, public:: is_blocked=>TensEntryWrkIsBlocked                !returns TRUE if the tensor cache entry is blocked (no instruction with this tensor can be issued/deferred)
           procedure, public:: set_block=>TensEntryWrkSetBlock                  !sets the block flag
           procedure, public:: release_block=>TensEntryWrkReleaseBlock          !releases the block flag
+          procedure, public:: get_upload_time=>TensEntryWrkGetUploadTime       !returns the last upload time (negative means never)
+          procedure, public:: update_upload_time=>TensEntryWrkUpdateUploadTime !updates the last upload time
           procedure, public:: set_tensor_layout=>TensEntryWrkSetTensorLayout   !sets the tensor layout, if not already set
           procedure, public:: acquire_resource=>TensEntryWrkAcquireResource    !acquires resource for the tensor cache entry, if not already acquired
           procedure, public:: release_resource=>TensEntryWrkReleaseResource    !releases resource for the tensor cache entry
@@ -203,6 +206,7 @@
          integer(INTD), private:: num_out_oprnds=0                    !number of the output tensor instruction operands
          integer(INTD), private:: out_oprnds(0:MAX_TENSOR_OPERANDS-1) !positions of the tensor instruction operands which are considered output
          type(talsh_task_t), private:: talsh_task                     !TAL-SH task
+         class(tens_instr_t), pointer, private:: parent_instr=>NULL() !pointer to the parent tensor instruction (for local TENS_ACCUMULATE instructions only)
          contains
           procedure, private:: TensInstrCtor                                 !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
@@ -224,6 +228,8 @@
           procedure, public:: set_talsh_tensors=>TensInstrSetTalshTensors    !sets up the missing TAL-SH tensors for all tensor operands
           procedure, public:: print_it=>TensInstrPrintIt                     !prints
           procedure, private:: extract_cache_entries=>TensInstrExtractCacheEntries !returns an array of references to tensor cache entries used by the tensor operands for subsequent eviction
+          procedure, private:: set_parent_instr=>TensInstrSetParentInstr     !sets a pointer to the parent tensor instruction (for local TENS_ACCUMULATE instructions only)
+          procedure, private:: get_parent_instr=>TensInstrGetParentInstr     !returns a pointer to the parent tensor instruction (for local TENS_ACCUMULATE instructions only) or NULL
           final:: tens_instr_dtor                                            !dtor
         end type tens_instr_t
  !TAVP-WRK decoder:
@@ -412,6 +418,8 @@
         private TensEntryWrkIsBlocked
         private TensEntryWrkSetBlock
         private TensEntryWrkReleaseBlock
+        private TensEntryWrkGetUploadTime
+        private TensEntryWrkUpdateUploadTime
         private TensEntryWrkSetTensorLayout
         private TensEntryWrkAcquireResource
         private TensEntryWrkReleaseResource
@@ -480,6 +488,8 @@
         private TensInstrSetTalshTensors
         private TensInstrPrintIt
         private TensInstrExtractCacheEntries
+        private TensInstrSetParentInstr
+        private TensInstrGetParentInstr
         public tens_instr_dtor
         private tens_instr_print
  !tavp_wrk_decoder_t:
@@ -1235,6 +1245,36 @@
          call this%unlock()
          return
         end subroutine TensEntryWrkReleaseBlock
+!------------------------------------------------------------------------
+        function TensEntryWrkGetUploadTime(this,ierr) result(upload_time)
+!Returns the last upload time (negative means never).
+         implicit none
+         real(8):: upload_time                       !out: last upload time
+         class(tens_entry_wrk_t), intent(in):: this  !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+!$OMP ATOMIC READ SEQ_CST
+         upload_time=this%last_time_uploaded
+         if(present(ierr)) ierr=errc
+         return
+        end function TensEntryWrkGetUploadTime
+!-------------------------------------------------------------------------
+        subroutine TensEntryWrkUpdateUploadTime(this,new_upload_time,ierr)
+!Updates the last upload time.
+         implicit none
+         class(tens_entry_wrk_t), intent(inout):: this !inout: tensor cache entry
+         real(8), intent(in):: new_upload_time         !in: new upload time
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         errc=0
+!$OMP ATOMIC WRITE SEQ_CST
+         this%last_time_uploaded=new_upload_time
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensEntryWrkUpdateUploadTime
 !-----------------------------------------------------------------------------
         subroutine TensEntryWrkSetTensorLayout(this,ierr,tensor,with_location)
 !Sets the tensor layout, either the default one or imported from another tensor.
@@ -3789,6 +3829,7 @@
               endif
              enddo
             endif
+            call this%set_issue_time(time_sys_sec())
            else
             errc=-3
            endif
@@ -3980,6 +4021,7 @@
               endif
              enddo
             endif
+            if(.not.this%output_substituted()) call this%set_completion_time(time_sys_sec()) !substituted tensor instructions will be completed later
            else
             errc=-3
            endif
@@ -4298,6 +4340,58 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrExtractCacheEntries
+!-----------------------------------------------------------
+        subroutine TensInstrSetParentInstr(this,parent,ierr) !THREAD-UNSAFE!
+!Sets a pointer to the parent tensor instruction (for local TENS_ACCUMULATE instructions only).
+         implicit none
+         class(tens_instr_t), intent(inout):: this        !inout: local TENS_ACCUMULATE instruction
+         class(tens_instr_t), intent(in), target:: parent !in: parent tensor instruction
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc
+!$OMP FLUSH
+         if(this%get_code(errc).eq.TAVP_INSTR_TENS_ACCUMULATE) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(parent%is_active(errc)) then
+            if(errc.eq.DSVP_SUCCESS) then
+             this%parent_instr=>parent
+!$OMP FLUSH(this)
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrSetParentInstr
+!-----------------------------------------------------------------
+        function TensInstrGetParentInstr(this,ierr) result(parent)
+!Returns a pointer to the parent tensor instruction (for local TENS_ACCUMULATE instructions only).
+         implicit none
+         class(tens_instr_t), pointer:: parent       !out: pointer to the parent tensor instruction
+         class(tens_instr_t), intent(in):: this      !in: local TENS_ACCUMULATE instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+!$OMP FLUSH(this)
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           parent=>this%parent_instr
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensInstrGetParentInstr
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none

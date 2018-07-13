@@ -150,6 +150,8 @@
          integer(INTD), private:: num_oprnds=0                      !number of domain-specific operands: Numeration:[0,1,2,3,...]
          class(ds_instr_ctrl_t), pointer, private:: control=>NULL() !instruction control field: set up by the DECODE procedure
          type(ds_oprnd_ref_t), allocatable, private:: operand(:)    !domain-specific operands (wrapped pointers): set up by the DECODE procedure
+         real(8), private:: time_issued=-1d0                        !time the instruction was issued
+         real(8), private:: time_completed=-1d0                     !time the instruction has completed
          contains
           procedure(ds_instr_encode_i), deferred, public:: encode       !encoding procedure: Packs the domain-specific instruction into a raw byte packet (bytecode)
           procedure(ds_instr_print_i), deferred, public:: print_it      !prints
@@ -173,6 +175,10 @@
           procedure, public:: get_num_operands=>DSInstrGetNumOperands   !returns the number of operands in the domain-specific instruction
           procedure, public:: all_set=>DSInstrAllSet                    !returns TRUE if all instruction operands and control are set
           procedure, public:: activate=>DSInstrActivate                 !activates the domain-specific instruction in the final stage of decoding (sets up opcode and status)
+          procedure, public:: get_issue_time=>DSInstrGetIssueTime       !returns the instruction issue time
+          procedure, public:: set_issue_time=>DSInstrSetIssueTime       !sets the istruction issue time
+          procedure, public:: get_completion_time=>DSInstrGetCompletionTime !returns the instruction completion time
+          procedure, public:: set_completion_time=>DSInstrSetCompletionTime !sets the instruction completion time
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
           procedure, public:: DSInstrPrintIt                            !prints the base part of the domain-specific instruction
         end type ds_instr_t
@@ -470,6 +476,10 @@
         private DSInstrGetNumOperands
         private DSInstrAllSet
         private DSInstrActivate
+        private DSInstrGetIssueTime
+        private DSInstrSetIssueTime
+        private DSInstrGetCompletionTime
+        private DSInstrSetCompletionTime
         private DSInstrClean
         public DSInstrPrintIt
         public ds_instr_encode_i
@@ -997,6 +1007,58 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrActivate
+!-----------------------------------------------------------------
+        function DSInstrGetIssueTime(this,ierr) result(issue_time)
+!Returns the instruction issue time.
+         implicit none
+         real(8):: issue_time                        !out: instruction issue time
+         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+!$OMP ATOMIC READ SEQ_CST
+         issue_time=this%time_issued
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end function DSInstrGetIssueTime
+!-----------------------------------------------------------
+        subroutine DSInstrSetIssueTime(this,issue_time,ierr)
+!Sets the instruction issue time.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         real(8), intent(in):: issue_time            !in: instruction issue time
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+!$OMP ATOMIC WRITE SEQ_CST
+         this%time_issued=issue_time
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end subroutine DSInstrSetIssueTime
+!----------------------------------------------------------------------
+        function DSInstrGetCompletionTime(this,ierr) result(compl_time)
+!Returns the instruction completion time.
+         implicit none
+         real(8):: compl_time                        !out: instruction completion time
+         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+!$OMP ATOMIC READ SEQ_CST
+         compl_time=this%time_completed
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end function DSInstrGetCompletionTime
+!----------------------------------------------------------------
+        subroutine DSInstrSetCompletionTime(this,compl_time,ierr)
+!Sets the instruction completion time.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         real(8), intent(in):: compl_time            !in: instruction completion time
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+!$OMP ATOMIC WRITE SEQ_CST
+         this%time_completed=compl_time
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end subroutine DSInstrSetCompletionTime
 !-----------------------------------------------------
         subroutine DSInstrClean(this,ierr,dissoc_only)
 !Resets the domain-specific instruction to an empty state. By default,
@@ -1013,6 +1075,7 @@
          call this%dealloc_operands(ier,dis); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
          call this%free_control(ier,dis); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
          this%id=-1_INTL; this%code=DS_INSTR_NOOP; this%stat=DS_INSTR_EMPTY; this%error_code=DSVP_SUCCESS
+         this%time_issued=-1d0; this%time_completed=-1d0
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrClean
