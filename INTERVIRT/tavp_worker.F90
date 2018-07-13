@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/12
+!REVISION: 2018/07/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1119,7 +1119,7 @@
          implicit none
          class(tens_resrc_t), intent(inout):: this !inout: tensor resource
 
-!$OMP ATOMIC UPDATE
+!$OMP ATOMIC UPDATE SEQ_CST
          this%ref_count=this%ref_count+1
          return
         end subroutine TensResrcIncrRefCount
@@ -1129,7 +1129,7 @@
          implicit none
          class(tens_resrc_t), intent(inout):: this !inout: tensor resource
 
-!$OMP ATOMIC UPDATE
+!$OMP ATOMIC UPDATE SEQ_CST
          this%ref_count=this%ref_count-1
          return
         end subroutine TensResrcDecrRefCount
@@ -1140,7 +1140,7 @@
          integer(INTD):: cnt                    !out: reference count
          class(tens_resrc_t), intent(in):: this !in: tensor resource
 
-!$OMP ATOMIC READ
+!$OMP ATOMIC READ SEQ_CST
          cnt=this%ref_count
          return
         end function TensResrcGetRefCount

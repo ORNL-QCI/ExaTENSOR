@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/18
+!REVISION: 2018/07/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1189,7 +1189,7 @@
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-!$OMP ATOMIC WRITE
+!$OMP ATOMIC WRITE SEQ_CST
          this%locked=.TRUE.
          if(present(ierr)) ierr=errc
          return
@@ -1203,7 +1203,7 @@
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-!$OMP ATOMIC WRITE
+!$OMP ATOMIC WRITE SEQ_CST
          this%locked=.FALSE.
          if(present(ierr)) ierr=errc
          return
@@ -1545,7 +1545,7 @@
             endif
            else
             write(CONS_OUT,'("#FATAL(dsvp_base:dsvp_t.start): Unable to spawn ",i5," threads!")') nthreads
-!$OMP ATOMIC WRITE
+!$OMP ATOMIC WRITE SEQ_CST
             errc=DSVP_ERR_RSC_EXCEEDED
            endif
 !$OMP END PARALLEL
@@ -1964,8 +1964,8 @@
 !$OMP END CRITICAL
          if(err_out.eq.0) then
           do
-!$OMP FLUSH
-!$OMP ATOMIC READ
+!!!$OMP FLUSH
+!$OMP ATOMIC READ SEQ_CST
            err_out=units_left
            if(err_out.eq.this%num_units) then !success
             err_out=0; exit

@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018-01-22 (started 2016-02-17)
+!REVISION: 2018-07-13 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -795,7 +795,7 @@
 
          errc=GFC_SUCCESS
 #ifndef NO_OMP
-!$OMP ATOMIC READ
+!$OMP ATOMIC READ SEQ_CST
          res=this%initialized
 #else
          res=.TRUE.
