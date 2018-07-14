@@ -5779,21 +5779,26 @@
                        if(jerr.eq.DSVP_SUCCESS) then
                         select type(tens_oprnd)
                         class is(tens_oprnd_t)
-                         call tens_oprnd%set_cache_entry(entry_tmp,jerr); if(jerr.ne.0) jerr=-19
+                         call tens_oprnd%set_cache_entry(entry_tmp,jerr); if(jerr.ne.0) jerr=-20
                         class default
-                         jerr=-18
+                         jerr=-19
                         end select
                         if(jerr.eq.0) then
                          tens_oprnd=>instr%get_operand(0,jerr)
                          if(jerr.eq.DSVP_SUCCESS) then
                           select type(tens_oprnd)
                           class is(tens_oprnd_t)
-                           call tens_oprnd%set_cache_entry(entry_acc,jerr); if(jerr.ne.0) jerr=-17
+                           call tens_oprnd%set_cache_entry(entry_acc,jerr); if(jerr.ne.0) jerr=-18
                           class default
-                           jerr=-16
+                           jerr=-17
                           end select
                           if(jerr.eq.0) then
-                           jerr=this%iqueue%previous(); if(jerr.ne.GFC_SUCCESS) jerr=-15 !move back to the current instruction
+                           call instr%set_parent_instr(tens_instr,jerr)
+                           if(jerr.eq.0) then
+                            jerr=this%iqueue%previous(); if(jerr.ne.GFC_SUCCESS) jerr=-16 !move back to the current instruction
+                           else
+                            jerr=-15
+                           endif
                           endif
                          else
                           jerr=-14
