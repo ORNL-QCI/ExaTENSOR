@@ -1,7 +1,7 @@
 NAME = ExaTensor
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
-#Cross-compiling wrappers: [WRAP|NOWRAP]:
+#Cray cross-compiling wrappers: [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
@@ -10,7 +10,7 @@ export BUILD_TYPE ?= DEV
 #MPI Library: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
-export BLASLIB ?= ATLAS
+export BLASLIB ?= NONE
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
 #Nvidia GPU architecture (two digits):
@@ -22,28 +22,23 @@ export EXA_OS ?= LINUX
 #Fast GPU tensor transpose (cuTT library): [YES|NO]:
 export WITH_CUTT ?= NO
 
-#WORKAROUNDS (ignore if you do not experience problems):
-#Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
-export FOOL_CUDA ?= NO
-
-#SET YOUR LOCAL PATHS (for unwrapped builds):
-
+#SET YOUR LOCAL PATHS (for unwrapped non-Cray builds):
 #MPI library (whichever you have, set one):
-# Set this if you have MPICH or its derivative:
+# Set this if you use MPICH or its derivative (e.g. Cray-MPICH):
 export PATH_MPICH ?= /usr/local/mpi/mpich/3.2.1
-#  Only reset these if MPI files are spread in the system directories:
+#  Only reset these if MPICH files are spread in the system directories:
  export PATH_MPICH_INC ?= $(PATH_MPICH)/include
  export PATH_MPICH_LIB ?= $(PATH_MPICH)/lib
  export PATH_MPICH_BIN ?= $(PATH_MPICH)/bin
-# Set this if you have OPENMPI or its derivative:
+# Set this if you use OPENMPI or its derivative (e.g. Spectrum MPI):
 export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.1.0
-#  Only reset these if MPI files are spread in the system directories:
+#  Only reset these if OPENMPI files are spread in the system directories:
  export PATH_OPENMPI_INC ?= $(PATH_OPENMPI)/include
  export PATH_OPENMPI_LIB ?= $(PATH_OPENMPI)/lib
  export PATH_OPENMPI_BIN ?= $(PATH_OPENMPI)/bin
 
-#BLAS library (whichever you have, set one):
-# Set this if you do not have a vendor provided BLAS:
+#BLAS library (whichever you want to use, set one):
+# Set this if you do not have a vendor provided BLAS (default Linux BLAS):
 export PATH_BLAS_ATLAS ?= /usr/lib
 # Set this if you have vendor provided BLAS (choose):
 #  MKL BLAS:
@@ -51,12 +46,12 @@ export PATH_BLAS_MKL ?= /opt/intel/mkl/lib/intel64
 export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64_lin
 #  ACML BLAS:
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
-#  ESSL BLAS:
-export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
-export PATH_BLAS_ESSL_DEP ?= /sw/summitdev/xl/20161123/xlf/15.1.5/lib
+#  ESSL BLAS (also set PATH_IBM_XL_FORT below):
+export PATH_BLAS_ESSL ?= /sw/summit/essl/6.1.0-20180406/essl/6.1/lib64
 
-#IBM XL C++ (only set this if you use IBM XL):
-export PATH_IBM_XL_CPP = /sw/summit/xl/20180319-beta/xlC/13.1.7/lib
+#IBM XL (only set these if you use IBM XL and/or ESSL):
+export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-beta1/xlC/16.1.1/lib
+export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-beta1/xlf/16.1.1/lib
 
 # CUDA (only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
@@ -64,10 +59,10 @@ export PATH_CUDA ?= /usr/local/cuda
  export PATH_CUDA_INC ?= $(PATH_CUDA)/include
  export PATH_CUDA_LIB ?= $(PATH_CUDA)/lib64
  export PATH_CUDA_BIN ?= $(PATH_CUDA)/bin
-# cuTT path (if you use cuTT library):
+# cuTT path (only if you use cuTT library):
 export PATH_CUTT ?= /home/dima/src/cutt
 
-#YOU ARE DONE!
+#YOU ARE DONE! MAKE IT!
 
 $(NAME):
 	$(MAKE) -C ./UTILITY

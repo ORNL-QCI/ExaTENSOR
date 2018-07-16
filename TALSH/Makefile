@@ -56,7 +56,7 @@ export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 #  ESSL BLAS:
 export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
-export PATH_BLAS_ESSL_DEP ?= /sw/summitdev/xl/20161123/xlf/15.1.5/lib
+export PATH_IBM_XL_FOR ?= /sw/summitdev/xl/20161123/xlf/15.1.5/lib
 
 #IBM XL C++ (only set this if you use IBM XL):
 export PATH_IBM_XL_CPP = /sw/summit/xl/20180319-beta/xlC/13.1.7/lib
@@ -180,7 +180,7 @@ else
 LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lpthread -lm -ldl -L$(PATH_BLAS_MKL_DEP) -liomp5
 endif
 LA_LINK_ACML = -L$(PATH_BLAS_ACML) -lacml_mp
-LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lesslsmp -L$(PATH_BLAS_ESSL_DEP) -lxlf90_r -lxlfmath
+LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lesslsmp -L$(PATH_IBM_XL_FOR) -lxlf90_r -lxlfmath
 ifeq ($(BLASLIB),NONE)
 LA_LINK_NOWRAP = -L.
 else

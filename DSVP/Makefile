@@ -53,7 +53,6 @@ export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 #  ESSL BLAS:
 export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
-export PATH_BLAS_ESSL_DEP ?= /sw/summitdev/xl/20161123/xlf/15.1.5/lib
 
 # CUDA (only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
