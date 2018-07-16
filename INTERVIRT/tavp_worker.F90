@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/15
+!REVISION: 2018/07/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -206,7 +206,7 @@
          integer(INTD), private:: num_out_oprnds=0                    !number of the output tensor instruction operands
          integer(INTD), private:: out_oprnds(0:MAX_TENSOR_OPERANDS-1) !positions of the tensor instruction operands which are considered output
          type(talsh_task_t), private:: talsh_task                     !TAL-SH task
-         class(tens_instr_t), pointer, private:: parent_instr=>NULL() !pointer to the parent tensor instruction (for local TENS_ACCUMULATE instructions only)
+         class(tens_instr_t), pointer, private:: parent_instr=>NULL() !pointer to the substituted parent tensor instruction (for local TENS_ACCUMULATE instructions only)
          integer(INTD), private:: num_accumulated=0                   !number of completed local TENS_ACCUMULATE instructions (for substituted tensor instructions only)
          contains
           procedure, private:: TensInstrCtor                                 !ctor: constructs a tensor instruction from the specification of a tensor operation
@@ -229,9 +229,9 @@
           procedure, public:: set_talsh_tensors=>TensInstrSetTalshTensors    !sets up the missing TAL-SH tensors for all tensor operands
           procedure, public:: print_it=>TensInstrPrintIt                     !prints
           procedure, private:: extract_cache_entries=>TensInstrExtractCacheEntries !returns an array of references to tensor cache entries used by the tensor operands for subsequent eviction
-          procedure, private:: set_parent_instr=>TensInstrSetParentInstr     !sets a pointer to the parent tensor instruction (for local TENS_ACCUMULATE instructions only)
+          procedure, private:: set_parent_instr=>TensInstrSetParentInstr     !sets a pointer to the substituted parent tensor instruction (for local TENS_ACCUMULATE instructions only)
           procedure, private:: get_parent_instr=>TensInstrGetParentInstr     !returns a pointer to the parent tensor instruction (for local TENS_ACCUMULATE instructions only) or NULL
-          procedure, private:: fully_accumulated=>TensInstrFullyAccumulated  !returns TRUE if all related local accumulations have completed
+          procedure, private:: fully_accumulated=>TensInstrFullyAccumulated  !returns TRUE if all related local accumulations have completed for this tensor instruction
           procedure, private:: mark_accumulated=>TensInstrMarkAccumulated    !increments the number of accumulations by one (number of accumulations <= number of output operands)
           procedure, private:: reset_accumulations=>TensInstrResetAccumulations !resets the number of accumulations to zero
           final:: tens_instr_dtor                                            !dtor
@@ -3840,7 +3840,7 @@
               endif
              enddo
             endif
-            call this%set_issue_time(time_sys_sec())
+            if(errc.eq.0) call this%set_issue_time(time_sys_sec())
            else
             errc=-3
            endif
@@ -4032,7 +4032,7 @@
               endif
              enddo
             endif
-            if(.not.this%output_substituted()) call this%set_completion_time(time_sys_sec()) !substituted tensor instructions will be completed later
+            if(.not.this%output_substituted()) call this%set_completion_time(time_sys_sec()) !substituted tensor instructions will be completed later (by their local accumulates)
            else
             errc=-3
            endif
@@ -4407,7 +4407,8 @@
         end function TensInstrGetParentInstr
 !----------------------------------------------------------------
         function TensInstrFullyAccumulated(this,ierr) result(res)
-!Returns TRUE if all related accumulations have completed.
+!Returns TRUE if all related local accumulations have completed
+!for this tensor instruction.
          implicit none
          logical:: res                               !out: result
          class(tens_instr_t), intent(in):: this      !in: active tensor instruction
@@ -4418,15 +4419,22 @@
 !$OMP FLUSH(this)
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           res=(.not.this%output_substituted(errc))
-           if(errc.eq.0) then
-            if(.not.res) then
+           res=(this%get_status(errc).ge.DS_INSTR_COMPLETED)
+           if(errc.eq.DSVP_SUCCESS) then
+            if(res) then
+             res=(.not.this%output_substituted(errc))
+             if(errc.eq.0) then
+              if(.not.res) then
 !$OMP ATOMIC READ
-             n=this%num_out_oprnds
+               n=this%num_out_oprnds
 !$OMP ATOMIC READ
-             m=this%num_accumulated
-             if(m.le.n) then
-              res=(m.eq.n)
+               m=this%num_accumulated
+               if(m.le.n) then
+                res=(m.eq.n)
+               else
+                errc=-5
+               endif
+              endif
              else
               errc=-4
              endif
@@ -5783,7 +5791,7 @@
                else
                 errc=-6
                endif
-              enddo
+              enddo !loop over the output operands
              else
               errc=-5
              endif
@@ -5959,7 +5967,7 @@
                            jerr=-17
                           end select
                           if(jerr.eq.0) then
-                           call instr%set_parent_instr(tens_instr,jerr)
+                           call instr%set_parent_instr(tens_instr,jerr) !associate the TENS_ACCUMULATE instruction with its substituted parent instruction
                            if(jerr.eq.0) then
                             jerr=this%iqueue%previous(); if(jerr.ne.GFC_SUCCESS) jerr=-16 !move back to the current tensor instruction
                            else
@@ -7289,12 +7297,12 @@
             endif
             call acc%unlock()
            end select
- !Mark the corresponding parent tensor instruction completed with a time stamp:
+ !Increment the number of completed local accumulations for the parent tensor instruction (with a time stamp):
            if(errc.eq.0) then
             parent=>tens_instr%get_parent_instr(errc)
             if(errc.eq.0.and.associated(parent)) then
-             call parent%set_completion_time(time_sys_sec()) !completion time stamp
-             call parent%mark_accumulated(errc); if(errc.ne.0) errc=-4 !increment the external accumulation count for the parent tensor instruction
+             call parent%set_completion_time(time_sys_sec()) !accumulation completion time stamp
+             call parent%mark_accumulated(errc); if(errc.ne.0) errc=-4 !increment the local accumulation count for the substituted parent tensor instruction
             else
              errc=-3
             endif

@@ -6,8 +6,8 @@ export QF_PATH=/home/div/src/ExaTensor              #full path to ExaTensor
 export QF_NUM_PROCS=8                               #number of MPI processes
 export QF_PROCS_PER_NODE=8                          #number of MPI processes per node
 export QF_CORES_PER_PROC=1                          #number of cores per MPI process
-export OMP_NUM_THREADS=10                           #max number of OpenMP threads per process
-export QF_GPUS_PER_PROCESS=1                        #number of Nvidia GPU's per process (optional)
+export OMP_NUM_THREADS=10                           #number of OpenMP threads per process
+export QF_GPUS_PER_PROCESS=0                        #number of Nvidia GPU's per process (optional)
 export QF_MICS_PER_PROCESS=0                        #number of Intel Xeon Phi's per process (optional)
 export QF_AMDS_PER_PROCESS=0                        #number of AMD GPU's per process (optional)
 export MKL_NUM_THREADS=$OMP_NUM_THREADS             #number of Intel MKL threads per process (optional)
@@ -42,13 +42,14 @@ export MPICH_RMA_OVER_DMAPP=1                       #CRAY: DMAPP backend for CRA
 #export MPICH_GNI_MEM_DEBUG_FNAME=MPICH.memdebug
 #export MPICH_RANK_REORDER_DISPLAY=1
 
+#Summit (jsrun) specific:
+unset PAMI_IBV_ENABLE_DCT
+
 rm *.tmp *.log *.out *.x
 cp $QF_PATH/Qforce.x ./
-#aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./Qforce.x #> qforce.log
-#mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE ./Qforce.x #> qforce.log
+/usr/local/mpi/openmpi-3.1.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE -oversubscribe ./Qforce.x #>& qforce.log
 #/usr/local/mpi/mpich-3.2/bin/mpiexec -n $QF_NUM_PROCS ./Qforce.x #>& qforce.log
-/usr/local/mpi/openmpi-3.1.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_NUM_PROCS -oversubscribe ./Qforce.x #>& qforce.log
-#/usr/local/mpi/openmpi-3.1.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_NUM_PROCS -oversubscribe valgrind ./Qforce.x >& valgrind.log
+#aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./Qforce.x #>& qforce.log
 #nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x #&> qforce.log &
 #nvprof --log-file nv_profile.log --print-gpu-trace --metrics branch_efficiency,gld_efficiency,gst_efficiency ./Qforce.x #&> qforce.log &
 #gprof ./Qforce.x gmon.out > profile.log
