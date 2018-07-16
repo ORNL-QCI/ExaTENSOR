@@ -4422,7 +4422,7 @@
            res=(this%get_status(errc).ge.DS_INSTR_COMPLETED)
            if(errc.eq.DSVP_SUCCESS) then
             if(res) then
-             res=(.not.this%output_substituted(errc))
+             res=(.not.this%is_substitutable(errc))
              if(errc.eq.0) then
               if(.not.res) then
 !$OMP ATOMIC READ
@@ -5170,17 +5170,21 @@
         end subroutine TAVPWRKRetirerEncode
 !------------------------------------------------------------------------------------
         function TAVPWRKRetirerTestCompletion(this,tens_instr,ierr) result(completed)
-!Tests the full completion of tensor instructions before retiring them. Specifically,
-!it tests whether the local TENS_ACCUMULATE instructions have uploaded the results of
-!their corresponding parent tensor instructions, so that the latter can safely retire.
+!Tests the full completion of a tensor instruction before retiring it.
+!Specifically, it tests whether the local TENS_ACCUMULATE instructions
+!have uploaded the results for each output tensor operand of a substituted
+!parent tensor instruction, so that the latter can safely retire.
+!For non-substitutable tensor instructions, it always returns TRUE.
          implicit none
          logical:: completed                             !out: result
          class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK Retirer
-         class(tens_instr_t), intent(inout):: tens_instr !inout: active tensor instruction waiting for full completion
+         class(tens_instr_t), intent(inout):: tens_instr !inout: active tensor instruction waiting for a full completion
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,n,i
          real(8):: instr_compl_time
          class(ds_oprnd_t), pointer:: oprnd
+         class(tens_cache_entry_t), pointer:: cache_entry
+         type(tens_rcrsv_t):: acc
 
          completed=.FALSE.
          if(tens_instr%is_active(errc)) then
@@ -5188,41 +5192,65 @@
            n=tens_instr%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
             if(n.gt.0) then
-             if(tens_instr%fully_accumulated(errc)) then
+             if(tens_instr%is_substitutable(errc)) then
               if(errc.eq.0) then
-               instr_compl_time=tens_instr%get_completion_time()
-               if(instr_compl_time.ge.0d0) then
-                oloop: do i=0,n-1
-                 if(tens_instr%operand_is_output(i,errc)) then
-                  if(errc.eq.0) then
-                   oprnd=>tens_instr%get_operand(i,errc)
-                   if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
-                    select type(oprnd)
-                    class is(tens_oprnd_t)
-                     call oprnd%lock()
-                     !`Finish
-                     call oprnd%unlock()
-                    class default
+               if(tens_instr%fully_accumulated(errc)) then
+                if(errc.eq.0) then
+                 instr_compl_time=tens_instr%get_completion_time() !time the last local accumulate has completed
+                 if(instr_compl_time.ge.0d0) then
+                  oloop: do i=0,n-1
+                   if(tens_instr%operand_is_output(i,errc)) then
+                    if(errc.eq.0) then
+                     oprnd=>tens_instr%get_operand(i,errc)
+                     if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
+                      select type(oprnd)
+                      class is(tens_oprnd_t)
+                       call oprnd%lock()
+                       acc=oprnd%tmp_get_accumulator(errc)
+                       call oprnd%unlock()
+                       if(errc.ne.0) then; errc=-16; exit oloop; endif
+                       cache_entry=>this%arg_cache%lookup(acc,errc)
+                       if(errc.eq.0) then
+                        completed=.TRUE.
+                        if(associated(cache_entry)) then !accumulator tensor is still alive
+                         select type(cache_entry)
+                         class is(tens_entry_wrk_t)
+                          if(cache_entry%get_upload_time().le.instr_compl_time) then; completed=.FALSE.; exit; endif
+                         class default
+                          errc=-15; exit oloop
+                         end select
+                         call this%arg_cache%release_entry(cache_entry,errc); if(errc.ne.0) then; errc=-14; exit oloop; endif
+                        endif
+                       else
+                        errc=-13; exit oloop
+                       endif
+                      class default
+                       errc=-12; exit oloop
+                      end select
+                     else
+                      errc=-11; exit oloop
+                     endif
+                    else
                      errc=-10; exit oloop
-                    end select
+                    endif
                    else
-                    errc=-9; exit oloop
+                    if(errc.ne.0) then; errc=-9; exit oloop; endif
                    endif
-                  else
-                   errc=-8; exit oloop
-                  endif
+                  enddo oloop
                  else
-                  if(errc.ne.0) then; errc=-7; exit oloop; endif
+                  errc=-8
                  endif
-                enddo oloop
+                else
+                 errc=-7
+                endif
                else
-                errc=-6
+                if(errc.ne.0) errc=-6
                endif
               else
                errc=-5
               endif
              else
-              if(errc.ne.0) errc=-4
+              if(errc.eq.0) then; completed=.TRUE.; else; errc=-4; endif
              endif
             else
              completed=.TRUE.
