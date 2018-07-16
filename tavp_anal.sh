@@ -38,3 +38,5 @@ grep "Resources released for tensor instruction" ./qforce.*.log | wc
 
 echo "Retired:"
 grep "Retired tensor instruction" ./qforce.*.log | wc
+
+grep -i error ./qforce.*.log
