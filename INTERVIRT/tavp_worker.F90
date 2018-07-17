@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/16
+!REVISION: 2018/07/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4032,7 +4032,9 @@
               endif
              enddo
             endif
-            if(.not.this%output_substituted()) call this%set_completion_time(time_sys_sec()) !substituted tensor instructions will be completed later (by their local accumulates)
+            if((.not.this%output_substituted()).or.this%get_code().eq.TAVP_INSTR_TENS_ACCUMULATE) then
+             call this%set_completion_time(time_sys_sec()) !substituted tensor instructions will be completed later (by their local accumulates)
+            endif
            else
             errc=-3
            endif
@@ -4270,6 +4272,7 @@
          integer(INTD):: errc,devo,nsp,i,n
          class(ds_instr_ctrl_t), pointer:: ctrl
          class(ds_oprnd_t), pointer:: oprnd
+         real(8):: start,finish
 
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
@@ -4281,7 +4284,15 @@
          write(devo,'("id = ",i11,"; opcode = ",i4,"; stat = ",i6,"; err = ",i11)')&
          &this%get_id(),this%get_code(),this%get_status(errc,i),i
          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("Issue/completion time stamps (sec) = ",F14.6,1x,F14.6)') this%get_issue_time(),this%get_completion_time()
+         write(devo,'("Number of completed independent local accumulations = ",i1)') this%num_accumulated
+         start=this%get_issue_time(); finish=this%get_completion_time()
+         do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+         if(finish.gt.start) then
+          write(devo,'("Issue/completion time stamps (sec) = ",F20.6,1x,F20.6,": Duration = ",F10.6)')&
+          &start,finish,finish-start
+         else
+          write(devo,'("Issue/completion time stamps (sec) = ",F20.6,1x,F20.6,": Unfinished")') start,finish
+         endif
          n=this%get_num_operands(errc)
          if(errc.eq.DSVP_SUCCESS) then
           ctrl=>this%get_control()
@@ -4491,12 +4502,10 @@
          implicit none
          type(tens_instr_t):: this !inout: empty or retired tensor instruction
          integer(INTD):: sts,errc
-         class(tens_instr_t), pointer:: instr_null
 
          sts=this%get_status(errc)
          if((sts.eq.DS_INSTR_EMPTY.or.sts.eq.DS_INSTR_RETIRED).and.errc.eq.DSVP_SUCCESS) then
-          instr_null=>NULL(); call this%set_parent_instr(instr_null)
-          call this%reset_accumulations()
+          this%parent_instr=>NULL(); this%num_accumulated=0
           call this%clean(errc)
           if(errc.ne.DSVP_SUCCESS) call quit(errc,'#FATAL(TAVP-WRK:tens_instr_dtor): Tensor instruction destruction failed!')
          else
@@ -5022,23 +5031,23 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-30
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-37
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-29
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-36
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-28
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-27
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-34
          endif
 !Work loop:
          active=((errc.eq.0).and.(this%retire_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
  !Get new instructions from Resourcer (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
-          ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-33; exit wloop; endif
+          ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer unit ",i2," received ",i6," instructions from Resourcer")')&
            &impir,this%get_id(),n
@@ -5047,41 +5056,58 @@
           endif
  !Encode the retired tensor instructions into bytecode:
           num_processed=0
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
           if(this%iqueue%get_status(ier).eq.GFC_IT_ACTIVE) then
            do while(ier.eq.GFC_SUCCESS.and.num_processed.lt.MAX_RETIRER_BATCH)
-            if(stopping.and.errc.eq.0) then; errc=-23; exit wloop; endif !trap: no instruction can follow STOP
-            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+            if(stopping.and.errc.eq.0) then; errc=-30; exit wloop; endif !trap: no instruction can follow STOP
+            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
             tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-21; exit wloop; endif !trap
-            sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
-            if(sts.ne.DS_INSTR_RETIRED.and.errc.eq.0) then; errc=-19; exit wloop; endif !trap
-            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
+            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-28; exit wloop; endif !trap
+            sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
+            if(sts.lt.DS_INSTR_RELEASED.and.errc.eq.0) then; errc=-26; exit wloop; endif !trap
+            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
             if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
-             call this%bytecode%acquire_packet(instr_packet,ier,preclean=.TRUE.)
-             if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
-             call this%encode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-16; exit wloop; endif
-             call this%bytecode%seal_packet(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
-             if(DEBUG.gt.0) then
-              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Retirer): Retired tensor instruction:")')
-              call tens_instr%print_it(dev_id=CONS_OUT)
-              flush(CONS_OUT)
+             if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE.and.errc.eq.0) then; errc=-24; exit wloop; endif !trap: TENS_ACCUMULATE is a local TAVP-WRK instruction
+             if(sts.eq.DS_INSTR_RELEASED) then
+              if(this%test_completion(tens_instr,ier)) then !test completion of substituted tensor instructions
+               if(ier.eq.0) then
+                sts=DS_INSTR_RETIRED
+                call tens_instr%set_status(sts,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
+               else
+                if(errc.eq.0) then; errc=-22; exit wloop; endif
+               endif
+              else
+               if(ier.ne.0.and.errc.eq.0) then; errc=-21; exit wloop; endif
+              endif
              endif
-            else
+             if(sts.eq.DS_INSTR_RETIRED) then
+              call this%bytecode%acquire_packet(instr_packet,ier,preclean=.TRUE.)
+              if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+              call this%encode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-19; exit wloop; endif
+              call this%bytecode%seal_packet(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
+              num_processed=num_processed+1
+              if(DEBUG.gt.0) then
+               write(CONS_OUT,'("#DEBUG(TAVP-WRK:Retirer): Retired tensor instruction:")')
+               call tens_instr%print_it(dev_id=CONS_OUT)
+               flush(CONS_OUT)
+              endif
+             endif
+            else !control/auxiliary instruction
              if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
+             num_processed=num_processed+1
             endif
-            num_processed=num_processed+1
             ier=this%iqueue%next()
            enddo
+           if(ier.ne.GFC_SUCCESS.and.ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-17; exit wloop; endif !trap
           endif
  !Send the retired bytecode back to the manager:
           if(this%bytecode%get_num_packets().gt.0) then
-           call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
+           call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
            call this%bytecode%send(this%retire_rank,comm_hl,ier,tag=TAVP_COLLECT_TAG,comm=this%retire_comm)
-           if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
-           call comm_hl%wait(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
-           call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
-           call this%bytecode%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
+           if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
+           call comm_hl%wait(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
+           call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
+           call this%bytecode%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
           endif
           if(DEBUG.gt.0.and.num_processed.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer unit ",i2," retired ",i6," instructions")')&
@@ -5089,24 +5115,30 @@
            flush(CONS_OUT)
           endif
  !Delete retired tensor instructions and evict their operands if no longer needed:
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
           do while(this%iqueue%get_status().eq.GFC_IT_ACTIVE.and.num_processed.gt.0)
-           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-7; exit wloop; endif !trap
-           call tens_instr%extract_cache_entries(cache_entries,nce,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-6; exit wloop; endif
-           ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
- !Evict tensor cache entries if no longer in use:
-           do i=1,nce
-            !if(cache_entries(i)%cache_entry%get_ref_count().eq.0.and.cache_entries(i)%cache_entry%get_use_count().eq.0.and.&
-              !&(.not.cache_entries(i)%cache_entry%is_persistent())) then
-             tensor=>cache_entries(i)%cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) errc=-4
-             evicted=this%arg_cache%evict(tensor,ier,decr_use=.TRUE.); if(ier.ne.0.and.errc.eq.0) errc=-3
-            !endif
-            cache_entries(i)%cache_entry=>NULL()
-           enddo
-           if(errc.ne.0) exit wloop
-           num_processed=num_processed-1
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-9; exit wloop; endif !trap
+           if(tens_instr%get_status(ier).eq.DS_INSTR_RETIRED) then
+            if(ier.eq.DSVP_SUCCESS) then
+             call tens_instr%extract_cache_entries(cache_entries,nce,ier)
+             if(ier.ne.0.and.errc.eq.0) then; errc=-8; exit wloop; endif
+             ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
+  !Evict tensor cache entries if no longer in use:
+             do i=1,nce
+              tensor=>cache_entries(i)%cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-6; exit; endif
+              evicted=this%arg_cache%evict(tensor,ier,decr_use=.TRUE.); if(ier.ne.0.and.errc.eq.0) then; errc=-5; exit; endif
+              cache_entries(i)%cache_entry=>NULL()
+             enddo
+             if(errc.eq.0) then; num_processed=num_processed-1; else; exit wloop; endif
+            else
+             if(errc.eq.0) then; errc=-4; exit wloop; endif
+            endif
+           else
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+            ier=this%iqueue%next()
+           endif
           enddo
           if(num_processed.ne.0.and.errc.eq.0) then; errc=-2; exit wloop; endif
  !Exit condition:
@@ -5603,7 +5635,11 @@
              endif
              errc=-12; exit wloop
             endif
-            call instr%set_status(DS_INSTR_RELEASED,ier,errcode)
+            if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then
+             call instr%set_status(DS_INSTR_RETIRED,ier) !TENS_ACCUMULATE retires locally
+            else
+             call instr%set_status(DS_INSTR_RELEASED,ier)
+            endif
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
             if(DEBUG.gt.0) then
              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources released for tensor instruction:")')
@@ -6095,31 +6131,28 @@
                  if(errc.eq.GFC_SUCCESS) then
   !Delete the tensor cache entries which are no longer used:
                   do i=1,nce
-                   !if(cache_entries(i)%cache_entry%get_ref_count().eq.0.and.cache_entries(i)%cache_entry%get_use_count().eq.0.and.&
-                     !&(.not.cache_entries(i)%cache_entry%is_persistent())) then
-                    tensor=>cache_entries(i)%cache_entry%get_tensor(errc)
+                   tensor=>cache_entries(i)%cache_entry%get_tensor(errc)
+                   if(errc.eq.0) then
+                    if(DEBUG.gt.0) call tensor%get_name(tname,l,errc)
+                    evicted=this%arg_cache%evict(tensor,errc,decr_use=.TRUE.)
                     if(errc.eq.0) then
-                     if(DEBUG.gt.0) call tensor%get_name(tname,l,errc)
-                     evicted=this%arg_cache%evict(tensor,errc,decr_use=.TRUE.)
-                     if(errc.eq.0) then
-                      if(DEBUG.gt.0) then
-                       write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Evicted temporary tensor")',ADVANCE='NO') impir
-                       write(CONS_OUT,*) tname(1:l)
-                       flush(CONS_OUT)
-                      endif
-                     else
-                      if(DEBUG.gt.0) then
-                       write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.restore_output)[",i6,"]: Eviction failed for tensor")',&
-                            &ADVANCE='NO') impir
-                       write(CONS_OUT,*) tname(1:l)
-                       flush(CONS_OUT)
-                      endif
-                      errc=-15; exit
+                     if(DEBUG.gt.0) then
+                      write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Evicted temporary tensor")',ADVANCE='NO') impir
+                      write(CONS_OUT,*) tname(1:l)
+                      flush(CONS_OUT)
                      endif
                     else
-                     errc=-14; exit
+                     if(DEBUG.gt.0) then
+                      write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.restore_output)[",i6,"]: Eviction failed for tensor")',&
+                           &ADVANCE='NO') impir
+                      write(CONS_OUT,*) tname(1:l)
+                      flush(CONS_OUT)
+                     endif
+                     errc=-15; exit
                     endif
-                   !endif
+                   else
+                    errc=-14; exit
+                   endif
                   enddo
                   if(DEBUG.gt.0.and.errc.eq.0) then
                    write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Locally injected ACCUMULATE deleted")') impir
