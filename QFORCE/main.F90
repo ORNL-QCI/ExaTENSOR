@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/17
+!REVISION: 2018/07/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -94,6 +94,7 @@
 !Driver drives tensor workload:
  !Create tensors:
            ao_space_root=ao_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
+  !dtens:
            write(6,'("Creating tensor dtens over a hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_create(dtens,'dtens',(/(ao_space_id,i=1,2)/),(/(ao_space_root,i=1,2)/),EXA_DATA_KIND_R8)
@@ -101,6 +102,7 @@
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !ltens:
            write(6,'("Creating tensor ltens over a hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_create(ltens,'ltens',(/(ao_space_id,i=1,2)/),(/(ao_space_root,i=1,2)/),EXA_DATA_KIND_R8)
@@ -108,6 +110,7 @@
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !rtens:
            write(6,'("Creating tensor rtens over a hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_create(rtens,'rtens',(/(ao_space_id,i=1,2)/),(/(ao_space_root,i=1,2)/),EXA_DATA_KIND_R8)
@@ -132,21 +135,36 @@
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
            write(6,'("Tensor cache dumped")')
  !Destroy tensors:
-           !write(6,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)
-           !ierr=exatns_tensor_destroy(rtens)
-           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
-           !write(6,'("Ok")'); flush(6)
-           !write(6,'("Destroying tensor ltens ... ")',ADVANCE='NO'); flush(6)
-           !ierr=exatns_tensor_destroy(ltens)
-           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
-           !write(6,'("Ok")'); flush(6)
-           !write(6,'("Destroying tensor dtens ... ")',ADVANCE='NO'); flush(6)
-           !ierr=exatns_tensor_destroy(dtens)
-           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
-           !write(6,'("Ok")'); flush(6)
+  !rtens:
+           write(6,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(rtens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !ltens:
+           write(6,'("Destroying tensor ltens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(ltens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !dtens:
+           write(6,'("Destroying tensor dtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(dtens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+ !Dump cache (debug):
+           ierr=exatns_dump_cache()
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
+           write(6,'("Tensor cache dumped")')
  !Stop ExaTENSOR runtime:
-           !ierr=exatns_stop()
-           do while(.TRUE.); enddo !debug
+           ierr=exatns_stop()
           endif
          else
           write(6,*) 'Process ',my_rank,' terminated with error ',ierr

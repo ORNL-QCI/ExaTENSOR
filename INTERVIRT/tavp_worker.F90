@@ -5019,7 +5019,7 @@
          class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid,i,n,opcode,sts,errcode,nce,num_processed
-         logical:: active,stopping,evicted
+         logical:: active,stopping,pending,evicted
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
          class(tens_rcrsv_t), pointer:: tensor
@@ -5036,23 +5036,23 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-37
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-36
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-36
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-34
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-34
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-33
          endif
 !Work loop:
-         active=((errc.eq.0).and.(this%retire_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+         active=((errc.eq.0).and.(this%retire_comm.ne.MPI_COMM_NULL)); stopping=(.not.active); pending=.FALSE.
          wloop: do while(active)
  !Get new instructions from Resourcer (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-33; exit wloop; endif
-          ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
+          ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer unit ",i2," received ",i6," instructions from Resourcer")')&
            &impir,this%get_id(),n
@@ -5060,11 +5060,10 @@
            flush(CONS_OUT)
           endif
  !Encode the retired tensor instructions into bytecode:
-          num_processed=0
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
+          num_processed=0; pending=.FALSE.
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
           if(this%iqueue%get_status(ier).eq.GFC_IT_ACTIVE) then
            do while(ier.eq.GFC_SUCCESS.and.num_processed.lt.MAX_RETIRER_BATCH)
-            if(stopping.and.errc.eq.0) then; errc=-30; exit wloop; endif !trap: no instruction can follow STOP
             uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
             tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
             if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-28; exit wloop; endif !trap
@@ -5083,6 +5082,7 @@
                endif
               else
                if(ier.ne.0.and.errc.eq.0) then; errc=-21; exit wloop; endif
+               pending=.TRUE.
               endif
              endif
              if(sts.eq.DS_INSTR_RETIRED) then
@@ -5104,6 +5104,7 @@
             ier=this%iqueue%next()
            enddo
            if(ier.ne.GFC_SUCCESS.and.ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-17; exit wloop; endif !trap
+           pending=(pending.or.(num_processed.ge.MAX_RETIRER_BATCH))
           endif
  !Send the retired bytecode back to the manager:
           if(this%bytecode%get_num_packets().gt.0) then
@@ -5147,7 +5148,7 @@
           enddo
           if(num_processed.ne.0.and.errc.eq.0) then; errc=-2; exit wloop; endif
  !Exit condition:
-          active=((.not.stopping).or.this%iqueue%get_status().eq.GFC_IT_ACTIVE)
+          active=((.not.stopping).or.pending)
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
@@ -5339,7 +5340,7 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,ier,thid,n,num_staged,opcode,sts,errcode
          integer:: rsc_timer
-         logical:: active,stopping,auxiliary,deferd,dependent,blocked,passed,expired,moved_fwd
+         logical:: active,stopping,auxiliary,deferd,mainq,dependent,blocked,passed,expired,moved_fwd
          type(tens_instr_t):: instr_fence
          class(tens_instr_t), pointer:: instr
          class(dsvp_t), pointer:: dsvp
@@ -5353,50 +5354,50 @@
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-92
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-91
 !Initialize the staged list:
-         ier=this%stg_list%init(this%staged_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-91
+         ier=this%stg_list%init(this%staged_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-90
 !Initialize the deferred list:
-         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-90
+         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-89
 !Initialize the release list:
-         ier=this%rls_list%init(this%release_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-89
+         ier=this%rls_list%init(this%release_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-88
 !Create a special FENCE instruction:
          call instr_fence%tens_instr_ctor(TAVP_INSTR_CTRL_RESUME,ier,iid=0_INTL,stat=DS_INSTR_SPECIAL)
-         if(ier.ne.0.and.errc.eq.0) errc=-88
+         if(ier.ne.0.and.errc.eq.0) errc=-87
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-87
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-86
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-86
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-85
          endif
 !Work loop:
-         ier=timer_start(rsc_timer,MAX_RESOURCER_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-85
-         active=(errc.eq.0); stopping=(.not.active); num_staged=0
+         ier=timer_start(rsc_timer,MAX_RESOURCER_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-84
+         active=(errc.eq.0); stopping=(.not.active); deferd=.FALSE.; mainq=.FALSE.; num_staged=0
          wloop: do while(active)
  !Process the deferred queue (check data dependencies and try acquiring resources for tensor operands again):
-          ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-84; exit wloop; endif
+          ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-83; exit wloop; endif
           deferd=.FALSE.; ier=this%def_list%get_status()
           dloop: do while(ier.eq.GFC_IT_ACTIVE)
            deferd=.TRUE.
   !Extract a deferred tensor instruction:
-           uptr=>this%def_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-83; exit wloop; endif
+           uptr=>this%def_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-82; exit wloop; endif
            instr=>NULL(); select type(uptr); class is(tens_instr_t); instr=>uptr; end select
-           if((.not.associated(instr)).and.errc.eq.0) then; errc=-82; exit wloop; endif !trap
-           opcode=instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-81; exit wloop; endif
-           sts=instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-80; exit wloop; endif
-           if(sts.ne.DS_INSTR_RSC_WAIT.and.errc.eq.0) then; errc=-79; exit wloop; endif !trap
+           if((.not.associated(instr)).and.errc.eq.0) then; errc=-81; exit wloop; endif !trap
+           opcode=instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-80; exit wloop; endif
+           sts=instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-79; exit wloop; endif
+           if(sts.ne.DS_INSTR_RSC_WAIT.and.errc.eq.0) then; errc=-78; exit wloop; endif !trap
   !Process the deferred tensor instruction:
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
    !Check data dependencies for the deferred tensor instruction:
-            dependent=.not.instr%dependency_free(.TRUE.,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-78; exit wloop; endif
+            dependent=.not.instr%dependency_free(.TRUE.,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-77; exit wloop; endif
             if(.not.dependent) then
    !Acquire resources for tensor operands (if available):
              call this%acquire_resources(instr,ier,omit_output=.FALSE.)
              if(ier.eq.0) then !resources have been acquired: issue into the staged list
               call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
-              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-77; exit wloop; endif
+              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-76; exit wloop; endif
               if(DEBUG.gt.0) then
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources acquired for tensor instruction (deferred):")')
                call instr%print_it(dev_id=CONS_OUT)
@@ -5404,18 +5405,18 @@
               endif
    !Mark the tensor instruction issued (from the deferred queue):
               passed=instr%mark_issued(ier,from_deferred=.TRUE.)
-              if((.not.(ier.eq.0.and.passed)).and.errc.eq.0) then; errc=-76; exit wloop; endif
+              if((.not.(ier.eq.0.and.passed)).and.errc.eq.0) then; errc=-75; exit wloop; endif
               if(DEBUG.gt.0) then
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction issued from deferred queue:")')
                call instr%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
-              ier=this%def_list%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-75; exit wloop; endif
+              ier=this%def_list%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-74; exit wloop; endif
               num_staged=num_staged+1
              elseif(ier.eq.TRY_LATER) then !required resources are still unavailable
               ier=this%def_list%next()
              else
-              if(errc.eq.0) then; errc=-74; exit wloop; endif
+              if(errc.eq.0) then; errc=-73; exit wloop; endif
              endif
             else
              if(DEBUG.gt.1) then
@@ -5426,15 +5427,15 @@
              ier=this%def_list%next()
             endif
            else
-            if(errc.eq.0) then; errc=-73; exit wloop; endif
+            if(errc.eq.0) then; errc=-72; exit wloop; endif
            endif
            ier=this%def_list%get_status()
           enddo dloop
-          if(ier.ne.GFC_IT_EMPTY.and.ier.ne.GFC_IT_DONE.and.errc.eq.0) then; errc=-72; exit wloop; endif !trap
-          ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-71; exit wloop; endif
+          if(ier.ne.GFC_IT_EMPTY.and.ier.ne.GFC_IT_DONE.and.errc.eq.0) then; errc=-71; exit wloop; endif !trap
+          ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-70; exit wloop; endif
  !Get new instructions from Decoder (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-70; exit wloop; endif
-          ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-69; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-69; exit wloop; endif
+          ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-68; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," received ",i9," instructions from Decoder")')&
            &impir,this%get_id(),n
@@ -5442,10 +5443,10 @@
            flush(CONS_OUT)
           endif
  !Process the main queue (rename output tensor operands, check data dependencies, and acquire resources for input tensor operands):
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-68; exit wloop; endif
-          auxiliary=.FALSE.; ier=this%iqueue%get_status()
-          if(stopping.and.ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-67; exit wloop; endif !if stopping, no further instructions are expected
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-67; exit wloop; endif
+          auxiliary=.FALSE.; mainq=.FALSE.; ier=this%iqueue%get_status()
           mloop: do while(ier.eq.GFC_IT_ACTIVE)
+           mainq=.TRUE.
   !Extract an instruction:
            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-66; exit wloop; endif
            instr=>NULL(); select type(uptr); class is(tens_instr_t); instr=>uptr; end select
@@ -5456,7 +5457,7 @@
            call instr%set_status(DS_INSTR_RSC_WAIT,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-61; exit wloop; endif
   !Process the instruction according to its category:
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
-            if(.not.stopping) then
+            !if(.not.stopping) then
              if(auxiliary) then !auxiliary instructions stall the pipeline
               call instr%set_status(DS_INSTR_NEW,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-60; exit wloop; endif
               ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-59; exit wloop; endif
@@ -5543,13 +5544,12 @@
                endif
               endif
              endif
-            else
-             if(errc.eq.0) then; errc=-40; exit wloop; endif
-            endif
+            !else
+             !if(errc.eq.0) then; errc=-40; exit wloop; endif
+            !endif
            elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !control instruction: no dependencies
             if(.not.stopping) then
              auxiliary=.TRUE.
-             if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
              call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif
              ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
@@ -5670,6 +5670,7 @@
              endif
             endif
            else !ctrl/aux instructions
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
             call instr%set_status(DS_INSTR_RETIRED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
            endif
@@ -5686,7 +5687,7 @@
             flush(CONS_OUT)
            endif
           endif
-          active=((.not.stopping).or.deferd)
+          active=((.not.stopping).or.deferd.or.mainq)
          enddo wloop
 !Destroy the timer:
          ier=timer_destroy(rsc_timer); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-3
@@ -7173,7 +7174,7 @@
          class(tens_resrc_t), pointer:: resource
          class(tens_body_t), pointer:: tens_body
          class(tens_layout_t), pointer:: tens_layout
-         class(tens_cache_entry_t), pointer:: cache_entry
+         class(tens_entry_wrk_t), pointer:: cache_entry
          type(DataDescr_t):: descr
          type(C_PTR):: mem_p
          real(4), pointer:: arr_r4(:)
@@ -7207,7 +7208,7 @@
                     call tavp%addr_space%attach(mem_p,dtk,vol,descr,errc)
                     if(errc.eq.0) then
                      cache_entry=>oprnd%get_cache_entry(errc)
-                     if(errc.eq.0) then
+                     if(errc.eq.0.and.associated(cache_entry)) then
                       call tensor%set_location(descr,errc) !tensor has been located
                       if(errc.eq.0) then
                        call cache_entry%set_persistency(.TRUE.) !TENS_CREATE creates persistent tensors
@@ -7295,9 +7296,62 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
          integer(INTD):: errc
+         class(dsvp_t), pointer:: dsvp
+         class(tavp_wrk_t), pointer:: tavp
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_rcrsv_t), pointer:: tensor
+         class(tens_entry_wrk_t), pointer:: cache_entry
+         class(DataDescr_t), pointer:: descr
 !$OMP FLUSH
-         errc=0
-         !`Implement
+         oprnd=>tens_instr%get_operand(0,errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          select type(oprnd)
+          class is(tens_oprnd_t)
+           dsvp=>this%get_dsvp(errc)
+           if(errc.eq.DSVP_SUCCESS.and.associated(dsvp)) then
+            tavp=>NULL(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
+            if(associated(tavp)) then
+             call oprnd%lock()
+             tensor=>oprnd%get_tensor(errc)
+             if(errc.eq.0.and.associated(tensor)) then
+              descr=>tensor%get_data_descr(errc)
+              if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
+               call tavp%addr_space%detach(descr,errc)
+               if(errc.eq.0) then
+                cache_entry=>oprnd%get_cache_entry(errc)
+                if(errc.eq.0.and.associated(cache_entry)) then
+                 call cache_entry%set_persistency(.FALSE.)
+                 if(DEBUG.gt.0) then
+                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:TENSOR_DESTROY)[",i6,"]: Tensor destroyed:")') impir
+                  call tensor%print_it(dev_id=CONS_OUT)
+                  flush(CONS_OUT)
+                 endif
+                else
+                 errc=-8
+                endif
+                cache_entry=>NULL()
+               else
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-5
+             endif
+             call oprnd%unlock()
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          class default
+           errc=-2
+          end select
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKExecTensorDestroy

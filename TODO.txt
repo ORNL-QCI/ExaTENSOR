@@ -20,4 +20,4 @@
             -> tavp_wrk_resourcer_t.acquire_resource().
 2018-04-09: It is not clear when to upload and when to destroy a local accumulator tensor: TMP_COUNT never decreases.
 2018-04-24: TAVP_INSTR_CTRL_STOP should not be reordered with other instructions in TAVP-WRK:
-            It must reach each DSVU the last.
+            It must reach each DSVU the last, that is, each DSVU must pass the STOP instruction as its last instruction.
