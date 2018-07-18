@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/17
+!REVISION: 2018/07/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -270,7 +270,7 @@
           procedure, public:: start=>TAVPWRKRetirerStart                    !starts TAVP-WRK retirer
           procedure, public:: shutdown=>TAVPWRKRetirerShutdown              !shuts down TAVP-WRK retirer
           procedure, public:: encode=>TAVPWRKRetirerEncode                  !encodes a DS instruction into the DS bytecode
-          procedure, public:: test_completion=>TAVPWRKRetirerTestCompletion !tests the full completion of tensor instructions before retiring them
+          procedure, public:: test_completion=>TAVPWRKRetirerTestCompletion !tests the full completion of substituted tensor instructions before retiring them
         end type tavp_wrk_retirer_t
  !TAVP-WRK retirer configuration:
         type, extends(dsv_conf_t), private:: tavp_wrk_retirer_conf_t
@@ -3850,6 +3850,11 @@
          else
           errc=-1
          endif
+         if(errc.ne.0.and.VERBOSE) then
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_instr_t.mark_issued): Instruction issue error ",i11," for:")') errc
+          call this%print_it(dev_id=CONS_OUT)
+          flush(CONS_OUT)
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TensInstrMarkIssued
@@ -4315,7 +4320,7 @@
 !-----------------------------------------------------------------------------------
         subroutine TensInstrExtractCacheEntries(this,cache_entries,num_entries,ierr)
 !Returns an array of references to tensor cache entries associated with the tensor operands for subsequent eviction.
-!Only temporary tensor cache entries with zero reference and use counts are returned.
+!Only temporary tensor cache entries with zero use count and reference count of 1 are returned.
          implicit none
          class(tens_instr_t), intent(inout):: this                     !in: tensor instruction
          type(tens_entry_wrk_ref_t), intent(inout):: cache_entries(1:) !out: references to the tensor cache entries to be evicted
@@ -4337,7 +4342,7 @@
               call oprnd%lock()
               tens_entry=>oprnd%get_cache_entry(errc)
               if(errc.eq.0.and.associated(tens_entry)) then
-               if(tens_entry%get_ref_count().eq.0.and.tens_entry%get_use_count().eq.0.and.&
+               if(tens_entry%get_ref_count().eq.1.and.tens_entry%get_use_count().eq.0.and.&
                  &(.not.tens_entry%is_persistent())) then
                 call tens_entry%incr_use_count() !to protect from repeated evictions by multiple DSVU (will be decremented by .evict())
                 num_entries=num_entries+1; cache_entries(num_entries)%cache_entry=>tens_entry
@@ -5218,7 +5223,7 @@
          class(tens_cache_entry_t), pointer:: cache_entry
          type(tens_rcrsv_t):: acc
 
-         completed=.FALSE.
+         completed=.TRUE.
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            n=tens_instr%get_num_operands(errc)
@@ -5240,18 +5245,21 @@
                        call oprnd%lock()
                        acc=oprnd%tmp_get_accumulator(errc)
                        call oprnd%unlock()
-                       if(errc.ne.0) then; errc=-16; exit oloop; endif
-                       cache_entry=>this%arg_cache%lookup(acc,errc)
                        if(errc.eq.0) then
-                        completed=.TRUE.
-                        if(associated(cache_entry)) then !accumulator tensor is still alive
-                         select type(cache_entry)
-                         class is(tens_entry_wrk_t)
-                          if(cache_entry%get_upload_time().le.instr_compl_time) then; completed=.FALSE.; exit; endif
-                         class default
-                          errc=-15; exit oloop
-                         end select
-                         call this%arg_cache%release_entry(cache_entry,errc); if(errc.ne.0) then; errc=-14; exit oloop; endif
+                        cache_entry=>this%arg_cache%lookup(acc,errc)
+                        if(errc.eq.0) then
+                         if(associated(cache_entry)) then !accumulator tensor is still alive
+                          select type(cache_entry)
+                          class is(tens_entry_wrk_t)
+                           if(cache_entry%get_upload_time().le.instr_compl_time) completed=.FALSE.
+                          class default
+                           call this%arg_cache%release_entry(cache_entry); errc=-16; exit oloop
+                          end select
+                          call this%arg_cache%release_entry(cache_entry,errc); if(errc.ne.0) then; errc=-15; exit oloop; endif
+                          if(.not.completed) exit oloop
+                         endif
+                        else
+                         errc=-14; exit oloop
                         endif
                        else
                         errc=-13; exit oloop
@@ -5276,16 +5284,15 @@
                  errc=-7
                 endif
                else
+                completed=.FALSE.
                 if(errc.ne.0) errc=-6
                endif
               else
                errc=-5
               endif
              else
-              if(errc.eq.0) then; completed=.TRUE.; else; errc=-4; endif
+              if(errc.ne.0) errc=-4
              endif
-            else
-             completed=.TRUE.
             endif
            else
             errc=-3
@@ -5296,6 +5303,7 @@
          else
           errc=-1
          endif
+         if(errc.ne.0) completed=.FALSE.
          if(present(ierr)) ierr=errc
          return
         end function TAVPWRKRetirerTestCompletion

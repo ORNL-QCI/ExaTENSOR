@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/13
+!REVISION: 2018/07/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1024,14 +1024,16 @@
          integer(INTD), intent(out), optional:: ierr
          integer(INTD), intent(in), optional:: dev_id
          integer(INTD), intent(in), optional:: nspaces
-         integer(INTD):: errc,devo,nsp
+         integer(INTD):: errc,devo,nsp,i
 !$OMP FLUSH
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Pattern: ")',ADVANCE='NO')
          call this%contr_ptrn%print_it(errc,devo,0)
          if(errc.eq.TEREC_SUCCESS) then
+          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Scalar: ",D24.14,1x,D24.14)') this%alpha
          else
           errc=-1
