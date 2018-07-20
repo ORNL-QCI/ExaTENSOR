@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/13
+!REVISION: 2018/07/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -110,6 +110,7 @@
         integer(INTD), parameter, public:: DS_INSTR_RETIRED=10      !instruction retired
   !Special instruction status:
         integer(INTD), parameter, public:: DS_INSTR_SPECIAL=100     !special status (for internal logic)
+        integer(INTD), parameter, public:: DS_INSTR_TERMINAL=101    !special terminal status (for internal logic)
 !DERIVED TYPES:
  !Domain-specific resource (normally local):
         type, abstract, public:: ds_resrc_t

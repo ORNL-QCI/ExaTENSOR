@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/19
+!REVISION: 2018/07/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1717,6 +1717,10 @@
           endif
          else
           errc=PACK_NULL
+         endif
+         if(errc.ne.PACK_SUCCESS.and.VERBOSE) then
+          write(CONS_OUT,'("#ERROR(pack_prim:unpack_integer4): Error ",i11,"; obj_size = ",i11)') errc,obj_size
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return

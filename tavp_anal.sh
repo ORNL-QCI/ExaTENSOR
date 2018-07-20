@@ -40,3 +40,4 @@ echo "Retired:"
 grep "Retired tensor instruction" ./qforce.*.log | wc
 
 grep -i error ./qforce.*.log
+grep -i fatal ./qforce.*.log
