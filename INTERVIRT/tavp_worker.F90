@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/18
+!REVISION: 2018/07/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -5218,7 +5218,7 @@
          class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK Retirer
          class(tens_instr_t), intent(inout):: tens_instr !inout: active tensor instruction waiting for a full completion
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,n,i
+         integer(INTD):: errc,ier,n,i
          real(8):: instr_compl_time
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_cache_entry_t), pointer:: cache_entry
@@ -5254,10 +5254,10 @@
                           class is(tens_entry_wrk_t)
                            if(cache_entry%get_upload_time().le.instr_compl_time) completed=.FALSE.
                           class default
-                           call this%arg_cache%release_entry(cache_entry); errc=-16; exit oloop
+                           errc=-16
                           end select
-                          call this%arg_cache%release_entry(cache_entry,errc); if(errc.ne.0) then; errc=-15; exit oloop; endif
-                          if(.not.completed) exit oloop
+                          call this%arg_cache%release_entry(cache_entry,ier); if(ier.ne.0.and.errc.eq.0) errc=-15
+                          if((.not.completed).or.(errc.ne.0)) exit oloop
                          endif
                         else
                          errc=-14; exit oloop
