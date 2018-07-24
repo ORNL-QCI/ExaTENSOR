@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/18
+!REVISION: 2018/07/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -811,6 +811,7 @@
          l=len_trim(this%method_name)
          if(l.gt.0) call printl(devo,'Method: '//this%method_name(1:l))
          write(devo,'("Scalar: ",D24.14,1x,D24.14)') this%alpha
+         flush(devo)
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransPrintIt
@@ -911,6 +912,7 @@
          else
           errc=-1
          endif
+         flush(devo)
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensAddPrintIt
@@ -1038,6 +1040,7 @@
          else
           errc=-1
          endif
+         flush(devo)
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensContrPrintIt

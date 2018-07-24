@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/19
+!REVISION: 2018/07/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1919,6 +1919,7 @@
          else
           write(dev,'("EMPTY TENSOR SIGNATURE")')
          endif
+         flush(dev)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignaturePrintIt
@@ -2567,6 +2568,7 @@
          else
           write(dev,'("Empty tensor shape")')
          endif
+         flush(dev)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensShapePrintIt
@@ -3099,6 +3101,7 @@
           call this%shape%print_it(errc,dev,1)
           write(dev,'("}")')
          endif
+         flush(dev)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensHeaderPrintIt
@@ -4174,6 +4177,7 @@
          integer(INTD), intent(in), optional:: dev_id  !in: output device id (6:screen)
          integer(INTD), intent(in), optional:: nspaces !out: left alignment
          integer(INTD):: errc,dev,i,rank,comm
+         integer(INTL):: ds
          class(tens_layout_t), pointer:: tens_layout
          class(DataDescr_t), pointer:: descr
 
@@ -4196,8 +4200,9 @@
            if(associated(descr)) then
             if(descr%is_set(errc,rank,comm)) then
              do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+             ds=descr%data_size()
              write(dev,'(" Data descriptor: Comm = ",i11,"; Rank = ",i7,"; Size (B) = ",i12)')&
-             &comm,rank,descr%data_size()
+             &comm,rank,ds
             else
              do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
              write(dev,'(" Data descriptor empty")')
@@ -4225,6 +4230,7 @@
           endif
           write(dev,'("}")')
          endif
+         flush(dev)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensBodyPrintIt
@@ -5818,6 +5824,7 @@
          call this%body%print_it(errc,devo,nsp+1)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+         flush(devo)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvPrintIt
@@ -5862,6 +5869,7 @@
           l=l+1; write(devo,'(1x,i11)') this%info(l)
          enddo
          write(devo,'("}")')
+         flush(devo)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensDescrPrintIt
@@ -6438,6 +6446,7 @@
          write(devo,'("(",i2,"){")',ADVANCE='NO') this%prm(0) !sign
          write(devo,'(99(i2,","))') this%prm(1:this%length) !permutation
          write(devo,'("}")')
+         flush(devo)
          if(present(ierr)) ierr=errc
          return
         end subroutine PermutationPrintIt
@@ -6950,6 +6959,7 @@
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("{Empty/invalid extended tensor contraction}")')
          endif
+         flush(devo)
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtPrintIt
@@ -8442,6 +8452,7 @@
          endif
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+         flush(devo)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionPrintIt

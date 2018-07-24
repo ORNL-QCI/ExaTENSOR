@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/20
+!REVISION: 2018/07/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2966,7 +2966,7 @@
           term_num=0 !number of terminated Locators
           rot_num=0 !rotation number
           if(ring_exists) then
-           if(DEBUG.gt.0) then
+           if(DEBUG.gt.1) then
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Entered rotation cycle; Cache volume = ",i12)')&
             &impir,this%get_id(),this%arg_cache%get_num_entries()
             flush(CONS_OUT)
@@ -3086,7 +3086,7 @@
              if(errc.eq.0) then; errc=-21; exit wloop; endif
             endif
            enddo rloop
-           if(DEBUG.gt.0) then
+           if(DEBUG.gt.1) then
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": ",i4,"-rotation cycle completed; Cache volume = ",i12)')&
             &impir,this%get_id(),rot_num,this%arg_cache%get_num_entries()
             flush(CONS_OUT)

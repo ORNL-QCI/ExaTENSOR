@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/20
+!REVISION: 2018/07/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1125,6 +1125,7 @@
           errc=-1
          endif
          if(errc.ne.DSVP_SUCCESS) write(devo,'("Printing failed: Error ",i11)') errc
+         flush(devo)
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrPrintIt
