@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/20
+!REVISION: 2018/07/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -247,10 +247,12 @@
             if(length.ge.0.and.length.le.bs) then
              this%length=length
             else
+             if(VERBOSE) write(CONS_OUT,'("#ERROR(pack_prim:obj_pack_t.construct): Invalid length: ",i12,1x,i12)') length,bs
              errc=PACK_INVALID_ARGS
             endif
            endif
           else
+           if(VERBOSE) write(CONS_OUT,'("#ERROR(pack_prim:obj_pack_t.construct): Empty buffer passed: ",i12)') bs
            errc=PACK_INVALID_ARGS
           endif
          else
