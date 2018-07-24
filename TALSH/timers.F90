@@ -1,6 +1,6 @@
 !Timing services (threadsafe).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/13
+!REVISION: 2018/07/24
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -26,22 +26,15 @@
 
 !PREPROCESSOR:
 ! # -D NO_OMP: Disable OpenMP (switch to Fortran cpu_time);
-! # -D USE_OMP_MOD: Use OpenMP Fortran module;
 ! # -D USE_GNU: Switch to the GNU Fortran timing (secnds);
 ! # -D NO_PHI: Ignore Intel MIC;
 
        module timers
 #ifndef NO_OMP
-#ifdef USE_OMP_MOD
         use omp_lib
+#endif
         implicit none
         private
-#else
-        implicit none
-        private
-        real(8), external, private:: omp_get_wtime,omp_get_wtick
-#endif
-#endif
 !PARAMETERS:
         integer, parameter, private:: MAX_TIMERS=8192
         integer, parameter, public:: TIMERS_SUCCESS=0

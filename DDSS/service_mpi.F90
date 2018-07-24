@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/29
+!REVISION: 2018/07/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -145,16 +145,9 @@
 !In the latter case, the MPI threading level must be at least MPI_THREAD_FUNNELED.
         use stsubs, only: numchar,icharnum,printl
 #ifndef NO_OMP
-#ifdef USE_OMP_MOD
         use omp_lib, only: omp_get_max_threads
-        implicit none
-#else
-        implicit none
-        integer, external:: omp_get_max_threads
 #endif
-#else
         implicit none
-#endif
         integer(INT_MPI), intent(out):: ierr              !out: error code (0:success)
         integer(INT_MPI), intent(in), optional:: ext_comm !in: external communicator
         integer(INT_MPI):: errc

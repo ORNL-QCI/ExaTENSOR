@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/19
+!REVISION: 2018/07/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -34,7 +34,6 @@
 ! - NO_PHI - do not use Intel Xeon Phi (MIC);
 ! - NO_GPU - do not use NVidia GPU (CUDA);
 ! - NO_BLAS - BLAS/LAPACK calls will be replaced by in-house routines (D.I.L.);
-! - USE_OMP_MOD - use OpenMP module;
 ! - USE_MPI_MOD - use MPI module instead of mpif.h;
 ! - USE_MKL - use Intel MKL library for BLAS/LAPACK;
 !OUTPUT DEVICE:
