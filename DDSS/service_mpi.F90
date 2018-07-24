@@ -24,6 +24,9 @@
         use, intrinsic:: ISO_C_BINDING
         use dil_basic
         !Depends on <mpi_fort.c>
+#ifndef NO_OMP
+        use omp_lib
+#endif
 #ifdef USE_MPI_MOD
 #ifdef FORTRAN2008
         use mpi_f08      !MPI Fortran 2008 interface `This will not work
@@ -80,9 +83,9 @@
  !General:
         integer, protected:: jo=6             !default output device (6 is the screen), modified during runtime
         integer, protected:: log_file         !log-file handle (set during runtime)
-        logical, private:: process_up=.false. !set to .true. when the process is successfully initialized
+        logical, private:: process_up=.FALSE. !set to .TRUE. when the process is successfully initialized
  !MPI/OMP:
-        logical, private:: comm_imported=.false. !tells whether the global communicator was imported or created
+        logical, private:: comm_imported=.FALSE. !tells whether the global communicator was imported or created
         integer(INT_MPI), protected:: GLOBAL_MPI_COMM=MPI_COMM_WORLD !global MPI communicator (defaults to MPI_COMM_WORLD)
         integer(INT_MPI), protected:: impis !global MPI communicator size (set by runtime)
         integer(INT_MPI), protected:: impir !global MPI rank of the process [0..impis-1] (set by runtime)
@@ -110,6 +113,9 @@
         integer, private:: nof=0                          !current number of open files (local to each process)
         integer, private:: fhot(16:16+MAX_OPEN_FILES-1)=0 !file handle occupancy table (first 16 file handles [0..15] are reserved)
         integer, private:: ffhs(0:MAX_OPEN_FILES-1)=(/(j_,j_=16,16+MAX_OPEN_FILES-1)/) !a stack of free file handles
+#ifndef NO_OMP
+        integer(omp_lock_kind), private:: file_lock(16:16+MAX_OPEN_FILES-1) !file locks (for concurrent multithreaded I/O)
+#endif
 !Interfaces to Fortran wrappers to some MPI functions:
         interface
  !MPI_Get_address: Get the absolute MPI displacement of a local object (for remote accesses):
@@ -129,6 +135,10 @@
         public dil_global_comm_barrier
         public MPI_Get_Displacement
         public file_handle
+#ifndef NO_OMP
+        public lock_file
+        public unlock_file
+#endif
         public quit
         private gpu_nvidia_probe
 #ifndef NO_LINUX
@@ -155,15 +165,15 @@
         character(1024):: str0
 
         ierr=0; if(process_up) then; ierr=1; return; endif !process already initialized
-        process_up=.false.; exec_status=0
+        process_up=.FALSE.; exec_status=0
 !Start MPI:
 #ifdef NO_OMP
         if(present(ext_comm)) then
-         GLOBAL_MPI_COMM=ext_comm; comm_imported=.true.
+         GLOBAL_MPI_COMM=ext_comm; comm_imported=.TRUE.
          if(DEBUG) write(jo,'("#DEBUG(service_mpi::dil_process_start): Imported a single-thread MPI communicator: ",i13)')&
                    &GLOBAL_MPI_COMM
         else
-         GLOBAL_MPI_COMM=MPI_COMM_WORLD; comm_imported=.false.
+         GLOBAL_MPI_COMM=MPI_COMM_WORLD; comm_imported=.FALSE.
          call MPI_INIT(errc)
          if(errc.ne.0) then
           ierr=2
@@ -177,13 +187,13 @@
         mpi_thread_provided=0; max_threads=1
 #else
         if(present(ext_comm)) then
-         GLOBAL_MPI_COMM=ext_comm; comm_imported=.true.
+         GLOBAL_MPI_COMM=ext_comm; comm_imported=.TRUE.
          mpi_thread_provided=MPI_THREAD_MULTIPLE !assumes at least this level of MPI threading
          max_threads=omp_get_max_threads()
          if(DEBUG) write(jo,'("#DEBUG(service_mpi::dil_process_start): Imported a multi-threaded MPI communicator: ",i13,1x,i5)')&
                    &GLOBAL_MPI_COMM,max_threads
         else
-         GLOBAL_MPI_COMM=MPI_COMM_WORLD; comm_imported=.false.
+         GLOBAL_MPI_COMM=MPI_COMM_WORLD; comm_imported=.FALSE.
          call MPI_INIT_THREAD(MPI_THREAD_MULTIPLE,mpi_thread_provided,errc)
          if(errc.ne.0) then
           ierr=3
@@ -347,7 +357,7 @@
         if(process_up) then
          call free_info_mem(ierr)
          if(ierr.ne.0) write(jo,'("#WARNING(ExaTensor::service_mpi::dil_process_finish): Unable to free info data!")')
-         process_up=.false.
+         process_up=.FALSE.
          if(exec_status.eq.0) then
           call MPI_BARRIER(GLOBAL_MPI_COMM,errc)
           if(errc.ne.0) then
@@ -564,8 +574,11 @@
          if(l.eq.3.and.(command(1:3).eq.'get'.or.command(1:3).eq.'GET')) then
           if(nof.lt.MAX_OPEN_FILES) then
            ifh=ffhs(nof); fhot(ifh)=1; nof=nof+1
+#ifndef NO_OMP
+           call omp_init_lock(file_lock(ifh))
+#endif
           else
-           call printl(jo,'#ERROR(service_mpi:file_handle): reached max amount of open files!')
+           call printl(jo,'#ERROR(service_mpi:file_handle): reached the limit of open files!')
            ierr=1
           endif
 !FREE FILE HANDLE:
@@ -573,6 +586,9 @@
           if(nof.gt.0) then
            if(ifh.ge.16.and.ifh.lt.16+MAX_OPEN_FILES) then
             if(fhot(ifh).ne.0) then
+#ifndef NO_OMP
+             call omp_destroy_lock(file_lock(ifh))
+#endif
              fhot(ifh)=0; nof=nof-1; ffhs(nof)=ifh
             else
              call printl(jo,'#ERROR(service_mpi:file_handle): attempt to free an idle file handle!')
@@ -590,7 +606,12 @@
          elseif(l.eq.4.and.(command(1:4).eq.'stop'.or.command(1:4).eq.'STOP')) then
           do n=16,16+MAX_OPEN_FILES-1
            if(nof.le.0) exit
-           if(fhot(n).ne.0) then; close(n); fhot(n)=0; nof=nof-1; ffhs(nof)=n; endif
+           if(fhot(n).ne.0) then
+#ifndef NO_OMP
+            call omp_destroy_lock(file_lock(n))
+#endif
+            close(n); fhot(n)=0; nof=nof-1; ffhs(nof)=n
+           endif
           enddo
          else
           call printl(jo,'#ERROR(service_mpi:file_handle): invalid command: '//command(1:l))
@@ -602,13 +623,57 @@
         endif
         return
         end subroutine file_handle
+!-------------------------------------
+        subroutine lock_file(ifh,ierr)
+!Locks a file opened via file_handle() for exclusive I/O.
+         implicit none
+         integer, intent(in):: ifh             !in: file handle
+         integer, intent(out), optional:: ierr !out: error code
+         integer:: errc
+
+         if(ifh.ge.16.and.ifh.lt.16+MAX_OPEN_FILES) then
+          if(fhot(ifh).ne.0) then
+#ifndef NO_OMP
+           call omp_set_lock(file_lock(ifh))
+#endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine lock_file
+!---------------------------------------
+        subroutine unlock_file(ifh,ierr)
+!Unlocks a file opened via file_handle() from exclusive I/O.
+         implicit none
+         integer, intent(in):: ifh             !in: file handle
+         integer, intent(out), optional:: ierr !out: error code
+         integer:: errc
+
+         if(ifh.ge.16.and.ifh.lt.16+MAX_OPEN_FILES) then
+          if(fhot(ifh).ne.0) then
+#ifndef NO_OMP
+           call omp_unset_lock(file_lock(ifh))
+#endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unlock_file
 !-----------------------------------------------------
         subroutine quit(error_code,error_msg,no_final)
 !This subroutine prints the error message and safely terminates the parallel code execution.
 !INPUT:
 ! - error_code - error code (-1 is the default non-specific error code);
 ! - error_msg - error message;
-! - no_final - if .true., no MPI_Finalize and stop, but return;
+! - no_final - if .TRUE., no MPI_Finalize and stop, but return;
 !OUTPUT:
 ! - error information printed by EACH process.
 !PARALLEL: YES.
@@ -622,7 +687,7 @@
         logical:: nf
 !Time:
         time_end=MPI_WTIME()
-        if(present(no_final)) then; nf=no_final; else; nf=.false.; endif
+        if(present(no_final)) then; nf=no_final; else; nf=.FALSE.; endif
 !Error message:
         l=len_trim(error_msg); if(l.gt.0.and.(error_code.ne.0.or.impir.eq.0)) call printl(jo,error_msg(1:l))
         if(error_code.eq.0) then
