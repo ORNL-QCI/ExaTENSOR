@@ -56,10 +56,10 @@ export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 #  ESSL BLAS:
 export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
-export PATH_IBM_XL_FOR ?= /sw/summitdev/xl/20161123/xlf/15.1.5/lib
 
-#IBM XL C++ (only set this if you use IBM XL):
-export PATH_IBM_XL_CPP = /sw/summit/xl/20180319-beta/xlC/13.1.7/lib
+#IBM XL (only set these if you use IBM XL and/or ESSL):
+export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-beta1/xlC/16.1.1/lib
+export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-beta1/xlf/16.1.1/lib
 
 # CUDA (only set this if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
