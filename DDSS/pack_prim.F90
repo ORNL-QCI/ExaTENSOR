@@ -934,7 +934,7 @@
          logical, intent(in), optional:: preclean    !in: if TRUE the packet will be forcefully cleaned on entrance
          integer(INTD):: errc
          integer(INTL):: cap,bg,ln
-         character(C_CHAR), pointer, contiguous:: buf_p(:)=>NULL()
+         character(C_CHAR), pointer, contiguous:: buf_p(:)
 
          cap=this%get_capacity(errc)
          if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
@@ -944,7 +944,7 @@
              if(present(preclean)) then; if(preclean) call pkt%clean(); endif
              if(present(tag)) tag=this%pack_tag(pkt_num)
              bg=this%pack_offset(pkt_num); ln=this%pack_len(pkt_num)
-             buf_p=>this%buffer(bg:bg+ln-1_INTL)
+             buf_p(1:ln)=>this%buffer(bg:bg+ln-1_INTL)
              call pkt%construct(buf_p,errc,ln)
              if(errc.ne.PACK_SUCCESS) then
               if(VERBOSE) then
