@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/24
+!REVISION: 2018/07/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -84,7 +84,7 @@
 
        module pack_prim
         use, intrinsic:: ISO_C_BINDING, only: C_PTR,C_INT,C_CHAR,C_NULL_PTR,c_loc,c_f_pointer
-        use stsubs, only: size_of
+        use stsubs, only: size_of,crash
         use dil_basic, only: INTD,INTL
 #ifdef USE_MPI_MOD
 #ifdef FORTRAN2008
@@ -248,7 +248,8 @@
              this%length=length
             else
              if(VERBOSE) write(CONS_OUT,'("#ERROR(pack_prim:obj_pack_t.construct): Invalid length: ",i12,1x,i12)') length,bs
-             errc=PACK_INVALID_ARGS
+             errc=PACK_OVERFLOW
+             call crash() !`debug
             endif
            endif
           else
@@ -1698,7 +1699,7 @@
          integer(4), intent(out):: obj                   !out: builtin type object
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: obj_size,errc
-         integer(INTL):: ppos
+         integer(INTL):: ppos,pl
          type(C_PTR):: cptr
          character(C_CHAR), pointer, contiguous:: chp(:)
          integer(4), pointer:: fptr
@@ -1721,8 +1722,11 @@
           errc=PACK_NULL
          endif
          if(errc.ne.PACK_SUCCESS.and.VERBOSE) then
-          write(CONS_OUT,'("#ERROR(pack_prim:unpack_integer4): Error ",i11,"; obj_size = ",i11)') errc,obj_size
+          pl=packet%get_length()
+          write(CONS_OUT,'("#ERROR(pack_prim:unpack_integer4): Error ",i11,"; Packet length = ",i11,"; Packet offset = ",i11)')&
+          &errc,pl,packet%offset
           flush(CONS_OUT)
+          call crash() !`debug
          endif
          if(present(ierr)) ierr=errc
          return
