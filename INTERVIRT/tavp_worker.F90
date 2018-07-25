@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/20
+!REVISION: 2018/07/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -104,6 +104,20 @@
  !Retirer:
         integer(INTD), private:: MAX_RETIRER_BATCH=32           !max size of the retired instruction batch
 !TYPES:
+ !Tensor instruction time stamps:
+        type, private:: instr_time_t
+         real(8), public:: time_decoded=-1d0        !time stamp when the instruction was decoded
+         real(8), public:: time_resourced=-1d0      !time stamp when the instruction acquired resources
+         real(8), public:: time_fetch_started=-1d0  !time stamp when the input prefetch was initiated
+         real(8), public:: time_fetch_synced=-1d0   !time stamp when the input prefetch was synced (completed)
+         real(8), public:: time_dispatched=-1d0     !time stamp when the instruction was dispatched for execution
+         real(8), public:: time_completed=-1d0      !time stamp when the instruction execution completed
+         real(8), public:: time_upload_started=-1d0 !time stamp when the output upload was initiated
+         real(8), public:: time_upload_synced=-1d0  !time stamp when the output upload was synced (completed)
+         real(8), public:: time_retired=-1d0        !time stamp when the instruction was retired
+         contains
+          procedure, public:: clean=>InstrTimeClean !clears all time stamps
+        end type instr_time_t
  !Tensor resource (local resource):
         type, extends(ds_resrc_t), private:: tens_resrc_t
          type(C_PTR), private:: base_addr=C_NULL_PTR   !C pointer to a local buffer for tensor body storage
@@ -206,6 +220,7 @@
          integer(INTD), private:: num_out_oprnds=0                    !number of the output tensor instruction operands
          integer(INTD), private:: out_oprnds(0:MAX_TENSOR_OPERANDS-1) !positions of the tensor instruction operands which are considered output
          type(talsh_task_t), private:: talsh_task                     !TAL-SH task
+         type(instr_time_t), private:: timings                        !tensor instruction timings (time stamps)
          class(tens_instr_t), pointer, private:: parent_instr=>NULL() !pointer to the substituted parent tensor instruction (for local TENS_ACCUMULATE instructions only)
          integer(INTD), private:: num_accumulated=0                   !number of completed local TENS_ACCUMULATE instructions (for substituted tensor instructions only)
          contains
@@ -405,6 +420,8 @@
  !non-member test/debug:
         private test_carma
         public tavp_wrk_reset_output
+ !instr_time_t:
+        private InstrTimeClean
  !tens_resrc_t:
         private TensResrcIsEmpty
         private TensResrcAllocateBuffer
@@ -949,7 +966,17 @@
          CONS_OUT=devo
          return
         end subroutine tavp_wrk_reset_output
-!tens_resrc_t]==========================================
+![instr_time_t]=============================
+        subroutine InstrTimeClean(this,ierr)
+!Clears all time stamps.
+         implicit none
+         class(instr_time_t), intent(out):: this     !out: clean instruction time stamps
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         if(present(ierr)) ierr=0
+         return
+        end subroutine InstrTimeClean
+![tens_resrc_t]=========================================
         function TensResrcIsEmpty(this,ierr) result(ans)
 !Returns TRUE if the tensor resource is empty (unacquired).
          implicit none
@@ -3087,6 +3114,7 @@
            end select
 !Activate the instruction:
            if(errc.eq.0) then
+            call this%timings%clean()
             call this%reset_accumulations()
             ier=DSVP_SUCCESS; if(present(err_code)) ier=err_code
             if(present(stat)) then
@@ -4511,6 +4539,7 @@
          sts=this%get_status(errc)
          if((sts.eq.DS_INSTR_EMPTY.or.sts.eq.DS_INSTR_RETIRED).and.errc.eq.DSVP_SUCCESS) then
           this%parent_instr=>NULL(); this%num_accumulated=0
+          call this%timings%clean()
           call this%clean(errc)
           if(errc.ne.DSVP_SUCCESS) call quit(errc,'#FATAL(TAVP-WRK:tens_instr_dtor): Tensor instruction destruction failed!')
          else
@@ -4780,7 +4809,12 @@
 !Activate the instruction:
                  if(errc.eq.0) then
                   call ds_instr%activate(op_code,errc,stat,err_code,iid)
-                  if(errc.ne.DSVP_SUCCESS) then
+                  if(errc.eq.DSVP_SUCCESS) then
+                   select type(ds_instr)
+                   class is(tens_instr_t)
+                    ds_instr%timings%time_decoded=time_sys_sec()
+                   end select
+                  else
                    call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
                    errc=-9
                   endif
