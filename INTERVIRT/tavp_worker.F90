@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/24
+!REVISION: 2018/07/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -116,7 +116,8 @@
          real(8), public:: time_upload_synced=-1d0  !time stamp when the output upload was synced (completed)
          real(8), public:: time_retired=-1d0        !time stamp when the instruction was retired
          contains
-          procedure, public:: clean=>InstrTimeClean !clears all time stamps
+          procedure, public:: clean=>InstrTimeClean      !clears all time stamps
+          procedure, public:: print_it=>InstrTimePrintIt !prints the time stamps for the instruction pipeline stages relative to the instruction decode time stamp
         end type instr_time_t
  !Tensor resource (local resource):
         type, extends(ds_resrc_t), private:: tens_resrc_t
@@ -422,6 +423,7 @@
         public tavp_wrk_reset_output
  !instr_time_t:
         private InstrTimeClean
+        private InstrTimePrintIt
  !tens_resrc_t:
         private TensResrcIsEmpty
         private TensResrcAllocateBuffer
@@ -973,9 +975,53 @@
          class(instr_time_t), intent(out):: this     !out: clean instruction time stamps
          integer(INTD), intent(out), optional:: ierr !out: error code
 
+         !intent(out) will clean all components
          if(present(ierr)) ierr=0
          return
         end subroutine InstrTimeClean
+!----------------------------------------------------
+        subroutine InstrTimePrintIt(this,ierr,dev_id)
+!Prints the fine instruction time stamps relative to the instruction decode time stamp.
+         implicit none
+         class(instr_time_t), intent(in):: this       !in: instruction
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD), intent(in), optional:: dev_id !in: output device id
+         integer(INTD):: errc,devo
+
+         errc=0
+         devo=6; if(present(dev_id)) devo=dev_id
+         if(this%time_decoded.ge.0d0) then
+          write(devo,'("DC: ",F20.6)',ADVANCE='NO') this%time_decoded
+          if(this%time_resourced.ge.0d0) then
+           write(devo,'("; RS: ",F10.6)',ADVANCE='NO') this%time_resourced-this%time_decoded
+           if(this%time_fetch_started.ge.0d0) then
+            write(devo,'("; FS: ",F10.6)',ADVANCE='NO') this%time_fetch_started-this%time_decoded
+            if(this%time_fetch_synced.ge.0d0) then
+             write(devo,'("; FC: ",F10.6)',ADVANCE='NO') this%time_fetch_synced-this%time_decoded
+             if(this%time_dispatched.ge.0d0) then
+              write(devo,'("; ES: ",F10.6)',ADVANCE='NO') this%time_dispatched-this%time_decoded
+              if(this%time_completed.ge.0d0) then
+               write(devo,'("; EC: ",F10.6)',ADVANCE='NO') this%time_completed-this%time_decoded
+               if(this%time_upload_started.ge.0d0) then
+                write(devo,'("; US: ",F10.6)',ADVANCE='NO') this%time_upload_started-this%time_decoded
+                if(this%time_upload_synced.ge.0d0) then
+                 write(devo,'("; UC: ",F10.6)',ADVANCE='NO') this%time_upload_synced-this%time_decoded
+                 if(this%time_retired.ge.0d0) then
+                  write(devo,'("; RT: ",F10.6)',ADVANCE='NO') this%time_retired-this%time_decoded
+                 endif
+                endif
+               endif
+              endif
+             endif
+            endif
+           endif
+          endif
+         endif
+         write(devo,'()')
+         flush(devo)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine InstrTimePrintIt
 ![tens_resrc_t]=========================================
         function TensResrcIsEmpty(this,ierr) result(ans)
 !Returns TRUE if the tensor resource is empty (unacquired).
@@ -4326,6 +4372,8 @@
          else
           write(devo,'("Issue/completion time stamps (sec) = ",F20.6,1x,F20.6,": Unfinished")') start,finish
          endif
+         do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+         call this%timings%print_it(dev_id=devo) !fine timings
          n=this%get_num_operands(errc)
          if(errc.eq.DSVP_SUCCESS) then
           ctrl=>this%get_control()
@@ -5093,7 +5141,7 @@
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
- !Encode the retired tensor instructions into bytecode:
+ !Test full completion and encode the retired tensor instructions into bytecode:
           num_processed=0; pending=.FALSE.
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
           if(this%iqueue%get_status(ier).eq.GFC_IT_ACTIVE) then
@@ -5120,6 +5168,7 @@
               endif
              endif
              if(sts.eq.DS_INSTR_RETIRED) then
+              tens_instr%timings%time_retired=time_sys_sec()
               call this%bytecode%acquire_packet(instr_packet,ier,preclean=.TRUE.)
               if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
               call this%encode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-19; exit wloop; endif
@@ -5133,6 +5182,7 @@
              endif
             else !control/auxiliary instruction
              if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
+             tens_instr%timings%time_retired=time_sys_sec()
              num_processed=num_processed+1
             endif
             ier=this%iqueue%next()
@@ -5432,6 +5482,7 @@
              if(ier.eq.0) then !resources have been acquired: issue into the staged list
               call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-76; exit wloop; endif
+              instr%timings%time_resourced=time_sys_sec()
               if(DEBUG.gt.0) then
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources acquired for tensor instruction (deferred):")')
                call instr%print_it(dev_id=CONS_OUT)
@@ -5552,6 +5603,7 @@
                if(ier.eq.0) then !resources have been acquired: issue into the staged list
                 call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
                 if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-46; exit wloop; endif
+                instr%timings%time_resourced=time_sys_sec()
                 if(DEBUG.gt.0) then
                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources acquired for tensor instruction:")')
                  call instr%print_it(dev_id=CONS_OUT)
@@ -5586,6 +5638,7 @@
              auxiliary=.TRUE.
              call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif
+             instr%timings%time_resourced=time_sys_sec()
              ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
              num_staged=num_staged+1
             else
@@ -5596,6 +5649,7 @@
              auxiliary=.TRUE.
              call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-36; exit wloop; endif
+             instr%timings%time_resourced=time_sys_sec()
              ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-35; exit wloop; endif
              num_staged=num_staged+1
             else
@@ -5678,6 +5732,7 @@
              errc=-12; exit wloop
             endif
             if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then
+             instr%timings%time_retired=time_sys_sec()
              call instr%set_status(DS_INSTR_RETIRED,ier) !TENS_ACCUMULATE retires locally
             else
              call instr%set_status(DS_INSTR_RELEASED,ier)
@@ -6475,6 +6530,7 @@
             if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.opcode.ne.TAVP_INSTR_TENS_DESTROY.and.opcode.ne.TAVP_INSTR_TENS_ACCUMULATE) then
              call this%prefetch_input(tens_instr,ier)
              if(ier.eq.0) then
+              tens_instr%timings%time_fetch_started=time_sys_sec()
               if(DEBUG.gt.0) then
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Initiated input prefetch for tensor instruction:")')
                call tens_instr%print_it(dev_id=CONS_OUT)
@@ -6493,12 +6549,16 @@
             else
              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,errcode)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-41; exit wloop; endif
+             tens_instr%timings%time_fetch_started=time_sys_sec()
+             tens_instr%timings%time_fetch_synced=time_sys_sec()
              ier=this%fet_list%move_elem(this%dsp_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-40; exit wloop; endif
             endif
            else !aux/ctrl instruction (ready for dispatch)
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
             call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif
+            tens_instr%timings%time_fetch_started=time_sys_sec()
+            tens_instr%timings%time_fetch_synced=time_sys_sec()
             ier=this%fet_list%move_elem(this%dsp_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
            endif
           enddo
@@ -6527,6 +6587,7 @@
             if(tens_instr%get_num_out_operands().gt.0.and.opcode.ne.TAVP_INSTR_TENS_CREATE) then !TENS_CREATE does not require remote upload
              call this%upload_output(tens_instr,ier)
              if(ier.eq.0) then
+              tens_instr%timings%time_upload_started=time_sys_sec()
               if(DEBUG.gt.0) then
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Initiated output upload for tensor instruction:")')
                call tens_instr%print_it(dev_id=CONS_OUT)
@@ -6545,12 +6606,16 @@
             else
              call tens_instr%set_status(DS_INSTR_UPLOADED,ier,errcode)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
+             tens_instr%timings%time_upload_started=time_sys_sec()
+             tens_instr%timings%time_upload_synced=time_sys_sec()
              ier=this%upl_list%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
             endif
            else !aux/ctrl instruction
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) really_stopping=.TRUE. !STOP instruction is back from Dispatcher => no instruction will follow
             call tens_instr%set_status(DS_INSTR_UPLOADED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+            tens_instr%timings%time_upload_started=time_sys_sec()
+            tens_instr%timings%time_upload_synced=time_sys_sec()
             ier=this%upl_list%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
            endif
           enddo
@@ -6583,6 +6648,7 @@
              num_fetch=num_fetch-1
              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,errcode)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
+             tens_instr%timings%time_fetch_synced=time_sys_sec()
              ier=this%iqueue%move_elem(this%dsp_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
             else
              ier=this%iqueue%next()
@@ -6606,6 +6672,7 @@
              num_upload=num_upload-1
              call tens_instr%set_status(DS_INSTR_UPLOADED,ier,errcode)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
+             tens_instr%timings%time_upload_synced=time_sys_sec()
              ier=this%iqueue%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
             else
              ier=this%iqueue%next()
@@ -6981,6 +7048,7 @@
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
             call tens_instr%set_status(DS_INSTR_ISSUED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
+            tens_instr%timings%time_dispatched=time_sys_sec()
             select case(opcode)
             case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
              call this%issue_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-16; exit wloop; endif
@@ -6996,6 +7064,7 @@
             endif
             ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
            else !auxiliary or control instruction
+            tens_instr%timings%time_dispatched=time_sys_sec()
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
              stopping=.TRUE.
             elseif(opcode.eq.TAVP_INSTR_CTRL_DUMP_CACHE) then
@@ -7005,6 +7074,7 @@
             endif
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
+            tens_instr%timings%time_completed=time_sys_sec()
             ier=this%iqueue%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
            endif
           enddo
@@ -7029,6 +7099,7 @@
             num_outstanding=num_outstanding-1
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+            tens_instr%timings%time_completed=time_sys_sec()
             if(DEBUG.gt.0) then
              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Dispatcher): Completed tensor instruction:")')
              call tens_instr%print_it(dev_id=CONS_OUT)
