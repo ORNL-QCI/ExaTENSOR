@@ -1,4 +1,9 @@
-#TAVP Instruction Execution Analysis script
+#TAVP-WRK Instruction Execution Analysis script
+
+echo "TAVP-WRK Instruction Execution State:"
+
+echo "Decoded:"
+grep "(TAVP-WRK:Decoder): Decoded a new tensor instruction:" ./qforce.*.log | wc
 
 echo "Deferred due to data dependency:"
 grep "Tensor instruction deferred due to data dependency" ./qforce.*.log | wc

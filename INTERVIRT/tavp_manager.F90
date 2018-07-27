@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/24
+!REVISION: 2018/07/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2207,6 +2207,13 @@
               call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-25; exit wloop; endif
               sts=tens_instr%get_status(ier,j); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
+              if(DEBUG.gt.0) then
+               if(this%get_id().eq.0) then !uDecoder only
+                write(CONS_OUT,'("#DEBUG(TAVP-MNG:uDecoder): Decoded a new tensor instruction:")')
+                call tens_instr%print_it(dev_id=CONS_OUT)
+                flush(CONS_OUT)
+               endif
+              endif
   !Clone CONTROL instructions for own port (uDecoder only):
               if(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !copy control instructions to own port
                if(opcode.eq.TAVP_INSTR_CTRL_STOP.and.i.ne.num_packets.and.errc.eq.0) then; errc=-22; exit wloop; endif !STOP must be the last instruction in the packet
@@ -2669,6 +2676,11 @@
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,iec)
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
+           if(DEBUG.gt.0) then
+            write(CONS_OUT,'("#DEBUG(TAVP-MNG:Retirer): Retired instruction:")')
+            call tens_instr%print_it(dev_id=CONS_OUT)
+            flush(CONS_OUT)
+           endif
   !Encode a retired tensor instruction into bytecode:
            n=0 !number of tensor cache entries that may need eviction
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
@@ -2896,6 +2908,11 @@
             tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
             if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-73; exit wloop; endif
             opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-72; exit wloop; endif
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Locator): An instruction is received for operand location:")')
+             call tens_instr%print_it(dev_id=CONS_OUT)
+             flush(CONS_OUT)
+            endif
   !Move the instruction into an appropriate list (locating or control):
             if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
              if(stalled) exit mloop
@@ -3115,6 +3132,11 @@
             errc=-16; exit wloop
            endif
            if(.not.(inp_located.and.inp_valued)) then !input tensors must have been located and they must be defined
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Locator): An instruction is deferred (operands not ready):")')
+             call tens_instr%print_it(dev_id=CONS_OUT)
+             flush(CONS_OUT)
+            endif
             last=this%loc_list%on_last()
             ier=this%loc_list%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
             if(last) ier=this%loc_list%next() !to make iterator DONE
@@ -3362,6 +3384,11 @@
            sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-42; exit wloop; endif
            if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-41; exit wloop; endif !trap
            if(iec.eq.TAVP_ERR_TAG_ONE) then !special tag to distinguish previously decomposed child tensor subinstructions from new parent instructions
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer): A previously decomposed instruction is received back (bottom):")')
+             call tens_instr%print_it(dev_id=CONS_OUT)
+             flush(CONS_OUT)
+            endif
             call tens_instr%set_status(sts,ier,DSVP_SUCCESS) !remove the tag and reset the error code back to success
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-40; exit wloop; endif
             ier=this%iqueue%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif
@@ -3371,6 +3398,11 @@
    !Decompose the parent tensor instruction into child tensor instructions and append them into the subinstruction list:
             if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
              call this%decompose(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-37; exit wloop; endif
+             if(DEBUG.gt.0) then
+              write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer): A new instruction was decomposed:")')
+              call tens_instr%print_it(dev_id=CONS_OUT)
+              flush(CONS_OUT)
+             endif
    !Move processed parent instruction to the collecting list:
              ier=this%iqueue%move_elem(this%col_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-36; exit wloop; endif
              num_processed=num_processed+1
@@ -4226,7 +4258,11 @@
            call tens_instr%set_status(DS_INSTR_NEW,ier,iec) !reset the instruction status to NEW before dispatching to the lower level
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
-           !if(DEBUG.gt.0) then; call tens_instr%print_it(dev_id=CONS_OUT); flush(CONS_OUT); endif
+           if(DEBUG.gt.0) then
+            write(CONS_OUT,'("#DEBUG(TAVP-MNG:Dispatcher): A new instruction is dispatched:")')
+            call tens_instr%print_it(dev_id=CONS_OUT)
+            flush(CONS_OUT)
+           endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
   !Encode a tensor instruction and dispatch it to the appropriate channel:
             channel=this%map_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
@@ -4924,6 +4960,11 @@
            pid=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-54; exit wloop; endif
            sts=tens_instr%get_status(ier,cnt); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-53; exit wloop; endif
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-52; exit wloop; endif
+           if(DEBUG.gt.0) then
+            write(CONS_OUT,'("#DEBUG(TAVP-MNG:Collector): A parent instruction was received:")')
+            call tens_instr%print_it(dev_id=CONS_OUT)
+            flush(CONS_OUT)
+           endif
    !Register decomposable parent tensor instructions and move them into the matching list:
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
             if(stopping.and.errc.eq.0) then; errc=-51; exit wloop; endif !trap
@@ -4996,6 +5037,11 @@
            matched=this%match_subinstr(cid,ier,iec,list_pos) !list position is only set when the reference count is zero
            if(ier.ne.0.and.errc.eq.0) then; errc=-22; exit wloop; endif
            if(matched) then
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Collector): Matched a child instruction:")')
+             call tens_instr%print_it(dev_id=CONS_OUT)
+             flush(CONS_OUT)
+            endif
    !Move parent tensor instruction to the retired list when all child instructions have been matched:
             if(list_pos%is_set()) then !list position set: all child instructions have been matched
              ier=this%mat_list%jump(list_pos); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif

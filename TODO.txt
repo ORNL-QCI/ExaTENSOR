@@ -1,5 +1,6 @@
 2018-03-06: Check that MPI_Recv() receives the same message as MPI_Probe() discovers
-            in case they are coming from different sources.
+            in case they are coming from different sources. Make sure concurrent MPI_Iprobe()+MPI_Irecv()
+            is thread-safe, perhaps it is wise to enclose them in a CRITICAL region for safety.
 2018-03-07: Implement tensor R/W status update (in the cache) at the TAVP-MNG level:
             Dependency check and status update on instruction issue should be done during location cycle;
             Status update on instruction retirement will probably require another rotation cycle, or
