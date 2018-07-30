@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/24
+!REVISION: 2018/07/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -118,9 +118,9 @@
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Dump cache (debug):
-           ierr=exatns_dump_cache()
-           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
-           write(6,'("Tensor cache dumped")')
+           !ierr=exatns_dump_cache()
+           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
+           !write(6,'("Tensor cache dumped")')
  !Contract tensors:
            write(6,'("Contracting tensors ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
@@ -130,9 +130,9 @@
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Dump cache (debug):
-           ierr=exatns_dump_cache()
-           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
-           write(6,'("Tensor cache dumped")')
+           !ierr=exatns_dump_cache()
+           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
+           !write(6,'("Tensor cache dumped")')
  !Destroy tensors:
   !rtens:
            write(6,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)
@@ -159,9 +159,9 @@
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Dump cache (debug):
-           ierr=exatns_dump_cache()
-           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
-           write(6,'("Tensor cache dumped")')
+           !ierr=exatns_dump_cache()
+           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
+           !write(6,'("Tensor cache dumped")')
  !Stop ExaTENSOR runtime:
            ierr=exatns_stop()
           endif
