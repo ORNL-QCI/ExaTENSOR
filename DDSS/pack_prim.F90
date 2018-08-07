@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/25
+!REVISION: 2018/08/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1141,7 +1141,7 @@
          integer(INT_MPI), intent(in), optional:: comm      !in: MPI communicator (defaults to MPI_COMM_WORLD)
          integer(INTD):: errc
          integer(INTL):: cap
-         integer(INT_MPI):: rk,tg,cm,rh,ml,err_mpi
+         integer(INT_MPI):: rk,tg,cm,rh,ml,hl,err_mpi
 
          delivered=.FALSE.; cap=this%get_capacity(errc)
          if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
@@ -1156,13 +1156,13 @@
                  if(present(proc_rank)) then; rk=proc_rank; else; rk=MPI_ANY_SOURCE; endif
                  if(present(tag)) then; tg=tag; else; tg=MPI_ANY_TAG; endif
                  if(present(comm)) then; cm=comm; else; cm=MPI_COMM_WORLD; endif
-                 call MPI_Iprobe(rk,tg,cm,delivered,comm_handle%stat,err_mpi)
+                 call MPI_Improbe(rk,tg,cm,delivered,hl,comm_handle%stat,err_mpi)
                  if(err_mpi.eq.MPI_SUCCESS.and.delivered) then
                   call MPI_Get_Count(comm_handle%stat,MPI_CHARACTER,ml,err_mpi)
                   if(err_mpi.eq.MPI_SUCCESS) then
                    if(cap.lt.int(ml,INTL)) call this%resize(errc,buf_size=int(ml,INTL))
                    if(errc.eq.PACK_SUCCESS) then
-                    call receive_mpi_message(cm,rk,ml,this%buffer,tg,rh,errc)
+                    call receive_mpi_message(hl,ml,this%buffer,rh,errc)
                     if(errc.eq.PACK_SUCCESS) call comm_handle%construct(cm,rh,errc,this)
                    endif
                   else
@@ -1194,20 +1194,18 @@
 
          contains
 
-          subroutine receive_mpi_message(jc,jr,jl,buf,jt,jreq,jerr)
+          subroutine receive_mpi_message(jh,jl,buf,jreq,jerr)
            implicit none
-           integer(INT_MPI), intent(in):: jc           !MPI communicator
-           integer(INT_MPI), intent(in):: jr           !MPI rank
+           integer(INT_MPI), intent(in):: jh           !matched message handle
            integer(INT_MPI), intent(in):: jl           !length of the buffer
            character(C_CHAR), intent(inout):: buf(1:*) !buffer
-           integer(INT_MPI), intent(in):: jt           !MPI message tag
            integer(INT_MPI), intent(inout):: jreq      !MPI request handle
            integer(INTD), intent(out):: jerr           !error code
            integer(INT_MPI):: jer
 
            jerr=PACK_SUCCESS
            if(jl.ge.0) then
-            call MPI_Irecv(buf,jl,MPI_CHARACTER,jr,jt,jc,jreq,jer)
+            call MPI_Imrecv(buf,jl,MPI_CHARACTER,jh,jreq,jer)
             if(jer.ne.MPI_SUCCESS) jerr=PACK_MPI_ERR
            else
             jerr=PACK_OVERFLOW
