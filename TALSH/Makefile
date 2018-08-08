@@ -23,7 +23,7 @@ export EXA_OS ?= LINUX
 export WITH_CUTT ?= NO
 
 #GPU fine timing [YES|NO]:
-export GPU_FINE_TIMING ?= NO
+export GPU_FINE_TIMING ?= YES
 
 #WORKAROUNDS (ignore if you do not experience problems):
 #Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
