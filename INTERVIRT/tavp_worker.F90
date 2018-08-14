@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/27
+!REVISION: 2018/08/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -242,7 +242,7 @@
           procedure, public:: dependency_free=>TensInstrDependencyFree       !returns TRUE if the tensor instruction is data dependency free
           procedure, public:: is_substitutable=>TensInstrIsSubstitutable     !returns TRUE if the tensor instruction allows output substitution (rename)
           procedure, public:: output_substituted=>TensInstrOutputSubstituted !returns TRUE if the output tensor(s) is(are) substituted with a temporary one(s)
-          procedure, public:: set_talsh_tensors=>TensInstrSetTalshTensors    !sets up the missing TAL-SH tensors for all tensor operands
+          procedure, public:: set_talsh_tensors=>TensInstrSetTalshTensors    !sets up the missing TAL-SH tensors for all tensor operands to enable their numerical processing by TAL-SH
           procedure, public:: print_it=>TensInstrPrintIt                     !prints
           procedure, private:: extract_cache_entries=>TensInstrExtractCacheEntries !returns an array of references to tensor cache entries used by the tensor operands for subsequent eviction
           procedure, private:: set_parent_instr=>TensInstrSetParentInstr     !sets a pointer to the substituted parent tensor instruction (for local TENS_ACCUMULATE instructions only)
@@ -7006,11 +7006,11 @@
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-34
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
 !Initialize the issued instruction queue:
-         ier=this%iss_list%init(this%issued_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-33
+         ier=this%iss_list%init(this%issued_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-34
 !Initialize the completed instruction queue:
-         ier=this%cml_list%init(this%completed_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-32
+         ier=this%cml_list%init(this%completed_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-33
 !Initialize the numerical computing runtime (TAL-SH) and set up tensor argument cache:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -7018,20 +7018,20 @@
           if(ier.eq.TALSH_SUCCESS) then
            this%arg_cache=>tavp%tens_cache
           else
-           if(errc.eq.0) errc=-31
+           if(errc.eq.0) errc=-32
           endif
 !Sync with other TAVP units:
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-30
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-31
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-29
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-30
          endif
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active); num_outstanding=0
          wloop: do while(active)
  !Get new instructions from Communicator (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
           ier=this%flush_port(0,max_items=MAX_DISPATCHER_INTAKE,num_moved=n)
-          if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
+          if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher unit ",i2," received ",i6," instructions from Communicator")')&
            &impir,this%get_id(),n
@@ -7039,18 +7039,19 @@
            flush(CONS_OUT)
           endif
  !Issue instructions:
-          ier=this%iss_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
-          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
+          ier=this%iss_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
+          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
           do while(this%iqueue%get_status().eq.GFC_IT_ACTIVE)
-           if(stopping.and.errc.eq.0) then; errc=-23; exit wloop; endif !no instruction can follow STOP
-           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+           if(stopping.and.errc.eq.0) then; errc=-24; exit wloop; endif !no instruction can follow STOP
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-21; exit wloop; endif !trap
-           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
-           if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-19; exit wloop; endif !trap
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-22; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+           if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-20; exit wloop; endif !trap
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
+            call tens_instr%set_talsh_tensors(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-18; exit wloop; endif
             call tens_instr%set_status(DS_INSTR_ISSUED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
             tens_instr%timings%time_dispatched=time_sys_sec()
@@ -7513,11 +7514,12 @@
          if(errc.eq.DSVP_SUCCESS) then
           tmp=>tens_instr%get_operand(1,errc) !local temporary tensor
           if(errc.eq.DSVP_SUCCESS) then
- !Perform local accumulation:
+ !Test whether the corresponding persistent output tensor needs to be created:
            !`Check if tmp is #1 => Find its persistent tensor, then
            !if persistent tensor is not located, register it in the global space (like in TENS_CREATE), then
-           !export the DDSS descriptor to the accumulator tensor (so it can later be uploaded)
-           !`Accumulate the local tmp into the local acc tensor via TAL-SH (asynchronously), need to set up talsh_tens
+           !export the DDSS descriptor to the current accumulator tensor (so it can later be uploaded)
+ !Perform local accumulation:
+           !`Accumulate the local tmp into the local acc tensor via TAL-SH (asynchronously)
  !Mark the accumulator tensor as present (defined):
            select type(acc)
            class is(tens_oprnd_t)

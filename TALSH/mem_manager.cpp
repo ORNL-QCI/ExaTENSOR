@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2017/06/13
+REVISION: 2018/08/14
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1043,7 +1043,7 @@ int host_mem_free_pin(void *host_ptr){
 
 int host_mem_register(void *host_ptr, size_t tsize){
 #ifndef NO_GPU
- cudaError_t err = cudaHostRegister(host_ptr,tsize,cudaHostAllocPortable);
+ cudaError_t err = cudaHostRegister(host_ptr,tsize,cudaHostRegisterPortable);
  if(err != cudaSuccess){
   const char * err_msg = cudaGetErrorString(err);
   printf("\n#ERROR(TALSH:mem_manager:host_mem_register): %s",err_msg);
