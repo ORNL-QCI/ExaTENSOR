@@ -1,6 +1,3 @@
-2018-03-06: Check that MPI_Recv() receives the same message as MPI_Probe() discovers
-            in case they are coming from different sources. Make sure concurrent MPI_Iprobe()+MPI_Irecv()
-            is thread-safe, perhaps it is wise to enclose them in a CRITICAL region for safety.
 2018-03-07: Implement tensor R/W status update (in the cache) at the TAVP-MNG level:
             Dependency check and status update on instruction issue should be done during location cycle;
             Status update on instruction retirement will probably require another rotation cycle, or
@@ -15,7 +12,7 @@
             in multiple tensor operations as an input.
 2018-03-27: Subspace decomposition algorithm with alignment does not work properly: Example with alignment 5:
             [50] -> [[20]+[30]] -> [[[10]+[10]]+[[25]+[5]]]
-2018-04-05: Universal memory allocator returns an error code, but never TRY_LATER. The resource acquisition
+2018-04-05: Universal memory allocator may return an error code, but never TRY_LATER. The resource acquisition
             member procedure in tens_resrc_t should somehow separate cases of TRY_LATER:
             mem_allocate() -> tens_resrc_t.allocate_buffer() -> tens_oprnd_t.acquire_rsc() & tens_entry_wrk_t.acquire_resource() ->
             -> tavp_wrk_resourcer_t.acquire_resource().

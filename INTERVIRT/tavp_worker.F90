@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/14
+!REVISION: 2018/08/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -160,7 +160,7 @@
           procedure, public:: acquire_resource=>TensEntryWrkAcquireResource    !acquires resource for the tensor cache entry, if not already acquired
           procedure, public:: release_resource=>TensEntryWrkReleaseResource    !releases resource for the tensor cache entry
           procedure, public:: set_talsh_tensor=>TensEntryWrkSetTalshTensor     !sets up the TAL-SH tensor object
-          procedure, public:: get_talsh_tensor=>TensEntryWrkGetTalshTensor     !returns a pointer to the TAL-SH tensor
+          procedure, public:: get_talsh_tensor=>TensEntryWrkGetTalshTensor     !returns a pointer to the TAL-SH tensor object
           procedure, public:: release_talsh_tensor=>TensEntryWrkReleaseTalshTensor !releases the TAL-SH tensor object
           procedure, public:: print_it=>TensEntryWrkPrintIt                    !prints
           final:: tens_entry_wrk_dtor                                          !dtor
@@ -184,6 +184,7 @@
           procedure, public:: set_cache_entry=>TensOprndSetCacheEntry    !sets the associated tensor cache entry (may be NULL)
           procedure, public:: get_resource=>TensOprndGetResource         !returns a non-owning pointer to the tensor resource
           procedure, public:: set_resource=>TensOprndSetResource         !sets the resource component if it has not been set via the constructor
+          procedure, public:: get_talsh_tensor=>TensOprndGetTalshTensor  !returns a pointer to the TAL-SH tensor object
           procedure, public:: set_talsh_tensor=>TensOprndSetTalshTensor  !sets up the TAL-SH tensor object for further processing with TAL-SH
           procedure, public:: set_tensor_layout=>TensOprndSetTensorLayout!sets the tensor layout, if not already set
           procedure, public:: is_blocked=>TensOprndIsBlocked             !returns TRUE if the tensor operand is blocked, FALSE otherwise
@@ -461,6 +462,7 @@
         private TensOprndSetCacheEntry
         private TensOprndGetResource
         private TensOprndSetResource
+        private TensOprndGetTalshTensor
         private TensOprndSetTalshTensor
         private TensOprndSetTensorLayout
         private TensOprndIsBlocked
@@ -1920,6 +1922,21 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetResource
+!---------------------------------------------------------------------
+        function TensOprndGetTalshTensor(this,ierr) result(talsh_tens)
+!Returns a pointer to the TAL-SH tensor object.
+         implicit none
+         type(talsh_tens_t), pointer:: talsh_tens    !out: pointer to the TAL-SH tensor or NULL
+         class(tens_oprnd_t), intent(in):: this      !in: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; talsh_tens=>NULL()
+         if(associated(this%cache_entry)) talsh_tens=>this%cache_entry%get_talsh_tensor(errc)
+         if(.not.associated(talsh_tens)) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetTalshTensor
 !----------------------------------------------------
         subroutine TensOprndSetTalshTensor(this,ierr)
 !Sets up the TAL-SH tensor object for further processing with TAL-SH.
@@ -6394,8 +6411,8 @@
         end subroutine TAVPWRKResourcerAcquireResources
 !------------------------------------------------------------------------
         subroutine TAVPWRKResourcerReleaseResources(this,tens_instr,ierr)
-!Releases local resources occupied by the tensor instruction operands in case
-!they are no longer used, yet the operands still stay defined (but resourceless).
+!Releases local resources occupied by the tensor instruction and its operands in
+!case they are no longer used, yet the operands still stay defined (but resourceless).
          implicit none
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK Resourcer
          class(tens_instr_t), intent(inout):: tens_instr   !inout: active tensor instruction
@@ -6405,8 +6422,9 @@
          class(tens_rcrsv_t), pointer:: tensor
          character(TEREC_MAX_TENS_NAME_LEN+8):: tname
 
-         n=tens_instr%get_num_operands(errc)
-         if(errc.eq.DSVP_SUCCESS) then
+         errc=talsh_task_destruct(tens_instr%talsh_task); if(errc.ne.TALSH_SUCCESS) errc=-4
+         n=tens_instr%get_num_operands(ier)
+         if(ier.eq.DSVP_SUCCESS) then
           rloop: do while(n.gt.0)
            n=n-1; oprnd=>tens_instr%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
@@ -6421,14 +6439,12 @@
                flush(CONS_OUT)
               end select
              endif
-             errc=-4; exit rloop
+             errc=-3; exit rloop
             endif
            else
-            errc=-3; exit rloop
+            errc=-2; exit rloop
            endif
           enddo rloop
-          ier=talsh_task_destruct(tens_instr%talsh_task) !TAL-SH task has an implicit initialization (no explicit ctor)
-          if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-2
          else
           errc=-1
          endif
@@ -7330,7 +7346,7 @@
                       errc=-14
                      endif
                      if(errc.eq.0) then
-!Init the just created persistent tensor to zero: `Initialization to zero should be multithreaded
+!Init the just created persistent tensor to zero: `Initialization to zero should be multithreaded because of NUMA
                       if(TAVP_WRK_ZERO_ON_CREATE) then
                        select case(dtk)
                        case(R4)
@@ -7504,42 +7520,84 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
-         integer(INTD):: errc
+         integer(INTD):: errc,pl,i,n
+         integer(INTD), pointer:: prm(:)
+         integer(C_INT):: dig_ptrn(1:MAX_TENSOR_RANK),cpl
+         character(C_CHAR):: char_ptrn(256)
+         character(256):: str_ptrn
          class(ds_oprnd_t), pointer:: acc,tmp
-         class(tens_instr_t), pointer:: parent
+         class(tens_oprnd_t), pointer:: op0,op1
+         type(talsh_tens_t), pointer:: tens0,tens1
+         class(ds_instr_ctrl_t), pointer:: ctrl
+         class(ctrl_tens_add_t), pointer:: ctrl_add
          class(tens_cache_entry_t), pointer:: cache_entry
-         class(DataDescr_t), pointer:: descr
+         class(tens_instr_t), pointer:: parent
+         type(permutation_t), pointer:: permut
 !$OMP FLUSH
+         errc=0
          acc=>tens_instr%get_operand(0,errc) !local accumulator tensor
-         if(errc.eq.DSVP_SUCCESS) then
+         op0=>NULL(); select type(acc); class is(tens_oprnd_t); op0=>acc; end select
+         if(errc.eq.DSVP_SUCCESS.and.associated(op0)) then
           tmp=>tens_instr%get_operand(1,errc) !local temporary tensor
-          if(errc.eq.DSVP_SUCCESS) then
- !Test whether the corresponding persistent output tensor needs to be created:
-           !`Check if tmp is #1 => Find its persistent tensor, then
-           !if persistent tensor is not located, register it in the global space (like in TENS_CREATE), then
-           !export the DDSS descriptor to the current accumulator tensor (so it can later be uploaded)
- !Perform local accumulation:
-           !`Accumulate the local tmp into the local acc tensor via TAL-SH (asynchronously)
- !Mark the accumulator tensor as present (defined):
-           select type(acc)
-           class is(tens_oprnd_t)
-            call acc%lock()
-            cache_entry=>acc%get_cache_entry(errc)
-            if(errc.eq.0) then
-             call cache_entry%set_up_to_date(.TRUE.)
-            else
-             errc=-5
-            endif
-            call acc%unlock()
-           end select
- !Increment the number of completed local accumulations for the parent tensor instruction (with a time stamp):
+          op1=>NULL(); select type(tmp); class is(tens_oprnd_t); op1=>tmp; end select
+          if(errc.eq.DSVP_SUCCESS.and.associated(op1)) then
+ !Perform local accumulation (asynchronously):
+           tens0=>op0%get_talsh_tensor(errc)
            if(errc.eq.0) then
-            parent=>tens_instr%get_parent_instr(errc)
-            if(errc.eq.0.and.associated(parent)) then
-             call parent%set_completion_time(time_sys_sec()) !accumulation completion time stamp
-             call parent%mark_accumulated(errc); if(errc.ne.0) errc=-4 !increment the local accumulation count for the substituted parent tensor instruction
+            tens1=>op1%get_talsh_tensor(errc)
+            if(errc.eq.0) then
+             ctrl=>tens_instr%get_control(errc)
+             ctrl_add=>NULL(); select type(ctrl); class is(ctrl_tens_add_t); ctrl_add=>ctrl; end select
+             if(errc.eq.DSVP_SUCCESS.and.associated(ctrl_add)) then
+              permut=>ctrl_add%get_permutation(errc)
+              if(errc.eq.0.and.associated(permut)) then
+               pl=permut%get_length()
+               if(pl.gt.0) then
+                prm(1:)=>permut%get_access(pl,errc,with_sign=.FALSE.)
+                if(errc.eq.TEREC_SUCCESS) dig_ptrn(1:pl)=prm(1:pl)
+               endif
+               if(errc.eq.0) then
+                call get_contr_pattern_sym(pl,0,dig_ptrn,char_ptrn,cpl,errc)
+                if(errc.eq.0.and.cpl.gt.0) then
+                 do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
+                 i=index(str_ptrn(1:cpl),'*R()'); if(i.gt.0) cpl=i-1
+                 if(cpl.gt.0) then
+                  errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,talsh_task=tens_instr%talsh_task)
+                  if(errc.ne.TALSH_SUCCESS) errc=-12
+                 else
+                  errc=-11
+                 endif
+                else
+                 errc=-10
+                endif
+               endif
+              else
+               errc=-9
+              endif
+             else
+              errc=-8
+             endif
             else
-             errc=-3
+             errc=-7
+            endif
+           else
+            errc=-6
+           endif
+ !Mark the accumulator tensor as present (defined):
+           if(errc.eq.0) then
+            call op0%lock()
+            cache_entry=>op0%get_cache_entry(errc)
+            if(errc.eq.0) then; call cache_entry%set_up_to_date(.TRUE.); else; errc=-5; endif
+            call op0%unlock()
+ !Increment the number of completed local accumulations for the parent tensor instruction (with a time stamp):
+            if(errc.eq.0) then
+             parent=>tens_instr%get_parent_instr(errc)
+             if(errc.eq.0.and.associated(parent)) then
+              call parent%set_completion_time(time_sys_sec()) !accumulation completion time stamp
+              call parent%mark_accumulated(errc); if(errc.ne.0) errc=-4 !increment the local accumulation count for the substituted parent tensor instruction
+             else
+              errc=-3
+             endif
             endif
            endif
           else
