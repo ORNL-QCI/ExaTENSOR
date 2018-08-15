@@ -1,7 +1,7 @@
 NAME = ExaTensor
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
-#Cray cross-compiling wrappers: [WRAP|NOWRAP]:
+#Cray cross-compiling wrappers (only for Cray): [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
@@ -46,16 +46,17 @@ export PATH_BLAS_MKL ?= /opt/intel/mkl/lib/intel64
 export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64_lin
 #  ACML BLAS:
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
-#  ESSL BLAS (also set PATH_IBM_XL_FORT below):
-export PATH_BLAS_ESSL ?= /sw/summit/essl/6.1.0-20180406/essl/6.1/lib64
+#  ESSL BLAS (also set PATH_IBM_XL_CPP, PATH_IBM_XL_FOR, PATH_IBM_XL_SMP below):
+export PATH_BLAS_ESSL ?= /sw/summit/essl/6.1.0-1/essl/6.1/lib64
 
 #IBM XL (only set these if you use IBM XL and/or ESSL):
-export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-beta1/xlC/16.1.1/lib
-export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-beta1/xlf/16.1.1/lib
+export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-beta4/xlC/16.1.1/lib
+export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-beta4/xlf/16.1.1/lib
+export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-beta4/xlsmp/5.1.1/lib
 
-# CUDA (only if you build with CUDA):
+#CUDA (only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
-#  Only reset these if CUDA files are spread in the system directories:
+# Only reset these if CUDA files are spread in the system directories:
  export PATH_CUDA_INC ?= $(PATH_CUDA)/include
  export PATH_CUDA_LIB ?= $(PATH_CUDA)/lib64
  export PATH_CUDA_BIN ?= $(PATH_CUDA)/bin
@@ -63,6 +64,7 @@ export PATH_CUDA ?= /usr/local/cuda
 export PATH_CUTT ?= /home/dima/src/cutt
 
 #YOU ARE DONE! MAKE IT!
+
 
 $(NAME):
 	$(MAKE) -C ./UTILITY

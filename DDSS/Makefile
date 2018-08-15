@@ -1,7 +1,7 @@
 NAME = ddss
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
-#Cross-compiling wrappers: [WRAP|NOWRAP]:
+#Cross-compiling wrappers (only for Cray): [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
@@ -35,6 +35,11 @@ export PATH_OPENMPI ?= /usr/local/mpi/openmpi/2.0.1
  export PATH_OPENMPI_INC ?= $(PATH_OPENMPI)/include
  export PATH_OPENMPI_LIB ?= $(PATH_OPENMPI)/lib
  export PATH_OPENMPI_BIN ?= $(PATH_OPENMPI)/bin
+
+#IBM XL (only set these if you use IBM XL):
+export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-beta4/xlC/16.1.1/lib
+export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-beta4/xlf/16.1.1/lib
+export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-beta4/xlsmp/5.1.1/lib
 
 # CUDA (only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
