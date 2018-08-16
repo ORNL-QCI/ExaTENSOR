@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/24
+!REVISION: 2018/08/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -453,8 +453,12 @@
           generic, public:: assignment(=)=>TensAdditionAssign
           procedure, public:: is_set=>TensAdditionIsSet                    !returns TRUE if the tensor addition is fully set
           procedure, public:: args_full=>TensAdditionArgsFull              !returns TRUE if all tensor addition arguments have been set
-          procedure, public:: set_add_ptrn=>TensAdditionSetAddPtrn         !sets the tensor addition pattern (all tensor arguments must have been set already)
-          procedure, public:: get_add_ptrn=>TensAdditionGetAddPtrn         !returns the tensor addition pattern (dimension permutation)
+          procedure, private:: TensAdditionSetAddPtrnBas                   !sets the tensor addition pattern (all tensor arguments must have been set already)
+          procedure, private:: TensAdditionSetAddPtrnPrm                   !sets the tensor addition pattern (all tensor arguments must have been set already)
+          procedure, public:: set_add_ptrn=>TensAdditionSetAddPtrnBas,TensAdditionSetAddPtrnPrm
+          procedure, private:: TensAdditionGetAddPtrnBas                   !returns the tensor addition pattern (dimension permutation)
+          procedure, private:: TensAdditionGetAddPtrnPrm                   !returns the tensor addition pattern (dimension permutation)
+          procedure, public:: get_add_ptrn=>TensAdditionGetAddPtrnBas,TensAdditionGetAddPtrnPrm
           procedure, public:: unpack=>TensAdditionUnpack                   !unpacks the object from a packet
           procedure, public:: pack=>TensAdditionPack                       !packs the object into a packet
           final:: tens_addition_dtor                                       !dtor
@@ -804,8 +808,10 @@
         private TensAdditionAssign
         private TensAdditionIsSet
         private TensAdditionArgsFull
-        private TensAdditionSetAddPtrn
-        private TensAdditionGetAddPtrn
+        private TensAdditionSetAddPtrnBas
+        private TensAdditionSetAddPtrnPrm
+        private TensAdditionGetAddPtrnBas
+        private TensAdditionGetAddPtrnPrm
         private TensAdditionUnpack
         private TensAdditionPack
         public tens_addition_dtor
@@ -7303,8 +7309,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TensAdditionArgsFull
-!-----------------------------------------------------------------------------
-        subroutine TensAdditionSetAddPtrn(this,permutation,ierr,alpha,defined)
+!--------------------------------------------------------------------------------
+        subroutine TensAdditionSetAddPtrnBas(this,permutation,ierr,alpha,defined)
 !Sets the tensor addition pattern (all tensor arguments must have already been set):
 ! a) Tensor copy/slice/insertion: <defined>=FALSE;
 ! b) Tensor addition/additive_slice/additive_insertion: <defined>=TRUE;
@@ -7327,9 +7333,9 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensAdditionSetAddPtrn
-!---------------------------------------------------------------------------------
-        subroutine TensAdditionGetAddPtrn(this,defined,prefactor,permutation,ierr)
+        end subroutine TensAdditionSetAddPtrnBas
+!------------------------------------------------------------------------------------
+        subroutine TensAdditionGetAddPtrnBas(this,defined,prefactor,permutation,ierr)
 !Returns the tensor addition pattern specs.
          implicit none
          class(tens_addition_t), intent(in):: this                !in: tensor addition/copy/slice/insert
@@ -7355,7 +7361,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensAdditionGetAddPtrn
+        end subroutine TensAdditionGetAddPtrnBas
 !------------------------------------------------------
         subroutine TensAdditionUnpack(this,packet,ierr)
 !Unpacks a tensor addition object from a packet.

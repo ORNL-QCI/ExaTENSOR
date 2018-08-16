@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/15
+!REVISION: 2018/08/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3269,9 +3269,14 @@
           !ACCUMULATE a tensor into another tensor:
           !op_spec={tens_addition_t}
           integer(INTD), intent(out):: jerr
+          integer(INTD), allocatable:: prm(:)
           integer(INTD):: jj
+          logical:: defnd
+          complex(8):: pref
           class(ds_oprnd_t), pointer:: oprnd
+          class(ds_instr_ctrl_t), pointer:: instr_ctrl
           class(tens_addition_t), pointer:: tens_add
+          class(ctrl_tens_add_t), pointer:: tens_add_ctrl
           class(tens_rcrsv_t), pointer:: tensor
           class(tens_oprnd_t), pointer:: tens_oprnd
 
@@ -3279,16 +3284,30 @@
           select type(op_spec); class is(tens_addition_t); tens_add=>op_spec; end select
           if(associated(tens_add)) then
            if(tens_add%is_set()) then
-            call this%alloc_operands(2,jerr)
-            if(jerr.eq.DSVP_SUCCESS) then
-             do jj=0,1
-              tensor=>tens_add%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
-              allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
-              call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
-              oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
-              oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
-             enddo
-             this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+            call tens_add%get_add_ptrn(defnd,pref,prm,jerr)
+            if(jerr.eq.TEREC_SUCCESS) then
+             allocate(tens_add_ctrl,STAT=jerr)
+             if(jerr.eq.0) then
+              call tens_add_ctrl%ctrl_tens_add_ctor()
+
+              call this%alloc_operands(2,jerr)
+              if(jerr.eq.DSVP_SUCCESS) then
+               do jj=0,1
+                tensor=>tens_add%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
+                call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
+                oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
+                oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
+               enddo
+               this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+              else
+               jerr=-4
+              endif
+
+             
+             else
+              jerr=-4
+             endif
             else
              jerr=-3
             endif
@@ -7212,9 +7231,10 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: defined tensor instruction ready to be issued
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id to issue the tensor instruction to
-         integer(INTD):: errc,opcode
+         integer(INTD):: errc,ier,opcode
          procedure(tavp_wrk_dispatch_proc_i), pointer:: iproc
 
+         errc=0; ier=0
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            opcode=tens_instr%get_code(errc)
@@ -7222,11 +7242,11 @@
             iproc=>this%microcode(opcode)%instr_proc
             if(associated(iproc)) then
              if(present(dev_id)) then
-              call iproc(this,tens_instr,errc,dev_id)
+              call iproc(this,tens_instr,ier,dev_id)
              else
-              call iproc(this,tens_instr,errc)
+              call iproc(this,tens_instr,ier)
              endif
-             if(errc.ne.0) errc=-5
+             if(ier.ne.0) errc=-5
             else
              errc=-4
             endif
@@ -7238,6 +7258,11 @@
           endif
          else
           errc=-1
+         endif
+         if(errc.ne.0.and.VERBOSE) then
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:Dispatcher.issue_instr): Failed to issue opcode ",i4,": Error ",i2,1x,i11)')&
+          &opcode,errc,ier
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -7520,7 +7545,7 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
-         integer(INTD):: errc,pl,i,n
+         integer(INTD):: errc,pl,i,n,dev
          integer(INTD), pointer:: prm(:)
          integer(C_INT):: dig_ptrn(1:MAX_TENSOR_RANK),cpl
          character(C_CHAR):: char_ptrn(256)
@@ -7535,6 +7560,7 @@
          type(permutation_t), pointer:: permut
 !$OMP FLUSH
          errc=0
+         dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
          acc=>tens_instr%get_operand(0,errc) !local accumulator tensor
          op0=>NULL(); select type(acc); class is(tens_oprnd_t); op0=>acc; end select
          if(errc.eq.DSVP_SUCCESS.and.associated(op0)) then
@@ -7562,7 +7588,7 @@
                  do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
                  i=index(str_ptrn(1:cpl),'*R()'); if(i.gt.0) cpl=i-1
                  if(cpl.gt.0) then
-                  errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,talsh_task=tens_instr%talsh_task)
+                  errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,talsh_task=tens_instr%talsh_task)
                   if(errc.ne.TALSH_SUCCESS) errc=-12
                  else
                   errc=-11
@@ -7583,21 +7609,14 @@
            else
             errc=-6
            endif
- !Mark the accumulator tensor as present (defined):
            if(errc.eq.0) then
-            call op0%lock()
-            cache_entry=>op0%get_cache_entry(errc)
-            if(errc.eq.0) then; call cache_entry%set_up_to_date(.TRUE.); else; errc=-5; endif
-            call op0%unlock()
- !Increment the number of completed local accumulations for the parent tensor instruction (with a time stamp):
-            if(errc.eq.0) then
-             parent=>tens_instr%get_parent_instr(errc)
-             if(errc.eq.0.and.associated(parent)) then
-              call parent%set_completion_time(time_sys_sec()) !accumulation completion time stamp
-              call parent%mark_accumulated(errc); if(errc.ne.0) errc=-4 !increment the local accumulation count for the substituted parent tensor instruction
-             else
-              errc=-3
-             endif
+ !Increment the number of completed local accumulations for the parent tensor instruction (with a time stamp): `This should be done upon completion in Dispatcher
+            parent=>tens_instr%get_parent_instr(errc)
+            if(errc.eq.0.and.associated(parent)) then
+             call parent%set_completion_time(time_sys_sec()) !accumulation completion time stamp
+             call parent%mark_accumulated(errc); if(errc.ne.0) errc=-4 !increment the local accumulation count for the substituted parent tensor instruction
+            else
+             errc=-3
             endif
            endif
           else
