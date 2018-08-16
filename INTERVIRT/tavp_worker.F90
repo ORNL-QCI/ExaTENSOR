@@ -992,6 +992,7 @@
 
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
+         write(devo,'("Timings: ")',ADVANCE='NO')
          if(this%time_decoded.ge.0d0) then
           write(devo,'("DC: ",F20.6)',ADVANCE='NO') this%time_decoded
           if(this%time_resourced.ge.0d0) then
@@ -3237,9 +3238,9 @@
                call this%set_operand(0,oprnd,jerr)
                if(jerr.eq.DSVP_SUCCESS) then
                 if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
-                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand 0 is output
                 elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
-                 this%num_out_oprnds=0
+                 this%num_out_oprnds=0 !no output operands
                 endif
                else
                 jerr=-6
@@ -3269,10 +3270,10 @@
           !ACCUMULATE a tensor into another tensor:
           !op_spec={tens_addition_t}
           integer(INTD), intent(out):: jerr
-          integer(INTD), allocatable:: prm(:)
           integer(INTD):: jj
           logical:: defnd
           complex(8):: pref
+          type(permutation_t):: permut
           class(ds_oprnd_t), pointer:: oprnd
           class(ds_instr_ctrl_t), pointer:: instr_ctrl
           class(tens_addition_t), pointer:: tens_add
@@ -3284,27 +3285,37 @@
           select type(op_spec); class is(tens_addition_t); tens_add=>op_spec; end select
           if(associated(tens_add)) then
            if(tens_add%is_set()) then
-            call tens_add%get_add_ptrn(defnd,pref,prm,jerr)
+            call tens_add%get_add_ptrn(defnd,pref,permut,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
              allocate(tens_add_ctrl,STAT=jerr)
              if(jerr.eq.0) then
-              call tens_add_ctrl%ctrl_tens_add_ctor()
-
-              call this%alloc_operands(2,jerr)
-              if(jerr.eq.DSVP_SUCCESS) then
-               do jj=0,1
-                tensor=>tens_add%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
-                allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
-                call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
-                oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
-                oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
-               enddo
-               this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+              call tens_add_ctrl%ctrl_tens_add_ctor(permut,jerr,pref) !addition pattern is cloned by value
+              if(jerr.eq.0) then
+               instr_ctrl=>tens_add_ctrl
+               call this%set_control(instr_ctrl,jerr) !ownership transfer for instr_ctrl=tens_add_ctrl
+               if(jerr.eq.DSVP_SUCCESS) then
+                call this%alloc_operands(2,jerr)
+                if(jerr.eq.DSVP_SUCCESS) then
+                 do jj=0,1
+                  tensor=>tens_add%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                  allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
+                  call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
+                  oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
+                  oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
+                 enddo
+                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand 0 is output
+                else
+                 jerr=-7
+                endif
+               else
+                jerr=-6
+               endif
+               instr_ctrl=>NULL()
+               tens_add_ctrl=>NULL() !<tens_add_ctrl> pointer was saved in the tensor instruction and will later be deallocated
               else
-               jerr=-4
+               deallocate(tens_add_ctrl)
+               jerr=-5
               endif
-
-             
              else
               jerr=-4
              endif
@@ -3356,7 +3367,7 @@
                   oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
                   oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
                  enddo
-                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand 0 is output
                 else
                  jerr=-7
                 endif
@@ -3364,10 +3375,11 @@
                 jerr=-6
                endif
                instr_ctrl=>NULL()
+               tens_contr_ctrl=>NULL() !<tens_contr_ctrl> pointer was saved in the tensor instruction and will later be deallocated
               else
+               deallocate(tens_contr_ctrl)
                jerr=-5
               endif
-              tens_contr_ctrl=>NULL() !<tens_contr_ctrl> pointer was saved in the tensor instruction and will later be deallocated
              else
               jerr=-4
              endif
@@ -7577,6 +7589,7 @@
              if(errc.eq.DSVP_SUCCESS.and.associated(ctrl_add)) then
               permut=>ctrl_add%get_permutation(errc)
               if(errc.eq.0.and.associated(permut)) then
+               call permut%print_it(dev_id=6); flush(6) !debug
                pl=permut%get_length()
                if(pl.gt.0) then
                 prm(1:)=>permut%get_access(pl,errc,with_sign=.FALSE.)
@@ -7586,28 +7599,30 @@
                 call get_contr_pattern_sym(pl,0,dig_ptrn,char_ptrn,cpl,errc)
                 if(errc.eq.0.and.cpl.gt.0) then
                  do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
+                 write(6,*) '#ZHUK: ',dig_ptrn(1:pl),str_ptrn(1:cpl); flush(6) !debug
                  i=index(str_ptrn(1:cpl),'*R()'); if(i.gt.0) cpl=i-1
                  if(cpl.gt.0) then
                   errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,talsh_task=tens_instr%talsh_task)
-                  if(errc.ne.TALSH_SUCCESS) errc=-12
+                  write(6,*) '#ZHUK: ',errc,str_ptrn(1:cpl); flush(6) !debug
+                  if(errc.ne.TALSH_SUCCESS) errc=-9
                  else
-                  errc=-11
+                  errc=-8
                  endif
                 else
-                 errc=-10
+                 errc=-7
                 endif
                endif
               else
-               errc=-9
+               errc=-6
               endif
              else
-              errc=-8
+              errc=-5
              endif
             else
-             errc=-7
+             errc=-4
             endif
            else
-            errc=-6
+            errc=-3
            endif
            if(errc.eq.0) then
  !Increment the number of completed local accumulations for the parent tensor instruction (with a time stamp): `This should be done upon completion in Dispatcher

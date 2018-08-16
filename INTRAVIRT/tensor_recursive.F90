@@ -455,10 +455,10 @@
           procedure, public:: args_full=>TensAdditionArgsFull              !returns TRUE if all tensor addition arguments have been set
           procedure, private:: TensAdditionSetAddPtrnBas                   !sets the tensor addition pattern (all tensor arguments must have been set already)
           procedure, private:: TensAdditionSetAddPtrnPrm                   !sets the tensor addition pattern (all tensor arguments must have been set already)
-          procedure, public:: set_add_ptrn=>TensAdditionSetAddPtrnBas,TensAdditionSetAddPtrnPrm
+          generic, public:: set_add_ptrn=>TensAdditionSetAddPtrnBas,TensAdditionSetAddPtrnPrm
           procedure, private:: TensAdditionGetAddPtrnBas                   !returns the tensor addition pattern (dimension permutation)
           procedure, private:: TensAdditionGetAddPtrnPrm                   !returns the tensor addition pattern (dimension permutation)
-          procedure, public:: get_add_ptrn=>TensAdditionGetAddPtrnBas,TensAdditionGetAddPtrnPrm
+          generic, public:: get_add_ptrn=>TensAdditionGetAddPtrnBas,TensAdditionGetAddPtrnPrm
           procedure, public:: unpack=>TensAdditionUnpack                   !unpacks the object from a packet
           procedure, public:: pack=>TensAdditionPack                       !packs the object into a packet
           final:: tens_addition_dtor                                       !dtor
@@ -6450,7 +6450,8 @@
          nsp=0; if(present(nspaces)) nsp=nspaces
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("(",i2,"){")',ADVANCE='NO') this%prm(0) !sign
-         write(devo,'(99(i2,","))') this%prm(1:this%length) !permutation
+         if(this%length.gt.0) write(devo,'(i2)',ADVANCE='NO') this%prm(1)
+         if(this%length.gt.1) write(devo,'(99(",",i2))',ADVANCE='NO') this%prm(2:this%length)
          write(devo,'("}")')
          flush(devo)
          if(present(ierr)) ierr=errc
@@ -7309,8 +7310,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TensAdditionArgsFull
-!--------------------------------------------------------------------------------
-        subroutine TensAdditionSetAddPtrnBas(this,permutation,ierr,alpha,defined)
+!------------------------------------------------------------------------------------
+        subroutine TensAdditionSetAddPtrnBas(this,permutation,ierr,prefactor,defined)
 !Sets the tensor addition pattern (all tensor arguments must have already been set):
 ! a) Tensor copy/slice/insertion: <defined>=FALSE;
 ! b) Tensor addition/additive_slice/additive_insertion: <defined>=TRUE;
@@ -7318,14 +7319,14 @@
          class(tens_addition_t), intent(inout):: this !inout: tensor addition/copy/slice/insert
          integer(INTD), intent(in):: permutation(1:)  !in: digital permutation (no sign)
          integer(INTD), intent(out), optional:: ierr  !out: error code
-         complex(8), intent(in), optional:: alpha     !in: numerical prefactor
+         complex(8), intent(in), optional:: prefactor !in: numerical prefactor
          logical, intent(in), optional:: defined      !in: if TRUE, the destination tensor is assumed defined, otherwise undefined (default)
          integer(INTD):: errc
 
          if(this%args_full(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
            call this%permut%reset(permutation(1:),errc)
-           this%alpha=(1d0,0d0); if(present(alpha)) this%alpha=alpha
+           this%alpha=(1d0,0d0); if(present(prefactor)) this%alpha=prefactor
            this%undefined=.TRUE.; if(present(defined)) this%undefined=(.not.defined)
           endif
          else
@@ -7334,6 +7335,31 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensAdditionSetAddPtrnBas
+!------------------------------------------------------------------------------------
+        subroutine TensAdditionSetAddPtrnPrm(this,permutation,ierr,prefactor,defined)
+!Sets the tensor addition pattern (all tensor arguments must have already been set):
+! a) Tensor copy/slice/insertion: <defined>=FALSE;
+! b) Tensor addition/additive_slice/additive_insertion: <defined>=TRUE;
+         implicit none
+         class(tens_addition_t), intent(inout):: this  !inout: tensor addition/copy/slice/insert
+         type(permutation_t), intent(in):: permutation !in: permutation
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         complex(8), intent(in), optional:: prefactor  !in: numerical prefactor
+         logical, intent(in), optional:: defined       !in: if TRUE, the destination tensor is assumed defined, otherwise undefined (default)
+         integer(INTD):: errc
+
+         if(this%args_full(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           this%permut=permutation
+           this%alpha=(1d0,0d0); if(present(prefactor)) this%alpha=prefactor
+           this%undefined=.TRUE.; if(present(defined)) this%undefined=(.not.defined)
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensAdditionSetAddPtrnPrm
 !------------------------------------------------------------------------------------
         subroutine TensAdditionGetAddPtrnBas(this,defined,prefactor,permutation,ierr)
 !Returns the tensor addition pattern specs.
@@ -7362,6 +7388,29 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensAdditionGetAddPtrnBas
+!------------------------------------------------------------------------------------
+        subroutine TensAdditionGetAddPtrnPrm(this,defined,prefactor,permutation,ierr)
+!Returns the tensor addition pattern specs.
+         implicit none
+         class(tens_addition_t), intent(in):: this      !in: tensor addition/copy/slice/insert
+         logical, intent(out):: defined                 !out: TRUE if the destination tensor is assumed defined, FALSE otherwise
+         complex(8), intent(out):: prefactor            !out: numerical prefactor
+         type(permutation_t), intent(out):: permutation !out: pointer to the permutation
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           permutation=this%permut
+           prefactor=this%alpha
+           defined=(.not.this%undefined)
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensAdditionGetAddPtrnPrm
 !------------------------------------------------------
         subroutine TensAdditionUnpack(this,packet,ierr)
 !Unpacks a tensor addition object from a packet.
