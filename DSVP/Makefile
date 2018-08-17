@@ -68,7 +68,7 @@ export PATH_CUTT ?= /home/div/src/cutt
 
 #=======================
 ifeq ($(BUILD_TYPE),PRF)
- COMP_PREF = scorep
+ COMP_PREF = scorep --thread=omp --cuda
 else
  COMP_PREF =
 endif

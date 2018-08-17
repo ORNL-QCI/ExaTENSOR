@@ -33,7 +33,7 @@ export PATH_OPENMPI ?= /usr/local/mpi/openmpi/2.0.1
 
 #=======================
 ifeq ($(BUILD_TYPE),PRF)
- COMP_PREF = scorep
+ COMP_PREF = scorep --thread=omp --cuda
 else
  COMP_PREF =
 endif

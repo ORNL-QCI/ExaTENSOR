@@ -47,7 +47,7 @@ export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
 
 #=======================
 ifeq ($(BUILD_TYPE),PRF)
- COMP_PREF = scorep
+ COMP_PREF = scorep --thread=omp --cuda
 else
  COMP_PREF =
 endif
