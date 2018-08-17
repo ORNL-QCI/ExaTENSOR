@@ -231,16 +231,24 @@ NO_AMD = -DNO_AMD
 NO_PHI = -DNO_PHI
 
 #C FLAGS:
-ifeq ($(TOOLKIT),PGI)
-CFLAGS_DEV = -c -g -O0 -D_DEBUG -silent -w
-CFLAGS_OPT = -c -O3 -silent -w -Mnovect
-CFLAGS_PRF = -c -g -O3 -silent -w -Mnovect
-else
-CFLAGS_DEV = -c -g -O0 -D_DEBUG
-CFLAGS_OPT = -c -O3
-CFLAGS_PRF = -c -g -O3
-endif
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) $(PIC_FLAG)
+CFLAGS_INTEL_DEV = -c -g -O0 -qopenmp -D_DEBUG
+CFLAGS_INTEL_OPT = -c -O3 -qopenmp
+CFLAGS_INTEL_PRF = -c -g -O3 -qopenmp
+CFLAGS_CRAY_DEV = -c -g -O0 -D_DEBUG
+CFLAGS_CRAY_OPT = -c -O3
+CFLAGS_CRAY_PRF = -c -g -O3
+CFLAGS_GNU_DEV = -c -g -O0 -fopenmp -D_DEBUG
+CFLAGS_GNU_OPT = -c -O3 -fopenmp
+CFLAGS_GNU_PRF = -c -g -O3 -fopenmp
+CFLAGS_PGI_DEV = -c -g -O0 -D_DEBUG -silent -w
+CFLAGS_PGI_OPT = -c -O3 -silent -w -Mnovect
+CFLAGS_PGI_PRF = -c -g -O3 -silent -w -Mnovect
+CFLAGS_IBM_DEV = -c -g -O0 -qsmp=omp -D_DEBUG
+CFLAGS_IBM_OPT = -c -O3 -qsmp=omp
+CFLAGS_IBM_PRF = -c -g -O3 -qsmp=omp
+CFLAGS = $(CFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) $(PIC_FLAG)
+
+#CPP FLAGS:
 ifeq ($(TOOLKIT),CRAY)
 CPPFLAGS = $(CFLAGS) -h std=c++11
 else
