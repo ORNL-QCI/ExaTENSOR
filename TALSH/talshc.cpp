@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2018/03/14
+REVISION: 2018/08/17
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1238,16 +1238,20 @@ void talshTensorPrintInfo(const talsh_tens_t * tens_block)
  if(tens_block != NULL){
   printf("#MESSAGE: Printing TAL-SH tensor info:\n");
   printf(" Tensor block address: %p\n",tens_block);
-  printf(" Tensor block shape:\n");
-  printf("  Tensor block rank: %d\n",tens_block->shape_p->num_dim);
-  if(tens_block->shape_p->num_dim > 0){
-   printf("  Tensor block dimension extents:");
-   for(i=0;i<tens_block->shape_p->num_dim;++i) printf(" %d",tens_block->shape_p->dims[i]);
-  }
-  printf("\n Tensor block presence ([dev_kind,dev_id|data_kind|avail]):");
-  for(i=0; i < tens_block->ndev; ++i){
-   dvn=talshKindDevId(tens_block->dev_rsc[i].dev_id,&dvk);
-   printf(" [%d,%d|%d|%d]",dvk,dvn,tens_block->data_kind[i],tens_block->avail[i]);
+  if(tens_block->shape_p != NULL){
+   printf(" Tensor block shape:\n");
+   printf("  Tensor block rank: %d\n",tens_block->shape_p->num_dim);
+   if(tens_block->shape_p->num_dim > 0){
+    printf("  Tensor block dimension extents:");
+    for(i=0;i<tens_block->shape_p->num_dim;++i) printf(" %d",tens_block->shape_p->dims[i]);
+   }
+   printf("\n Tensor block presence ([dev_kind,dev_id|data_kind|avail]):");
+   for(i=0; i < tens_block->ndev; ++i){
+    dvn=talshKindDevId(tens_block->dev_rsc[i].dev_id,&dvk);
+    printf(" [%d,%d|%d|%d]",dvk,dvn,tens_block->data_kind[i],tens_block->avail[i]);
+   }
+  }else{
+   printf(" Tensor block shape is absent!\n");
   }
   printf("\n#END OF MESSAGE\n");
  }else{

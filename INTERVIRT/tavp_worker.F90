@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/16
+!REVISION: 2018/08/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -992,9 +992,9 @@
 
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
-         write(devo,'("Timings: ")',ADVANCE='NO')
+         write(devo,'("Timings:")',ADVANCE='NO')
          if(this%time_decoded.ge.0d0) then
-          write(devo,'("DC: ",F20.6)',ADVANCE='NO') this%time_decoded
+          write(devo,'(" DC: ",F20.6)',ADVANCE='NO') this%time_decoded
           if(this%time_resourced.ge.0d0) then
            write(devo,'("; RS: ",F10.6)',ADVANCE='NO') this%time_resourced-this%time_decoded
            if(this%time_fetch_started.ge.0d0) then
@@ -1590,7 +1590,15 @@
                     if(errc.eq.TEREC_SUCCESS) then
                      if(nd.gt.0) dims(1:nd)=dim_ext(1:nd)
                      errc=talsh_tensor_construct(this%talsh_tens,data_kind,dims(1:nd),ext_mem=mem_p)
-                     if(errc.ne.TALSH_SUCCESS) errc=-12
+                     if(errc.eq.TALSH_SUCCESS) then
+                      if(DEBUG.gt.2) then
+                       !write(6,'("#DEBUG(tens_entry_wrk_t.set_talsh_tensor): Constructed TAL-SH tensor:")')
+                       !call talsh_tensor_print_info(this%talsh_tens)
+                       !flush(6)
+                      endif
+                     else
+                      errc=-12
+                     endif
                     else
                      errc=-11
                     endif
@@ -1949,17 +1957,15 @@
 
          errc=0
          call this%lock()
-         if(.not.associated(this%talsh_tens)) then
-          if(associated(this%cache_entry)) then
-           call this%cache_entry%set_talsh_tensor(errc)
-           if(errc.eq.0) then
-            this%talsh_tens=>this%cache_entry%get_talsh_tensor()
-           else
-            errc=-2
-           endif
+         if(associated(this%cache_entry)) then
+          call this%cache_entry%set_talsh_tensor(errc)
+          if(errc.eq.0) then
+           this%talsh_tens=>this%cache_entry%get_talsh_tensor()
           else
-           errc=-1
+           errc=-2
           endif
+         else
+          errc=-1
          endif
          call this%unlock()
          if(present(ierr)) ierr=errc
@@ -6184,6 +6190,7 @@
                           if(jerr.eq.0) then
                            call instr%set_parent_instr(tens_instr,jerr) !associate the TENS_ACCUMULATE instruction with its substituted parent instruction
                            if(jerr.eq.0) then
+                            instr%timings%time_decoded=time_sys_sec()
                             jerr=this%iqueue%previous(); if(jerr.ne.GFC_SUCCESS) jerr=-16 !move back to the current tensor instruction
                            else
                             jerr=-15
@@ -7043,7 +7050,7 @@
          logical:: active,stopping,completed
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
-         class(tens_instr_t), pointer:: tens_instr
+         class(tens_instr_t), pointer:: tens_instr,parent
          class(*), pointer:: uptr
 
          errc=0; thid=omp_get_thread_num()
@@ -7053,11 +7060,11 @@
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-38
 !Initialize the issued instruction queue:
-         ier=this%iss_list%init(this%issued_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-34
+         ier=this%iss_list%init(this%issued_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-37
 !Initialize the completed instruction queue:
-         ier=this%cml_list%init(this%completed_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-33
+         ier=this%cml_list%init(this%completed_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-36
 !Initialize the numerical computing runtime (TAL-SH) and set up tensor argument cache:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -7065,20 +7072,20 @@
           if(ier.eq.TALSH_SUCCESS) then
            this%arg_cache=>tavp%tens_cache
           else
-           if(errc.eq.0) errc=-32
+           if(errc.eq.0) errc=-35
           endif
 !Sync with other TAVP units:
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-31
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-34
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-30
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-33
          endif
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active); num_outstanding=0
          wloop: do while(active)
  !Get new instructions from Communicator (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
           ier=this%flush_port(0,max_items=MAX_DISPATCHER_INTAKE,num_moved=n)
-          if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
+          if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher unit ",i2," received ",i6," instructions from Communicator")')&
            &impir,this%get_id(),n
@@ -7086,28 +7093,28 @@
            flush(CONS_OUT)
           endif
  !Issue instructions:
-          ier=this%iss_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
-          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
+          ier=this%iss_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
+          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
           do while(this%iqueue%get_status().eq.GFC_IT_ACTIVE)
-           if(stopping.and.errc.eq.0) then; errc=-24; exit wloop; endif !no instruction can follow STOP
-           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
+           if(stopping.and.errc.eq.0) then; errc=-27; exit wloop; endif !no instruction can follow STOP
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-22; exit wloop; endif !trap
-           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
-           if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-20; exit wloop; endif !trap
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-25; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
+           if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-23; exit wloop; endif !trap
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
-            call tens_instr%set_talsh_tensors(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-18; exit wloop; endif
+            call tens_instr%set_talsh_tensors(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-21; exit wloop; endif
             call tens_instr%set_status(DS_INSTR_ISSUED,ier,errcode)
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
             tens_instr%timings%time_dispatched=time_sys_sec()
             select case(opcode)
             case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
-             call this%issue_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-16; exit wloop; endif
+             call this%issue_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-19; exit wloop; endif
              num_outstanding=num_outstanding+1
             case default
-             call this%issue_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-15; exit wloop; endif
+             call this%issue_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-18; exit wloop; endif
              num_outstanding=num_outstanding+1
             end select
             if(DEBUG.gt.0) then
@@ -7115,7 +7122,7 @@
              call tens_instr%print_it(dev_id=CONS_OUT)
              flush(CONS_OUT)
             endif
-            ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
+            ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
            else !auxiliary or control instruction
             tens_instr%timings%time_dispatched=time_sys_sec()
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
@@ -7126,19 +7133,20 @@
              flush(jo)
             endif
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier,errcode)
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
             tens_instr%timings%time_completed=time_sys_sec()
-            ier=this%iqueue%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
+            ier=this%iqueue%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
            endif
           enddo
  !Test/wait for completion of the issued instructions:
-          ier=this%iss_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
-          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
+          ier=this%iss_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
+          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
           do while(this%iss_list%get_status().eq.GFC_IT_ACTIVE)
-           uptr=>this%iss_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
+           uptr=>this%iss_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-8; exit wloop; endif !trap
-           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-11; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
            completed=this%sync_instr(tens_instr,ier)
            if(ier.ne.0.and.errc.eq.0) then
             if(VERBOSE) then
@@ -7146,13 +7154,21 @@
              call tens_instr%print_it(dev_id=CONS_OUT)
              flush(CONS_OUT)
             endif
-            errc=-6; exit wloop
+            errc=-8; exit wloop
            endif
            if(completed) then
+ !Mark completed:
             num_outstanding=num_outstanding-1
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier)
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
             tens_instr%timings%time_completed=time_sys_sec()
+ !Increment the number of completed accumulates for substitutable (parent) tensor instructions:
+            if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then
+             parent=>tens_instr%get_parent_instr(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-6; exit wloop; endif
+             call parent%set_completion_time(tens_instr%timings%time_completed) !accumulation completion time stamp
+             call parent%mark_accumulated(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-5; exit wloop; endif !increment the local accumulation count for the substituted parent tensor instruction
+             parent=>NULL()
+            endif
             if(DEBUG.gt.0) then
              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Dispatcher): Completed tensor instruction:")')
              call tens_instr%print_it(dev_id=CONS_OUT)
@@ -7568,7 +7584,6 @@
          class(ds_instr_ctrl_t), pointer:: ctrl
          class(ctrl_tens_add_t), pointer:: ctrl_add
          class(tens_cache_entry_t), pointer:: cache_entry
-         class(tens_instr_t), pointer:: parent
          type(permutation_t), pointer:: permut
 !$OMP FLUSH
          errc=0
@@ -7589,7 +7604,6 @@
              if(errc.eq.DSVP_SUCCESS.and.associated(ctrl_add)) then
               permut=>ctrl_add%get_permutation(errc)
               if(errc.eq.0.and.associated(permut)) then
-               call permut%print_it(dev_id=6); flush(6) !debug
                pl=permut%get_length()
                if(pl.gt.0) then
                 prm(1:)=>permut%get_access(pl,errc,with_sign=.FALSE.)
@@ -7599,12 +7613,17 @@
                 call get_contr_pattern_sym(pl,0,dig_ptrn,char_ptrn,cpl,errc)
                 if(errc.eq.0.and.cpl.gt.0) then
                  do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
-                 write(6,*) '#ZHUK: ',dig_ptrn(1:pl),str_ptrn(1:cpl); flush(6) !debug
                  i=index(str_ptrn(1:cpl),'*R()'); if(i.gt.0) cpl=i-1
                  if(cpl.gt.0) then
                   errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,talsh_task=tens_instr%talsh_task)
-                  write(6,*) '#ZHUK: ',errc,str_ptrn(1:cpl); flush(6) !debug
-                  if(errc.ne.TALSH_SUCCESS) errc=-9
+                  if(errc.ne.TALSH_SUCCESS) then
+                   if(VERBOSE) then
+                    write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)') errc
+                    write(6,*) dev,str_ptrn(1:cpl); call talsh_tensor_print_info(tens0); call talsh_tensor_print_info(tens1) !debug
+                    flush(CONS_OUT)
+                   endif
+                   errc=-9
+                  endif
                  else
                   errc=-8
                  endif
@@ -7623,16 +7642,6 @@
             endif
            else
             errc=-3
-           endif
-           if(errc.eq.0) then
- !Increment the number of completed local accumulations for the parent tensor instruction (with a time stamp): `This should be done upon completion in Dispatcher
-            parent=>tens_instr%get_parent_instr(errc)
-            if(errc.eq.0.and.associated(parent)) then
-             call parent%set_completion_time(time_sys_sec()) !accumulation completion time stamp
-             call parent%mark_accumulated(errc); if(errc.ne.0) errc=-4 !increment the local accumulation count for the substituted parent tensor instruction
-            else
-             errc=-3
-            endif
            endif
           else
            errc=-2

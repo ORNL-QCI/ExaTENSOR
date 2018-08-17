@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/16
+!REVISION: 2018/08/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -6262,6 +6262,7 @@
           if(errc.eq.0) then
            this%length=length; this%prm(0)=+1
            if(present(psign)) this%prm(0)=psign !permutation sign
+           this%prm(1:length)=perm(1:length) !permutation
           else
            this%length=0; errc=TEREC_MEM_ALLOC_FAILED
           endif
@@ -6443,15 +6444,17 @@
          integer(INTD), intent(out), optional:: ierr
          integer(INTD), intent(in), optional:: dev_id
          integer(INTD), intent(in), optional:: nspaces
-         integer(INTD):: errc,j,devo,nsp
+         integer(INTD):: errc,j,devo,nsp,i
 
          errc=TEREC_SUCCESS
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("(",i2,"){")',ADVANCE='NO') this%prm(0) !sign
-         if(this%length.gt.0) write(devo,'(i2)',ADVANCE='NO') this%prm(1)
-         if(this%length.gt.1) write(devo,'(99(",",i2))',ADVANCE='NO') this%prm(2:this%length)
+         if(this%length.gt.0) then
+          write(devo,'(i2)',ADVANCE='NO') this%prm(1)
+          do i=2,this%length; write(devo,'(",",i2)',ADVANCE='NO') this%prm(i); enddo
+         endif
          write(devo,'("}")')
          flush(devo)
          if(present(ierr)) ierr=errc

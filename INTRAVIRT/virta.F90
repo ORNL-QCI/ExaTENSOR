@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/16
+!REVISION: 2018/08/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -910,7 +910,7 @@
          call this%permutation%print_it(errc,devo,0)
          if(errc.eq.TEREC_SUCCESS) then
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
-          write(devo,'("Scalar: ",D24.14,1x,D24.14)') this%alpha
+          write(devo,'("Scalar: ",(D24.14,1x,D24.14))') this%alpha
          else
           errc=-1
          endif
