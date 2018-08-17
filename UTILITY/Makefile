@@ -5,7 +5,7 @@ NAME = utility
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
-#Optimization: [DEV|OPT]:
+#Optimization: [DEV|OPT|PRF]:
 export BUILD_TYPE ?= OPT
 #MPI Library: [NONE|MPICH|OPENMPI]:
 export MPILIB ?= NONE
@@ -45,7 +45,12 @@ export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
 #YOU ARE DONE!
 
 
-#=================
+#=======================
+ifeq ($(BUILD_TYPE),PRF)
+ COMP_PREF = scorep
+else
+ COMP_PREF =
+endif
 #Fortran compiler:
 FC_GNU = gfortran
 FC_PGI = pgf90
@@ -60,7 +65,7 @@ else
 FC_NOWRAP = $(FC_$(MPILIB))
 endif
 FC_WRAP = ftn
-FCOMP = $(FC_$(WRAP))
+FCOMP = $(COMP_PREF) $(FC_$(WRAP))
 #C compiler:
 CC_GNU = gcc
 CC_PGI = pgcc
@@ -75,7 +80,7 @@ else
 CC_NOWRAP = $(CC_$(MPILIB))
 endif
 CC_WRAP = cc
-CCOMP = $(CC_$(WRAP))
+CCOMP = $(COMP_PREF) $(CC_$(WRAP))
 #C++ compiler:
 CPP_GNU = g++
 CPP_PGI = pgc++
@@ -94,7 +99,7 @@ else
 CPP_NOWRAP = $(CPP_$(MPILIB))
 endif
 CPP_WRAP = CC
-CPPCOMP = $(CPP_$(WRAP))
+CPPCOMP = $(COMP_PREF) $(CPP_$(WRAP))
 
 #COMPILER INCLUDES:
 INC_GNU = -I.

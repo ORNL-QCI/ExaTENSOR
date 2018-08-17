@@ -5,7 +5,7 @@ NAME = ExaTensor
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
-#Optimization: [DEV|OPT]:
+#Optimization: [DEV|OPT|PRF]:
 export BUILD_TYPE ?= DEV
 #MPI Library: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
