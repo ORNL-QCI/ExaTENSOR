@@ -237,6 +237,7 @@ CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
 CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -DDEBUG_GPU -w
 CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo -w
+CUDA_FLAGS_PRF = --compile -arch=$(GPU_SM) -g -G -O3 -lineinfo -w
 CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES -Xcompiler $(PIC_FLAG_CUDA)
 ifeq ($(FOOL_CUDA),NO)
 CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS)
@@ -280,9 +281,11 @@ NO_PHI = -DNO_PHI
 ifeq ($(TOOLKIT),PGI)
 CFLAGS_DEV = -c -g -O0 -D_DEBUG -silent -w
 CFLAGS_OPT = -c -O3 -silent -w -Mnovect
+CFLAGS_PRF = -c -g -O3 -silent -w -Mnovect
 else
 CFLAGS_DEV = -c -g -O0 -D_DEBUG
 CFLAGS_OPT = -c -O3
+CFLAGS_PRF = -c -g -O3
 endif
 CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) $(PIC_FLAG)
 ifeq ($(TOOLKIT),CRAY)
@@ -293,17 +296,20 @@ endif
 
 #FORTRAN FLAGS:
 FFLAGS_INTEL_DEV = -c -g -O0 -fpp -vec-threshold4 -qopenmp -mkl=parallel
-#FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp
 FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
-#FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp
+FFLAGS_INTEL_PRF = -c -g -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
 FFLAGS_CRAY_DEV = -c -g
 FFLAGS_CRAY_OPT = -c -O3
+FFLAGS_CRAY_PRF = -c -g -O3
 FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g -Og
 FFLAGS_GNU_OPT = -c -fopenmp -O3
+FFLAGS_GNU_PRF = -c -fopenmp -g -O3
 FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -Mallocatable=03 -g -O0
 FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -Mallocatable=03 -O3
+FFLAGS_PGI_PRF = -c -mp -Mcache_align -Mstandard -Mallocatable=03 -g -O3
 FFLAGS_IBM_DEV = -c -qsmp=noopt -g9 -O0 -qfullpath -qkeepparm -qcheck -qsigtrap -qstackprotect=all
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3
+FFLAGS_IBM_PRF = -c -qsmp=omp -g -O3
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)$(NO_BLAS) $(DF)-D$(EXA_OS) $(PIC_FLAG)
 
 #THREADS:
