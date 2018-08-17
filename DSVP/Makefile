@@ -213,9 +213,9 @@ GPU_ARCH = $(GPU_SM_ARCH)0
 CUDA_HOST_NOWRAP = --compiler-bindir /usr/bin
 CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
-CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -DDEBUG_GPU
+CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -DDEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo
-CUDA_FLAGS_PRF = --compile -arch=$(GPU_SM) -g -G -O3 -lineinfo
+CUDA_FLAGS_PRF = --compile -arch=$(GPU_SM) -g -G -O3
 CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES
 ifeq ($(FOOL_CUDA),NO)
 CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS)
