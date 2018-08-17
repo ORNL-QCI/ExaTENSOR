@@ -3290,36 +3290,40 @@
           jerr=0; tens_add=>NULL()
           select type(op_spec); class is(tens_addition_t); tens_add=>op_spec; end select
           if(associated(tens_add)) then
-           if(tens_add%is_set()) then
-            call tens_add%get_add_ptrn(defnd,pref,permut,jerr)
+           if(tens_add%is_set(jerr)) then
             if(jerr.eq.TEREC_SUCCESS) then
-             allocate(tens_add_ctrl,STAT=jerr)
-             if(jerr.eq.0) then
-              call tens_add_ctrl%ctrl_tens_add_ctor(permut,jerr,pref) !addition pattern is cloned by value
+             call tens_add%get_add_ptrn(defnd,pref,permut,jerr)
+             if(jerr.eq.TEREC_SUCCESS) then
+              allocate(tens_add_ctrl,STAT=jerr)
               if(jerr.eq.0) then
-               instr_ctrl=>tens_add_ctrl
-               call this%set_control(instr_ctrl,jerr) !ownership transfer for instr_ctrl=tens_add_ctrl
-               if(jerr.eq.DSVP_SUCCESS) then
-                call this%alloc_operands(2,jerr)
+               call tens_add_ctrl%ctrl_tens_add_ctor(permut,jerr,pref) !addition pattern is cloned by value
+               if(jerr.eq.0) then
+                instr_ctrl=>tens_add_ctrl
+                call this%set_control(instr_ctrl,jerr) !ownership transfer for instr_ctrl=tens_add_ctrl
                 if(jerr.eq.DSVP_SUCCESS) then
-                 do jj=0,1
-                  tensor=>tens_add%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
-                  allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
-                  call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
-                  oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
-                  oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
-                 enddo
-                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand 0 is output
+                 call this%alloc_operands(2,jerr)
+                 if(jerr.eq.DSVP_SUCCESS) then
+                  do jj=0,1
+                   tensor=>tens_add%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                   allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
+                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
+                   oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
+                   oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
+                  enddo
+                  this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand 0 is output
+                 else
+                  jerr=-8
+                 endif
                 else
                  jerr=-7
                 endif
+                instr_ctrl=>NULL()
+                tens_add_ctrl=>NULL() !<tens_add_ctrl> pointer was saved in the tensor instruction and will later be deallocated
                else
+                deallocate(tens_add_ctrl)
                 jerr=-6
                endif
-               instr_ctrl=>NULL()
-               tens_add_ctrl=>NULL() !<tens_add_ctrl> pointer was saved in the tensor instruction and will later be deallocated
               else
-               deallocate(tens_add_ctrl)
                jerr=-5
               endif
              else

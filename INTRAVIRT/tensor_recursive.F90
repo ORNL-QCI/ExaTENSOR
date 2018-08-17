@@ -387,6 +387,7 @@
          integer(INTD), allocatable, private:: prm(:) !prm(1:length) is the permutation itself, prm(0) is the current sign of the permutation
          contains
           procedure, public:: reset=>PermutationReset          !resets (constructs) the permutation
+          procedure, public:: is_set=>PermutationIsSet         !returns TRUE if the permutation is set
           procedure, public:: get_length=>PermutationGetLength !returns the length of the permutation
           procedure, public:: get_access=>PermutationGetAccess !returns a pointer to the permutation array, with or without the sign
           procedure, public:: get_sign=>PermutationGetSign     !returns the current sign of the permutation
@@ -771,6 +772,7 @@
         private TensOperationFreeArguments
  !permutation_t:
         private PermutationReset
+        private PermutationIsSet
         private PermutationGetLength
         private PermutationGetAccess
         private PermutationGetSign
@@ -6275,6 +6277,28 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine PermutationReset
+!-------------------------------------------------------
+        function PermutationIsSet(this,ierr) result(ans)
+!Returns TRUE if the permutation is set.
+         implicit none
+         logical:: ans                               !out: answer
+         class(permutation_t), intent(in):: this     !in: permutation
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; ans=.FALSE.
+         if(this%length.gt.0) then
+          if(allocated(this%prm)) then
+           if(size(this%prm).ne.1+this%length) errc=TEREC_OBJ_CORRUPTED
+          else
+           errc=TEREC_OBJ_CORRUPTED
+          endif
+         else
+          if(allocated(this%prm)) errc=TEREC_OBJ_CORRUPTED
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function PermutationIsSet
 !--------------------------------------------------------------
         function PermutationGetLength(this,ierr) result(length)
 !Returns the length of the permutation.
@@ -6413,7 +6437,7 @@
          integer(INTD):: errc
 
          call unpack_builtin(packet,this%length,errc)
-         if(errc.eq.PACK_SUCCESS) then
+         if(errc.eq.PACK_SUCCESS.and.this%length.gt.0) then
           allocate(this%prm(0:this%length))
           call unpack_builtin(packet,this%prm,1+this%length,errc)
          endif
@@ -6430,8 +6454,12 @@
 
          call pack_builtin(packet,this%length,errc)
          if(errc.eq.PACK_SUCCESS) then
-          if(allocated(this%prm)) then
-           call pack_builtin(packet,this%prm,1+this%length,errc)
+          if(this%length.gt.0) then
+           if(allocated(this%prm)) then
+            call pack_builtin(packet,this%prm,1+this%length,errc)
+           else
+            errc=TEREC_OBJ_CORRUPTED
+           endif
           endif
          endif
          if(present(ierr)) ierr=errc
@@ -7277,17 +7305,19 @@
          class(tens_rcrsv_t), pointer:: trp
 
          ans=.FALSE.
-         if(this%get_num_args(errc).eq.2) then !tensor addition has two arguments
-          if(errc.eq.TEREC_SUCCESS) then
-           trp=>this%get_argument(0,errc) !destination tensor
+         if(this%permut%is_set(errc)) then
+          if(this%get_num_args(errc).eq.2) then !tensor addition has two arguments
            if(errc.eq.TEREC_SUCCESS) then
-            if(trp%is_set(errc,num_dims=n)) then
-             if(errc.eq.TEREC_SUCCESS.and.n.eq.this%permut%get_length()) then
-              trp=>this%get_argument(1,errc) !source tensor
-              if(errc.eq.TEREC_SUCCESS) then
-               if(trp%is_set(errc,num_dims=n)) then
-                if(errc.eq.TEREC_SUCCESS.and.n.eq.this%permut%get_length()) then
-                 ans=.TRUE.
+            trp=>this%get_argument(0,errc) !destination tensor
+            if(errc.eq.TEREC_SUCCESS) then
+             if(trp%is_set(errc,num_dims=n)) then
+              if(errc.eq.TEREC_SUCCESS.and.n.eq.this%permut%get_length()) then
+               trp=>this%get_argument(1,errc) !source tensor
+               if(errc.eq.TEREC_SUCCESS) then
+                if(trp%is_set(errc,num_dims=n)) then
+                 if(errc.eq.TEREC_SUCCESS.and.n.eq.this%permut%get_length()) then
+                  ans=.TRUE.
+                 endif
                 endif
                endif
               endif
