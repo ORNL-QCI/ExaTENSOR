@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/17
+!REVISION: 2018/08/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3339,6 +3339,10 @@
           else
            jerr=-1
           endif
+          if(jerr.ne.0.and.VERBOSE) then
+           write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_instr_t.ctor:construct_instr_tens_accumulate): Error ",i11)') jerr
+           flush(CONS_OUT)
+          endif
           return
          end subroutine construct_instr_tens_accumulate
 
@@ -6032,6 +6036,10 @@
          else
           errc=-1
          endif
+         if(errc.ne.0.and.VERBOSE) then
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.substitute_output): Error ",i11)') errc
+          flush(CONS_OUT)
+         endif
          if(present(ierr)) ierr=errc
          return
 
@@ -6242,6 +6250,10 @@
             endif
            else
             jerr=-1
+           endif
+           if(jerr.ne.0.and.VERBOSE) then
+            write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.substitute_output:create_inject_accumulation): Error ",i11)') jerr
+            flush(CONS_OUT)
            endif
            return
           end subroutine create_inject_accumulation

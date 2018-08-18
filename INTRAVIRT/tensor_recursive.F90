@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/17
+!REVISION: 2018/08/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -383,7 +383,7 @@
         end type tens_operation_t
  !Tensor dimension permutation:
         type, public:: permutation_t
-         integer(INTD), private:: length=0
+         integer(INTD), private:: length=-1
          integer(INTD), allocatable, private:: prm(:) !prm(1:length) is the permutation itself, prm(0) is the current sign of the permutation
          contains
           procedure, public:: reset=>PermutationReset          !resets (constructs) the permutation
@@ -6243,12 +6243,13 @@
         end subroutine TensOperationFreeArguments
 ![permutation_t]=========================================
         subroutine PermutationReset(this,perm,ierr,psign)
-!Resets (constructs) the permutation (ctor).
+!Resets (re-constructs) the permutation (ctor).
+!Zero-length permutations are valid.
          implicit none
          class(permutation_t), intent(inout):: this  !out: permutation object
          integer(INTD), intent(in):: perm(1:)        !in: permutation sequence
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD), intent(in), optional:: psign !in: permutation sign
+         integer(INTD), intent(in), optional:: psign !in: optional permutation sign (defaults to +1)
          integer(INTD):: errc,length
 
          errc=TEREC_SUCCESS; length=size(perm)
@@ -6280,6 +6281,7 @@
 !-------------------------------------------------------
         function PermutationIsSet(this,ierr) result(ans)
 !Returns TRUE if the permutation is set.
+!Zero-length permutations are considered set as well.
          implicit none
          logical:: ans                               !out: answer
          class(permutation_t), intent(in):: this     !in: permutation
@@ -6289,12 +6291,20 @@
          errc=TEREC_SUCCESS; ans=.FALSE.
          if(this%length.gt.0) then
           if(allocated(this%prm)) then
-           if(size(this%prm).ne.1+this%length) errc=TEREC_OBJ_CORRUPTED
+           if(size(this%prm).eq.1+this%length) then
+            ans=.TRUE.
+           else
+            errc=TEREC_OBJ_CORRUPTED
+           endif
           else
            errc=TEREC_OBJ_CORRUPTED
           endif
          else
-          if(allocated(this%prm)) errc=TEREC_OBJ_CORRUPTED
+          if(.not.allocated(this%prm)) then
+           if(this%length.eq.0) ans=.TRUE.
+          else
+           errc=TEREC_OBJ_CORRUPTED
+          endif
          endif
          if(present(ierr)) ierr=errc
          return
@@ -6334,7 +6344,7 @@
           endif
           length=this%length
          else
-          errc=TEREC_INVALID_REQUEST
+          if(this%length.lt.0) errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
@@ -6352,14 +6362,13 @@
 
          errc=TEREC_SUCCESS; perm_sign=0
          if(this%length.gt.0) then
-          if(abs(this%prm(0)).eq.1) then
-           perm_sign=this%prm(0)
-          else
-           call this%set_sign(errc)
-           if(errc.eq.TEREC_SUCCESS) perm_sign=this%prm(0)
-          endif
+          perm_sign=this%prm(0)
          else
-          errc=TEREC_INVALID_REQUEST
+          if(this%length.eq.0) then
+           perm_sign=1
+          else
+           errc=TEREC_INVALID_REQUEST
+          endif
          endif
          if(present(ierr)) ierr=errc
          return
@@ -6375,22 +6384,32 @@
          integer(INTD), allocatable:: trn(:)
 
          errc=TEREC_SUCCESS
-         if(this%length.gt.1) then
-          allocate(trn(0:this%length),STAT=errc)
-          if(errc.eq.0) then
-           trn(0:this%length)=(/+1,(i,i=1,this%length)/)
-           call merge_sort_key_int(this%length,this%prm(1:this%length),trn(0:this%length))
-           if(abs(trn(0)).eq.1) then
-            this%prm(0)=trn(0)
+         if(this%length.gt.0) then
+          if(present(new_sign)) then
+           if(abs(new_sign).eq.1) then
+            this%prm(0)=new_sign
            else
-            errc=TEREC_UNABLE_COMPLETE
+            errc=TEREC_INVALID_ARGS
            endif
-           deallocate(trn)
           else
-           errc=TEREC_MEM_ALLOC_FAILED
+           if(this%length.gt.1) then
+            allocate(trn(0:this%length),STAT=errc)
+            if(errc.eq.0) then
+             trn(0:this%length)=(/+1,(i,i=1,this%length)/)
+             call merge_sort_key_int(this%length,this%prm(1:this%length),trn(0:this%length))
+             if(abs(trn(0)).eq.1) then
+              this%prm(0)=trn(0)
+             else
+              errc=TEREC_UNABLE_COMPLETE
+             endif
+             deallocate(trn)
+            else
+             errc=TEREC_MEM_ALLOC_FAILED
+            endif
+           else
+            this%prm(0)=+1
+           endif
           endif
-         elseif(this%length.eq.1) then
-          this%prm(0)=+1
          else
           errc=TEREC_INVALID_REQUEST
          endif
@@ -6468,22 +6487,26 @@
 !--------------------------------------------------------------
         subroutine PermutationPrintIt(this,ierr,dev_id,nspaces)
          implicit none
-         class(permutation_t), intent(in):: this
-         integer(INTD), intent(out), optional:: ierr
-         integer(INTD), intent(in), optional:: dev_id
-         integer(INTD), intent(in), optional:: nspaces
+         class(permutation_t), intent(in):: this       !in: permutation
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device id
+         integer(INTD), intent(in), optional:: nspaces !in: left alignment
          integer(INTD):: errc,j,devo,nsp,i
 
          errc=TEREC_SUCCESS
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("(",i2,"){")',ADVANCE='NO') this%prm(0) !sign
          if(this%length.gt.0) then
-          write(devo,'(i2)',ADVANCE='NO') this%prm(1)
-          do i=2,this%length; write(devo,'(",",i2)',ADVANCE='NO') this%prm(i); enddo
+          write(devo,'("(",i2,"){")',ADVANCE='NO') this%prm(0) !sign
+          if(this%length.gt.0) then
+           write(devo,'(i2)',ADVANCE='NO') this%prm(1)
+           do i=2,this%length; write(devo,'(",",i2)',ADVANCE='NO') this%prm(i); enddo
+          endif
+          write(devo,'("}")')
+         else
+          write(devo,'("(1){}")')
          endif
-         write(devo,'("}")')
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -6494,7 +6517,7 @@
          type(permutation_t):: this
 
          if(allocated(this%prm)) deallocate(this%prm)
-         this%length=0
+         this%length=-1
          return
         end subroutine permutation_dtor
 ![contr_ptrn_ext_t]============================
@@ -7306,17 +7329,19 @@
 
          ans=.FALSE.
          if(this%permut%is_set(errc)) then
-          if(this%get_num_args(errc).eq.2) then !tensor addition has two arguments
-           if(errc.eq.TEREC_SUCCESS) then
-            trp=>this%get_argument(0,errc) !destination tensor
+          if(errc.eq.TEREC_SUCCESS) then
+           if(this%get_num_args(errc).eq.2) then !tensor addition has two arguments
             if(errc.eq.TEREC_SUCCESS) then
-             if(trp%is_set(errc,num_dims=n)) then
-              if(errc.eq.TEREC_SUCCESS.and.n.eq.this%permut%get_length()) then
-               trp=>this%get_argument(1,errc) !source tensor
-               if(errc.eq.TEREC_SUCCESS) then
-                if(trp%is_set(errc,num_dims=n)) then
-                 if(errc.eq.TEREC_SUCCESS.and.n.eq.this%permut%get_length()) then
-                  ans=.TRUE.
+             trp=>this%get_argument(0,errc) !destination tensor
+             if(errc.eq.TEREC_SUCCESS) then
+              if(trp%is_set(errc,num_dims=n)) then
+               if(errc.eq.TEREC_SUCCESS.and.n.eq.this%permut%get_length()) then
+                trp=>this%get_argument(1,errc) !source tensor
+                if(errc.eq.TEREC_SUCCESS) then
+                 if(trp%is_set(errc,num_dims=n)) then
+                  if(errc.eq.TEREC_SUCCESS.and.n.eq.this%permut%get_length()) then
+                   ans=.TRUE.
+                  endif
                  endif
                 endif
                endif
