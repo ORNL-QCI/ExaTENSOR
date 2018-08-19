@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2018/04/16
+REVISION: 2018/08/19
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,6 +33,11 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #include "talsh_task.hpp"
 
 namespace talsh{
+
+constexpr float TensorData<float>::unity;
+constexpr double TensorData<double>::unity;
+constexpr std::complex<float> TensorData<std::complex<float>>::unity;
+constexpr std::complex<double> TensorData<std::complex<double>>::unity;
 
 
 template <typename T>
