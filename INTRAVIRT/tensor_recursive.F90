@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/18
+!REVISION: 2018/08/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -386,6 +386,9 @@
          integer(INTD), private:: length=-1
          integer(INTD), allocatable, private:: prm(:) !prm(1:length) is the permutation itself, prm(0) is the current sign of the permutation
          contains
+          procedure, private:: PermutationCtorBas              !basic ctor
+          procedure, private:: PermutationCtorCopy             !copy ctor
+          generic, public:: permutation_ctor=>PermutationCtorBas,PermutationCtorCopy
           procedure, public:: reset=>PermutationReset          !resets (constructs) the permutation
           procedure, public:: is_set=>PermutationIsSet         !returns TRUE if the permutation is set
           procedure, public:: get_length=>PermutationGetLength !returns the length of the permutation
@@ -771,6 +774,8 @@
         private TensOperationDonateArgument
         private TensOperationFreeArguments
  !permutation_t:
+        private PermutationCtorBas
+        private PermutationCtorCopy
         private PermutationReset
         private PermutationIsSet
         private PermutationGetLength
@@ -6241,7 +6246,53 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOperationFreeArguments
-![permutation_t]=========================================
+![permutation_t]===========================================
+        subroutine PermutationCtorBas(this,perm,ierr,psign)
+!Ctor (basic). Zero-length permutations are valid, but they
+!cannot have a sign.
+         implicit none
+         class(permutation_t), intent(out):: this    !out: permutation object
+         integer(INTD), intent(in):: perm(1:)        !in: permutation sequence
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD), intent(in), optional:: psign !in: optional permutation sign (defaults to +1)
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; this%length=size(perm)
+         if(this%length.gt.0) then
+          allocate(this%prm(0:this%length),STAT=errc)
+          if(errc.eq.0) then
+           this%prm(0)=+1; if(present(psign)) this%prm(0)=psign
+           this%prm(1:this%length)=perm(1:this%length)
+          else
+           this%length=-1; errc=TEREC_MEM_ALLOC_FAILED
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PermutationCtorBas
+!--------------------------------------------------------
+        subroutine PermutationCtorCopy(this,another,ierr)
+!Copy ctor.
+         implicit none
+         class(permutation_t), intent(out):: this    !out: permutation object
+         class(permutation_t), intent(in):: another  !in: another permutation object
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         this%length=another%length
+         if(this%length.gt.0) then
+          allocate(this%prm(0:this%length),STAT=errc)
+          if(errc.eq.0) then
+           this%prm(0:this%length)=another%prm(0:this%length)
+          else
+           this%length=-1; errc=TEREC_MEM_ALLOC_FAILED
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PermutationCtorCopy
+!--------------------------------------------------------
         subroutine PermutationReset(this,perm,ierr,psign)
 !Resets (re-constructs) the permutation (ctor).
 !Zero-length permutations are valid.
@@ -6267,7 +6318,7 @@
            if(present(psign)) this%prm(0)=psign !permutation sign
            this%prm(1:length)=perm(1:length) !permutation
           else
-           this%length=0; errc=TEREC_MEM_ALLOC_FAILED
+           this%length=-1; errc=TEREC_MEM_ALLOC_FAILED
           endif
          elseif(length.eq.0) then
           if(allocated(this%prm)) deallocate(this%prm)
@@ -7459,9 +7510,11 @@
 
          if(this%is_set(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
-           permutation=this%permut
-           prefactor=this%alpha
-           defined=(.not.this%undefined)
+           call permutation%permutation_ctor(this%permut,errc)
+           if(errc.eq.TEREC_SUCCESS) then
+            prefactor=this%alpha
+            defined=(.not.this%undefined)
+           endif
           endif
          else
           errc=TEREC_INVALID_REQUEST

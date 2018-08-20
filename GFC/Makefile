@@ -182,9 +182,9 @@ CPPFLAGS = $(CFLAGS) -std=c++11
 endif
 
 #FORTRAN FLAGS:
-FFLAGS_INTEL_DEV = -c -g -O0 -fpp -vec-threshold4 -qopenmp -mkl=parallel
-FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
-FFLAGS_INTEL_PRF = -c -g -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
+FFLAGS_INTEL_DEV = -c -std08 -g -O0 -fpp -vec-threshold4 -qopenmp -mkl=parallel
+FFLAGS_INTEL_OPT = -c -std08 -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
+FFLAGS_INTEL_PRF = -c -std08 -g -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
 FFLAGS_CRAY_DEV = -c -g
 FFLAGS_CRAY_OPT = -c -O3
 FFLAGS_CRAY_PRF = -c -g -O3
