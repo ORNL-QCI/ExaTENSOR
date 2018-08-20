@@ -54,6 +54,7 @@
         use gfc_vec_tree
         use gfc_dictionary
         use multords, only: multord_i8e
+        use talsh, only: get_contr_pattern_sym
         use subspaces
         use pack_prim
         use distributed, only: DataDescr_t
@@ -427,6 +428,7 @@
           procedure, public:: get_contr_ptrn=>ContrPtrnExtGetContrPtrn    !returns the classical (basic) digital contraction pattern used by TAL-SH for example
           procedure, public:: get_dim_symmetry=>ContrPtrnExtGetDimSymmetry!returns the symmetric restrictions for a specific tensor argument
           procedure, public:: get_conjugation=>ContrPtrnExtGetConjugation !returns tensor argument conjugation status
+          procedure, public:: get_contr_ptrn_symb=>ContrPtrnExtGetContrPtrnSymb !returns the symbolic contraction pattern
           procedure, public:: print_it=>ContrPtrnExtPrintIt               !prints the extended tensor contraction
           final:: contr_ptrn_ext_dtor                                     !dtor
         end type contr_ptrn_ext_t
@@ -800,6 +802,7 @@
         private ContrPtrnExtGetContrPtrn
         private ContrPtrnExtGetDimSymmetry
         private ContrPtrnExtGetConjugation
+        private ContrPtrnExtGetContrPtrnSymb
         private ContrPtrnExtPrintIt
         public contr_ptrn_ext_dtor
  !tens_transformation_t:
@@ -7012,6 +7015,38 @@
          if(present(ierr)) ierr=errc
          return
         end function ContrPtrnExtGetConjugation
+!----------------------------------------------------------------------
+        subroutine ContrPtrnExtGetContrPtrnSymb(this,ptrn_symb,sl,ierr)
+!Returns the symbolic contraction pattern.
+         implicit none
+         class(contr_ptrn_ext_t), intent(in):: this  !in: extended tensor contraction pattern
+         character(*), intent(inout):: ptrn_symb     !out: symbolic form of the tensor contraction pattern
+         integer(INTD), intent(out):: sl             !out: length of <ptrn_symb>
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i,nl,nr,conj,dig_ptrn(1:MAX_TENSOR_RANK*2)
+         character(C_CHAR):: char_ptrn(512)
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           call this%get_contr_ptrn(nl,nr,dig_ptrn,errc)
+           if(errc.eq.TEREC_SUCCESS) then
+            conj=this%get_conjugation(errc)
+            if(errc.eq.TEREC_SUCCESS) then
+             call get_contr_pattern_sym(nl,nr,conj,dig_ptrn,char_ptrn,sl,errc)
+             if(errc.eq.0.and.sl.gt.0) then
+              do i=1,sl; ptrn_symb(i:i)=char_ptrn(i); enddo
+             else
+              errc=TEREC_UNABLE_COMPLETE
+             endif
+            endif
+           endif
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContrPtrnExtGetContrPtrnSymb
 !---------------------------------------------------------------
         subroutine ContrPtrnExtPrintIt(this,ierr,dev_id,nspaces)
 !Prints the extended tensor contraction.

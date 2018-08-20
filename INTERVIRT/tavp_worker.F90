@@ -7561,10 +7561,10 @@
                 if(errc.eq.0) then
                  call contr_ptrn_ext%get_contr_ptrn(nl,nr,dig_ptrn,errc)
                  if(errc.eq.TEREC_SUCCESS) then
-                  call get_contr_pattern_sym(nl,nr,dig_ptrn,char_ptrn,cpl,errc)
+                  call get_contr_pattern_sym(nl,nr,conj,dig_ptrn,char_ptrn,cpl,errc)
                   if(errc.eq.0.and.cpl.gt.0) then
                    do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
-                   errc=talsh_tensor_contract(str_ptrn(1:cpl),tens0,tens1,tens2,prefactor,dev_id=dev,&
+                   errc=talsh_tensor_contract(str_ptrn(1:cpl),tens0,tens1,tens2,prefactor,dev_id=dev,copy_ctrl=COPY_TTT,&
                    &talsh_task=tens_instr%talsh_task)
                    if(errc.ne.TALSH_SUCCESS) then
                     if(VERBOSE) then
@@ -7652,12 +7652,13 @@
                 if(errc.eq.TEREC_SUCCESS) dig_ptrn(1:pl)=prm(1:pl)
                endif
                if(errc.eq.0) then
-                call get_contr_pattern_sym(pl,0,dig_ptrn,char_ptrn,cpl,errc)
+                call get_contr_pattern_sym(pl,0,0,dig_ptrn,char_ptrn,cpl,errc)
                 if(errc.eq.0.and.cpl.gt.0) then
                  do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
                  i=index(str_ptrn(1:cpl),'*R()'); if(i.gt.0) cpl=i-1
                  if(cpl.gt.0) then
-                  errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,talsh_task=tens_instr%talsh_task)
+                  errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,copy_ctrl=COPY_MT,&
+                  &talsh_task=tens_instr%talsh_task)
                   if(errc.ne.TALSH_SUCCESS) then
                    if(VERBOSE) then
                     write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)') errc

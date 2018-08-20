@@ -19,4 +19,4 @@
 2018-04-09: It is not clear when to upload and when to destroy a local accumulator tensor: TMP_COUNT never decreases.
 2018-04-24: TAVP_INSTR_CTRL_STOP should not be reordered with other instructions in TAVP-WRK:
             It must reach each DSVU the last, that is, each DSVU must pass the STOP instruction as its last instruction.
-2018-08-20: get_contr_ptrn_sym() does not accept conjugation bits.
+2018-08-20: Temporary (output) tensors must be reused, especially if they are already on GPU.

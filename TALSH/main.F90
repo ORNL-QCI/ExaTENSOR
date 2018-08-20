@@ -562,7 +562,7 @@
                n=n+1 !tensor contraction number
                !if(n.ne.2933.and.n.ne.2934.and.n.ne.2935) cycle ploop !debug
    !Get the symbolic contraction pattern:
-               call get_contr_pattern_sym(rl,rr,cptrn,cptrn_sym,l,ierr); if(ierr.ne.0) then; ierr=5; return; endif
+               call get_contr_pattern_sym(rl,rr,0,cptrn,cptrn_sym,l,ierr); if(ierr.ne.0) then; ierr=5; return; endif
                do i=1,l; str(i:i)=cptrn_sym(i); enddo
                write(*,'(2x,"Contraction ",i8,": (",16(1x,i8))',ADVANCE='NO') n,ddims(1:rd)
                write(*,'(") = (",16(1x,i8))',ADVANCE='NO') ldims(1:rl)

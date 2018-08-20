@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/07
+!REVISION: 2018/08/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -728,7 +728,8 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
   std::cout << std::endl << "Intermediate body = " << dbodyAddr << ": Ref count = " << tensMap[dbodyAddr].second.use_count(); //debug
 
   //Get the symbolic tensor contraction pattern:
-  get_contr_pattern_sym(&lRank,&rRank,contrPtrnDig,contrPtrnSym,&cpl,&errc); if(errc != TALSH_SUCCESS) return -1;
+  int conj = 0;
+  get_contr_pattern_sym(&lRank,&rRank,&conj,contrPtrnDig,contrPtrnSym,&cpl,&errc); if(errc != TALSH_SUCCESS) return -1;
 
   //Perform the tensor contraction:
   errc = talshTensorContract(contrPtrnSym,dtens,ltens,rtens); if(errc != TALSH_SUCCESS) return -1;
