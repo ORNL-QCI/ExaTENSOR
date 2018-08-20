@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/18
+!REVISION: 2018/08/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -190,6 +190,7 @@
           procedure, public:: is_blocked=>TensOprndIsBlocked             !returns TRUE if the tensor operand is blocked, FALSE otherwise
           procedure, public:: set_block=>TensOprndSetBlock               !sets a block on the underlying tensor cache entry
           procedure, public:: release_block=>TensOprndReleaseBlock       !releases the block from the underlying tensor cache entry
+          procedure, public:: set_up_to_date=>TensOprndSetUpToDate       !sets the tensor operand (its tensor cache entry) as up-to-date
           procedure, public:: register_read=>TensOprndRegisterRead       !registers a new read access on the tensor operand
           procedure, public:: unregister_read=>TensOprndUnregisterRead   !unregisters a read access on the tensor operand
           procedure, public:: get_read_count=>TensOprndGetReadCount      !returns the current read access count on the tensor operand
@@ -208,7 +209,6 @@
           procedure, public:: sync=>TensOprndSync                   !synchronizes the currently pending communication on the tensor operand data
           procedure, public:: release_rsc=>TensOprndReleaseRsc      !releases local resource but the tensor operand stays defined
           procedure, public:: destruct=>TensOprndDestruct           !performs complete destruction back to an empty state
-          procedure, public:: upload_local=>TensOprndUploadLocal    !performs a local accumulation of the tensor into another cached tensor `Is it needed at all?
           procedure, public:: lock=>TensOprndLock                   !sets the lock for accessing/updating the tensor operand content
           procedure, public:: unlock=>TensOprndUnlock               !releases the access lock
           procedure, public:: print_it=>TensOprndPrintIt            !prints
@@ -468,6 +468,7 @@
         private TensOprndIsBlocked
         private TensOprndSetBlock
         private TensOprndReleaseBlock
+        private TensOprndSetUpToDate
         private TensOprndRegisterRead
         private TensOprndUnregisterRead
         private TensOprndGetReadCount
@@ -486,7 +487,6 @@
         private TensOprndSync
         private TensOprndReleaseRsc
         private TensOprndDestruct
-        private TensOprndUploadLocal
         private TensOprndLock
         private TensOprndUnlock
         private TensOprndPrintIt
@@ -1442,18 +1442,20 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkSetTensorLayout
-!--------------------------------------------------------
-        subroutine TensEntryWrkAcquireResource(this,ierr)
+!-----------------------------------------------------------------
+        subroutine TensEntryWrkAcquireResource(this,ierr,init_rsc)
 !Acquires resource for the tensor cache entry if it has not been acquired yet.
 !`The memory is acquired from the regular Host memory pool.
          implicit none
          class(tens_entry_wrk_t), intent(inout):: this !inout: active tensor cache entry
          integer(INTD), intent(out), optional:: ierr   !out: error code
+         logical, intent(in), optional:: init_rsc      !in: if TRUE, the memory resource will be initialized to zero
          integer(INTD):: errc
          integer(INTL):: buf_size
          class(tens_rcrsv_t), pointer:: tensor
          class(tens_body_t), pointer:: body
          class(tens_layout_t), pointer:: layout
+         logical:: init_zero
 
          call this%lock()
          if(this%resource%is_empty(errc)) then
@@ -1466,7 +1468,18 @@
              if(errc.eq.TEREC_SUCCESS.and.associated(layout)) then
               buf_size=0; buf_size=layout%get_body_size(errc)
               if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0) then
-               call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-7
+               init_zero=.FALSE.; if(present(init_rsc)) init_zero=init_rsc
+               call this%resource%allocate_buffer(buf_size,errc,set_to_zero=init_zero)
+               if(errc.eq.0) then
+                if(init_zero) call this%set_up_to_date(.TRUE.)
+                if(DEBUG.gt.0) then
+                 write(CONS_OUT,'("#DEBUG(TAVP-WRK:tens_entry_wrk_t:acquire_resource)[",i6,"]: Memory acquired: Size (Bytes) = "'//&
+                 &',i13)') impir,buf_size
+                 flush(CONS_OUT)
+                endif
+               else
+                errc=-7
+               endif
               else
                errc=-6
               endif
@@ -2115,6 +2128,16 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndReleaseBlock
+!-------------------------------------------------------
+        subroutine TensOprndSetUpToDate(this,up_to_date)
+!Sets the tensor operand status as up-to-date.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this !inout: tensor operand
+         logical, intent(in):: up_to_date          !in: up-to-date status
+
+         if(associated(this%cache_entry)) call this%cache_entry%set_up_to_date(up_to_date)
+         return
+        end subroutine TensOprndSetUpToDate
 !--------------------------------------------------------
         subroutine TensOprndRegisterRead(this,ierr,defer)
 !Registers a read access on the tensor operand. In case the tensor
@@ -2828,96 +2851,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndDestruct
-!-------------------------------------------------------------
-        subroutine TensOprndUploadLocal(this,cache_entry,ierr)
-!Performs a local accumulation of the tensor into another cached tensor.
-         implicit none
-         class(tens_oprnd_t), intent(in):: this               !in: tensor operand being accumulated
-         class(tens_entry_wrk_t), intent(inout):: cache_entry !inout: tensor cache entry containing the tensor being accumulated into
-         integer(INTD), intent(out), optional:: ierr          !out: error code
-         integer(INTD):: errc,dtk,dts
-         integer(INTL):: src_size,dst_size,vol,i
-         class(tens_resrc_t), pointer:: dst_resource
-         type(C_PTR):: src,dst
-         real(4), pointer:: src_r4(:),dst_r4(:)
-         real(8), pointer:: src_r8(:),dst_r8(:)
-         complex(4), pointer:: src_c4(:),dst_c4(:)
-         complex(8), pointer:: src_c8(:),dst_c8(:)
-
-         if(cache_entry%is_set(errc)) then
-          if(errc.eq.0) then
-           call cache_entry%incr_use_count()
-           src=this%resource%get_mem_ptr(errc,src_size)
-           if(errc.eq.0) then
-            dst_resource=>cache_entry%get_resource(errc)
-            if(errc.eq.0.and.associated(dst_resource)) then
-             dst=dst_resource%get_mem_ptr(errc,dst_size)
-             if(errc.eq.0) then
-              if(dst_size.eq.src_size) then
-               dtk=this%tensor%get_data_type(errc)
-               if(errc.eq.TEREC_SUCCESS) then
-                if(talsh_valid_data_kind(dtk,dts).eq.YEP) then
-                 if(mod(src_size,int(dts,INTL)).eq.0) then
-                  vol=src_size/int(dts,INTL)
-                  select case(dtk)
-                  case(R4)
-                   call c_f_pointer(src,src_r4,(/vol/))
-                   call c_f_pointer(dst,dst_r4,(/vol/))
-                   do i=1,vol
-                    dst_r4(i)=dst_r4(i)+src_r4(i)
-                   enddo
-                  case(R8)
-                   call c_f_pointer(src,src_r8,(/vol/))
-                   call c_f_pointer(dst,dst_r8,(/vol/))
-                   do i=1,vol
-                    dst_r8(i)=dst_r8(i)+src_r8(i)
-                   enddo
-                  case(C4)
-                   call c_f_pointer(src,src_c4,(/vol/))
-                   call c_f_pointer(dst,dst_c4,(/vol/))
-                   do i=1,vol
-                    dst_c4(i)=dst_c4(i)+src_c4(i)
-                   enddo
-                  case(C8)
-                   call c_f_pointer(src,src_c8,(/vol/))
-                   call c_f_pointer(dst,dst_c8,(/vol/))
-                   do i=1,vol
-                    dst_c8(i)=dst_c8(i)+src_c8(i)
-                   enddo
-                  case default
-                   errc=-10
-                  end select
-                 else
-                  errc=-9
-                 endif
-                else
-                 errc=-8
-                endif
-               else
-                errc=-7
-               endif
-              else
-               errc=-6
-              endif
-             else
-              errc=-5
-             endif
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-           call cache_entry%decr_use_count()
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensOprndUploadLocal
 !-------------------------------------
         subroutine TensOprndLock(this)
 !Sets the lock for accessing/updating the tensor operand content.
@@ -3944,6 +3877,7 @@
                     if(errc.eq.0.and.oprnd%get_write_count(defer=.TRUE.).eq.0) call oprnd%release_block()
                    endif
                    call oprnd%register_write() !register actual write
+                   call oprnd%set_up_to_date(.FALSE.)
                   endif
                  else
                   errc=-9
@@ -4159,7 +4093,12 @@
                class is(tens_oprnd_t)
                 call oprnd%lock()
                 if(this%operand_is_output(i,errc)) then !output tensor operand
-                 if(errc.eq.0) then; call oprnd%unregister_write(); else; errc=-7; endif
+                 if(errc.eq.0) then
+                  call oprnd%unregister_write()
+                  call oprnd%set_up_to_date(.TRUE.)
+                 else
+                  errc=-7
+                 endif
                 else !input tensor operand
                  if(errc.eq.0) then; call oprnd%unregister_read(); else; errc=-6; endif
                 endif
@@ -7322,7 +7261,9 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
          logical, intent(in), optional:: wait               !in: WAIT or TEST (defaults to WAIT)
-         integer(INTD):: errc,ier,sts,ans
+         integer(INTD):: errc,ier,sts,ans,i,n
+         integer(INTD), pointer:: out_oprs(:)
+         class(ds_oprnd_t), pointer:: oprnd
          logical:: wt
 
          errc=0; res=.FALSE.
@@ -7340,6 +7281,16 @@
           if(res) then
            if(sts.eq.TALSH_TASK_COMPLETED) then
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier,DSVP_SUCCESS)
+            out_oprs(0:)=>tens_instr%get_output_operands(errc,n)
+            if(errc.eq.0) then
+             do i=0,n-1
+              oprnd=>tens_instr%get_operand(out_oprs(i),errc); if(errc.ne.0) exit
+              select type(oprnd); class is(tens_oprnd_t); call oprnd%set_up_to_date(.TRUE.); end select
+             enddo
+             if(errc.ne.0) errc=-4
+            else
+             errc=-3
+            endif
            else
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier,TAVP_ERR_EXC_FAILURE)
            endif
@@ -7433,8 +7384,8 @@
                        case default
                         errc=-13
                        end select
+                       if(errc.eq.0) call cache_entry%set_up_to_date(.TRUE.) !local tensors are considered present from the beginning
                       endif
-                      call cache_entry%set_up_to_date(.TRUE.) !local tensors are considered present from the beginning
                       if(DEBUG.gt.0) then
                        write(CONS_OUT,'("#DEBUG(TAVP-WRK:TENSOR_CREATE)[",i6,"]: Tensor created: Size (Bytes) = ",i13,":")')&
                        &impir,bytes
@@ -7516,6 +7467,7 @@
                if(errc.eq.0) then
                 cache_entry=>oprnd%get_cache_entry(errc)
                 if(errc.eq.0.and.associated(cache_entry)) then
+                 call cache_entry%set_up_to_date(.FALSE.)
                  call cache_entry%set_persistency(.FALSE.)
                  if(DEBUG.gt.0) then
                   write(CONS_OUT,'("#DEBUG(TAVP-WRK:TENSOR_DESTROY)[",i6,"]: Tensor destroyed:")') impir
