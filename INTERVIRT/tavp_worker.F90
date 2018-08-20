@@ -7526,10 +7526,84 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
-         integer(INTD):: errc
+         integer(INTD):: errc,dev,conj,cpl,nl,nr,i,dig_ptrn(1:MAX_TENSOR_RANK*2)
+         character(C_CHAR):: char_ptrn(256)
+         character(256):: str_ptrn
+         complex(8):: prefactor
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_oprnd_t), pointer:: op0,op1,op2
+         type(talsh_tens_t), pointer:: tens0,tens1,tens2
+         class(ds_instr_ctrl_t), pointer:: ctrl
+         class(ctrl_tens_contr_t), pointer:: ctrl_contract
+         type(contr_ptrn_ext_t), pointer:: contr_ptrn_ext
 !$OMP FLUSH
          errc=0
-         !`Implement
+         dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
+         oprnd=>tens_instr%get_operand(0,errc)
+         op0=>NULL(); select type(oprnd); class is(tens_oprnd_t); op0=>oprnd; end select; oprnd=>NULL()
+         if(errc.eq.DSVP_SUCCESS.and.associated(op0)) then
+          tens0=>op0%get_talsh_tensor(errc)
+          if(errc.eq.0) then
+           oprnd=>tens_instr%get_operand(1,errc)
+           op1=>NULL(); select type(oprnd); class is(tens_oprnd_t); op1=>oprnd; end select; oprnd=>NULL()
+           if(errc.eq.DSVP_SUCCESS.and.associated(op1)) then
+            tens1=>op1%get_talsh_tensor(errc)
+            if(errc.eq.0) then
+             oprnd=>tens_instr%get_operand(2,errc)
+             op2=>NULL(); select type(oprnd); class is(tens_oprnd_t); op2=>oprnd; end select; oprnd=>NULL()
+             if(errc.eq.DSVP_SUCCESS.and.associated(op2)) then
+              tens2=>op2%get_talsh_tensor(errc)
+              if(errc.eq.0) then
+               ctrl=>tens_instr%get_control(errc)
+               ctrl_contract=>NULL(); select type(ctrl); class is(ctrl_tens_contr_t); ctrl_contract=>ctrl; end select
+               if(errc.eq.DSVP_SUCCESS.and.associated(ctrl_contract)) then
+                contr_ptrn_ext=>ctrl_contract%get_contr_ptrn(errc,prefactor,conj)
+                if(errc.eq.0) then
+                 call contr_ptrn_ext%get_contr_ptrn(nl,nr,dig_ptrn,errc)
+                 if(errc.eq.TEREC_SUCCESS) then
+                  call get_contr_pattern_sym(nl,nr,dig_ptrn,char_ptrn,cpl,errc)
+                  if(errc.eq.0.and.cpl.gt.0) then
+                   do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
+                   errc=talsh_tensor_contract(str_ptrn(1:cpl),tens0,tens1,tens2,prefactor,dev_id=dev,&
+                   &talsh_task=tens_instr%talsh_task)
+                   if(errc.ne.TALSH_SUCCESS) then
+                    if(VERBOSE) then
+                     write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorContract): talsh_tensor_contract failed with error ",i11)')&
+                     &errc
+                     flush(CONS_OUT)
+                    endif
+                    errc=-11
+                   endif
+                  else
+                   errc=-10
+                  endif
+                 else
+                  errc=-9
+                 endif
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKExecTensorContract
@@ -7587,7 +7661,7 @@
                   if(errc.ne.TALSH_SUCCESS) then
                    if(VERBOSE) then
                     write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)') errc
-                    write(6,*) dev,str_ptrn(1:cpl); call talsh_tensor_print_info(tens0); call talsh_tensor_print_info(tens1) !debug
+                    !write(6,*) dev,str_ptrn(1:cpl); call talsh_tensor_print_info(tens0); call talsh_tensor_print_info(tens1) !debug
                     flush(CONS_OUT)
                    endif
                    errc=-9

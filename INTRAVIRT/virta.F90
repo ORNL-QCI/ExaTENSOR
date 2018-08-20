@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/17
+!REVISION: 2018/08/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -954,7 +954,7 @@
 !the prefactor and tensor argument conjugation flags can be returned as well.
          implicit none
          type(contr_ptrn_ext_t), pointer:: ptrn              !out: extended tensor contraction pattern
-         class(ctrl_tens_contr_t), target, intent(in):: this !in: tensor contraction control field
+         class(ctrl_tens_contr_t), intent(in), target:: this !in: tensor contraction control field
          integer(INTD), intent(out), optional:: ierr         !out: error code
          complex(8), intent(out), optional:: alpha           !out: tensor contraction prefactor
          integer(INTD), intent(out), optional:: conjug       !out: tensor argument conjugation bits: {0:D,1:L,2:R}
