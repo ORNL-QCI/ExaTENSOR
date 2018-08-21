@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/27
+!REVISION: 2018/08/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4706,7 +4706,8 @@
 
          errc=0
          if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
-!$OMP ATOMIC UPDATE SEQ_CST
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC UPDATE
           this%dispatch_count(channel)=this%dispatch_count(channel)+delta
          else
           errc=-1
@@ -4726,7 +4727,8 @@
 
          errc=0
          if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
-!$OMP ATOMIC UPDATE SEQ_CST
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC UPDATE
           this%dispatch_flops(channel)=this%dispatch_flops(channel)+delta
          else
           errc=-1

@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/20
+!REVISION: 2018/08/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1113,7 +1113,8 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
 
-!$OMP ATOMIC UPDATE SEQ_CST
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC UPDATE
          this%ref_count=this%ref_count+1
          return
         end subroutine TensCacheEntryIncrRefCount
@@ -1122,7 +1123,8 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
 
-!$OMP ATOMIC UPDATE SEQ_CST
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC UPDATE
          this%ref_count=this%ref_count-1
          return
         end subroutine TensCacheEntryDecrRefCount
@@ -1132,7 +1134,8 @@
          integer(INTD):: refcount                     !out: reference count (number of active tensor operands associated with this tensor cache entry)
          class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
 
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
          refcount=this%ref_count
          return
         end function TensCacheEntryGetRefCount
@@ -1141,7 +1144,8 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
 
-!$OMP ATOMIC UPDATE SEQ_CST
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC UPDATE
          this%use_count=this%use_count+1
          return
         end subroutine TensCacheEntryIncrUseCount
@@ -1150,7 +1154,8 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
 
-!$OMP ATOMIC UPDATE SEQ_CST
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC UPDATE
          this%use_count=this%use_count-1
          return
         end subroutine TensCacheEntryDecrUseCount
@@ -1160,7 +1165,8 @@
          integer(INTD):: usecount                     !out: use count (number of active pointers explicitly returned by cache associated with this tensor cache entry)
          class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
 
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
          usecount=this%use_count
          return
         end function TensCacheEntryGetUseCount
@@ -1175,12 +1181,14 @@
 
          actual=.TRUE.; if(present(defer)) actual=(.not.defer)
          if(actual) then
-!$OMP ATOMIC CAPTURE SEQ_CST
+!!!$OMP ATOMIC CAPTURE SEQ_CST
+!$OMP ATOMIC CAPTURE
           errc=this%read_write_count
           this%read_write_count=this%read_write_count+1
 !$OMP END ATOMIC
          else
-!$OMP ATOMIC CAPTURE SEQ_CST
+!!!$OMP ATOMIC CAPTURE SEQ_CST
+!$OMP ATOMIC CAPTURE
           errc=this%read_write_def_count
           this%read_write_def_count=this%read_write_def_count+1
 !$OMP END ATOMIC
@@ -1200,12 +1208,14 @@
 
          actual=.TRUE.; if(present(defer)) actual=(.not.defer)
          if(actual) then
-!$OMP ATOMIC CAPTURE SEQ_CST
+!!!$OMP ATOMIC CAPTURE SEQ_CST
+!$OMP ATOMIC CAPTURE
           errc=this%read_write_count
           this%read_write_count=this%read_write_count-1
 !$OMP END ATOMIC
          else
-!$OMP ATOMIC CAPTURE SEQ_CST
+!!!$OMP ATOMIC CAPTURE SEQ_CST
+!$OMP ATOMIC CAPTURE
           errc=this%read_write_def_count
           this%read_write_def_count=this%read_write_def_count-1
 !$OMP END ATOMIC
@@ -1224,10 +1234,12 @@
 
          actual=.TRUE.; if(present(defer)) actual=(.not.defer)
          if(actual) then
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
           count=this%read_write_count
          else
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
           count=this%read_write_def_count
          endif
          count=max(count,0)
@@ -1244,12 +1256,14 @@
 
          actual=.TRUE.; if(present(defer)) actual=(.not.defer)
          if(actual) then
-!$OMP ATOMIC CAPTURE SEQ_CST
+!!!$OMP ATOMIC CAPTURE SEQ_CST
+!$OMP ATOMIC CAPTURE
           errc=this%read_write_count
           this%read_write_count=this%read_write_count-1
 !$OMP END ATOMIC
          else
-!$OMP ATOMIC CAPTURE SEQ_CST
+!!!$OMP ATOMIC CAPTURE SEQ_CST
+!$OMP ATOMIC CAPTURE
           errc=this%read_write_def_count
           this%read_write_def_count=this%read_write_def_count-1
 !$OMP END ATOMIC
@@ -1269,12 +1283,14 @@
 
          actual=.TRUE.; if(present(defer)) actual=(.not.defer)
          if(actual) then
-!$OMP ATOMIC CAPTURE SEQ_CST
+!!!$OMP ATOMIC CAPTURE SEQ_CST
+!$OMP ATOMIC CAPTURE
           errc=this%read_write_count
           this%read_write_count=this%read_write_count+1
 !$OMP END ATOMIC
          else
-!$OMP ATOMIC CAPTURE SEQ_CST
+!!!$OMP ATOMIC CAPTURE SEQ_CST
+!$OMP ATOMIC CAPTURE
           errc=this%read_write_def_count
           this%read_write_def_count=this%read_write_def_count+1
 !$OMP END ATOMIC
@@ -1293,10 +1309,12 @@
 
          actual=.TRUE.; if(present(defer)) actual=(.not.defer)
          if(actual) then
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
           count=this%read_write_count
          else
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
           count=this%read_write_def_count
          endif
          count=max(-count,0)
@@ -1312,10 +1330,12 @@
 
          actual=.TRUE.; if(present(defer)) actual=(.not.defer)
          if(actual) then
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
           read_write_count=this%read_write_count
          else
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
           read_write_count=this%read_write_def_count
          endif
          return
@@ -1331,18 +1351,22 @@
          actual=.TRUE.; if(present(defer)) actual=(.not.defer)
          if(actual) then
           if(present(read_write_count)) then
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
            this%read_write_count=read_write_count
           else
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
            this%read_write_count=0
           endif
          else
           if(present(read_write_count)) then
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
            this%read_write_def_count=read_write_count
           else
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
            this%read_write_def_count=0
           endif
          endif
@@ -1362,10 +1386,12 @@
          if(.not.(read_count.gt.0.and.write_count.gt.0)) then !race
           actual=.TRUE.; if(present(defer)) actual=(.not.defer)
           if(actual) then
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
            this%read_write_count=read_count-write_count
           else
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
            this%read_write_def_count=read_count-write_count
           endif
          else
@@ -1379,7 +1405,8 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
 
-!$OMP ATOMIC UPDATE SEQ_CST
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC UPDATE
          this%temp_count=this%temp_count+1
          return
         end subroutine TensCacheEntryIncrTempCount
@@ -1389,7 +1416,8 @@
          integer(INTD):: count                        !out: temporary count
          class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
 
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
          count=this%temp_count
          return
         end function TensCacheEntryGetTempCount
@@ -1399,7 +1427,8 @@
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
          logical, intent(in):: up_to_date_stat           !in: new up-to-date status
 
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
          this%up_to_date=up_to_date_stat
          return
         end subroutine TensCacheEntrySetUpToDate
@@ -1409,7 +1438,8 @@
          logical:: res                                !out: result
          class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
 
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
          res=this%up_to_date
          return
         end function TensCacheEntryIsUpToDate
@@ -1419,7 +1449,8 @@
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
          logical, intent(in):: persistency               !in: new persistency status
 
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
          this%persistent=persistency
          return
         end subroutine TensCacheEntrySetPersistency
@@ -1429,7 +1460,8 @@
          logical:: res                                !out: result
          class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
 
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
          res=this%persistent
          return
         end function TensCacheEntryIsPersistent
@@ -1489,7 +1521,8 @@
            write(jo,'("New cache entry lock: ",i18," --> ")',ADVANCE='NO') this%entry_lock; flush(jo)
           endif
           call omp_init_nest_lock(this%entry_lock)
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
           this%lock_initialized=.TRUE.
           if(DEBUG.gt.1) then; write(jo,'(i18)') this%entry_lock; flush(jo); endif
          endif
@@ -1507,7 +1540,8 @@
            write(jo,'("Destroying cache entry lock ",i18," ... ")',ADVANCE='NO') this%entry_lock; flush(jo)
           endif
           call omp_destroy_nest_lock(this%entry_lock)
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
           this%lock_initialized=.FALSE.
           if(DEBUG.gt.1) then; write(jo,'("Done")'); flush(jo); endif
          endif
@@ -1552,7 +1586,8 @@
          logical:: lockable
          class(tens_cache_entry_t), intent(in):: this
 #ifndef NO_OMP
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
          lockable=this%lock_initialized
 #else
          lockable=.FALSE.

@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/24
+!REVISION: 2018/08/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1016,7 +1016,8 @@
          class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
 
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
          issue_time=this%time_issued
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
@@ -1029,7 +1030,8 @@
          real(8), intent(in):: issue_time            !in: instruction issue time
          integer(INTD), intent(out), optional:: ierr !out: error code
 
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
          this%time_issued=issue_time
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
@@ -1042,7 +1044,8 @@
          class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
 
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
          compl_time=this%time_completed
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
@@ -1055,7 +1058,8 @@
          real(8), intent(in):: compl_time            !in: instruction completion time
          integer(INTD), intent(out), optional:: ierr !out: error code
 
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
          this%time_completed=compl_time
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
@@ -1254,7 +1258,8 @@
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
          this%locked=.TRUE.
          if(present(ierr)) ierr=errc
          return
@@ -1268,7 +1273,8 @@
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
          this%locked=.FALSE.
          if(present(ierr)) ierr=errc
          return
@@ -1610,7 +1616,8 @@
             endif
            else
             write(CONS_OUT,'("#FATAL(dsvp_base:dsvp_t.start): Unable to spawn ",i5," threads!")') nthreads
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
             errc=DSVP_ERR_RSC_EXCEEDED
            endif
 !$OMP END PARALLEL
@@ -2029,8 +2036,9 @@
 !$OMP END CRITICAL
          if(err_out.eq.0) then
           do
-!!!$OMP FLUSH
-!$OMP ATOMIC READ SEQ_CST
+!$OMP FLUSH
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
            err_out=units_left
            if(err_out.eq.this%num_units) then !success
             err_out=0; exit

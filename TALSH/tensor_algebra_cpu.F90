@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/20
+!REVISION: 2018/08/21
 
 !Copyright (C) 2013-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -280,14 +280,16 @@
 
          select case(mem_policy)
          case(MEM_ALLOC_REGULAR,MEM_ALLOC_TMP_BUF,MEM_ALLOC_ALL_BUF)
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
           MEM_ALLOC_POLICY=mem_policy
          case default
           if(present(ierr)) ierr=1 !invalid policy
           return
          end select
          if(present(fallback)) then
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
           MEM_ALLOC_FALLBACK=fallback
          endif
          if(present(ierr)) ierr=0
@@ -301,10 +303,12 @@
 	implicit none
 	integer, intent(in):: alg
 	if(alg.eq.0) then
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
 	 DATA_KIND_SYNC=.FALSE.
 	else
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
 	 DATA_KIND_SYNC=.TRUE.
 	endif
 	return
@@ -317,10 +321,12 @@
 	implicit none
 	integer, intent(in):: alg
 	if(alg.eq.0) then
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
 	 TRANS_SHMEM=.FALSE.
 	else
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
 	 TRANS_SHMEM=.TRUE.
 	endif
 	return
@@ -334,10 +340,12 @@
 	integer, intent(in):: alg
 #ifndef NO_BLAS
 	if(alg.eq.0) then
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
 	 DISABLE_BLAS=.FALSE.
 	else
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
 	 DISABLE_BLAS=.TRUE.
 	endif
 #endif
@@ -5565,7 +5573,8 @@
 	    enddo loop1
 	    if(lb.ne.0_LONGINT) then
 	     if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::tensor_block_copy_dlf_r4): invalid remainder: ",i11,1x,i4)') lb,n
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
 	     ierr=2
 	     exit loop0
 	    endif
@@ -5806,7 +5815,8 @@
 	    enddo loop1
 	    if(lb.ne.0_LONGINT) then
 	     if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::tensor_block_copy_dlf_r8): invalid remainder: ",i11,1x,i4)') lb,n
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
 	     ierr=2
 	     exit loop0
 	    endif
@@ -6074,7 +6084,8 @@
 	    enddo loop1
 	    if(lb.ne.0_LONGINT) then
 	     if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::tensor_block_copy_dlf_c8): invalid remainder: ",i11,1x,i4)') lb,n
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
 	     ierr=2
 	     exit loop0
 	    endif

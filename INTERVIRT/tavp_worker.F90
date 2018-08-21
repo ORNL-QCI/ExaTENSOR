@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/20
+!REVISION: 2018/08/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1214,7 +1214,8 @@
          implicit none
          class(tens_resrc_t), intent(inout):: this !inout: tensor resource
 
-!$OMP ATOMIC UPDATE SEQ_CST
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC UPDATE
          this%ref_count=this%ref_count+1
          return
         end subroutine TensResrcIncrRefCount
@@ -1224,7 +1225,8 @@
          implicit none
          class(tens_resrc_t), intent(inout):: this !inout: tensor resource
 
-!$OMP ATOMIC UPDATE SEQ_CST
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC UPDATE
          this%ref_count=this%ref_count-1
          return
         end subroutine TensResrcDecrRefCount
@@ -1235,7 +1237,8 @@
          integer(INTD):: cnt                    !out: reference count
          class(tens_resrc_t), intent(in):: this !in: tensor resource
 
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
          cnt=this%ref_count
          return
         end function TensResrcGetRefCount
@@ -1340,7 +1343,8 @@
          integer(INTD):: errc
 
          errc=0
-!$OMP ATOMIC READ SEQ_CST
+!!!$OMP ATOMIC READ SEQ_CST
+!$OMP ATOMIC READ
          upload_time=this%last_time_uploaded
          if(present(ierr)) ierr=errc
          return
@@ -1355,7 +1359,8 @@
          integer(INTD):: errc
 
          errc=0
-!$OMP ATOMIC WRITE SEQ_CST
+!!!$OMP ATOMIC WRITE SEQ_CST
+!$OMP ATOMIC WRITE
          this%last_time_uploaded=new_upload_time
          if(present(ierr)) ierr=errc
          return
