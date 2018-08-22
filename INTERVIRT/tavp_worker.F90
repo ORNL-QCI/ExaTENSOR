@@ -2553,7 +2553,7 @@
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
-         integer(INTD):: errc,comm_stat
+         integer(INTD):: errc,comm_stat,req
          class(DataDescr_t), pointer:: descr
          type(C_PTR):: cptr
          logical:: remot
@@ -2578,6 +2578,11 @@
                       cptr=this%resource%get_mem_ptr(errc)
                       if(errc.eq.0) then
                        call descr%get_data(cptr,errc,MPI_ASYNC_REQ)
+                       if(errc.eq.0.and.DEBUG.gt.0) then
+                        comm_stat=descr%get_comm_stat(errc,req)
+                        write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Rget initiated with request = ",i12)') req
+                        flush(CONS_OUT)
+                       endif
                        if(errc.ne.0.and.errc.ne.TRY_LATER) then
                         if(VERBOSE) then
                          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.prefetch): DataDescr_t.get_data() error ",i11)') errc
@@ -2644,7 +2649,7 @@
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,comm_stat
+         integer(INTD):: errc,comm_stat,req
          class(DataDescr_t), pointer:: descr
          type(C_PTR):: cptr
          logical:: temporary,accumulator,located,remote
@@ -2669,6 +2674,11 @@
                      cptr=this%resource%get_mem_ptr(errc)
                      if(errc.eq.0) then
                       call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
+                      if(errc.eq.0.and.DEBUG.gt.0) then
+                       comm_stat=descr%get_comm_stat(errc,req)
+                       write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated with request = ",i12)') req
+                       flush(CONS_OUT)
+                      endif
                       if(errc.ne.0.and.errc.ne.TRY_LATER) then
                        if(VERBOSE) then
                         write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.upload): DataDescr_t.acc_data() error ",i11)') errc
