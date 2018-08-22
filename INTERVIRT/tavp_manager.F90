@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/21
+!REVISION: 2018/08/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1103,13 +1103,14 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsLocated
-!------------------------------------------------------------
-        function TensOprndGetCommStat(this,ierr) result(stat)
+!----------------------------------------------------------------
+        function TensOprndGetCommStat(this,ierr,req) result(stat)
 !Returns the current communication status on the tensor operand data.
          implicit none
          integer(INTD):: stat                        !out: communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
          class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD), intent(out), optional:: req  !out: communication request handle
          integer(INTD):: errc
 
          stat=DS_OPRND_NO_COMM !TAVP-MNG does not perform tensor body data communications
@@ -1118,6 +1119,7 @@
          else
           errc=-1
          endif
+         if(present(req)) req=MPI_REQUEST_NULL
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetCommStat
@@ -1262,7 +1264,7 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id
          integer(INTD), intent(in), optional:: nspaces !in: left alignment
-         integer(INTD):: errc,devo,nsp,j
+         integer(INTD):: errc,devo,nsp,j,sts
 !$OMP FLUSH
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
@@ -1270,9 +1272,10 @@
          call this%lock()
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR OPERAND{")')
+         sts=this%get_comm_stat()
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Active = ",l1,"; Communication = ",i2,"; Metadata owner = ",i6)')&
-         &this%is_active(),this%get_comm_stat(),this%owner_id
+         &this%is_active(),sts,this%owner_id
          if(associated(this%tensor)) then
           call this%tensor%print_it(errc,devo,nsp+1); if(errc.ne.TEREC_SUCCESS) errc=-1
          else

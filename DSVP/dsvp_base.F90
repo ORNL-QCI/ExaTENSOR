@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/21
+!REVISION: 2018/08/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -320,12 +320,13 @@
           logical, intent(out), optional:: valued     !out: TRUE if operand is valued (neither undefined nor being updated)
          end function ds_oprnd_locd_i
    !get_comm_stat:
-         function ds_oprnd_comm_i(this,ierr) result(stat)
+         function ds_oprnd_comm_i(this,ierr,req) result(stat)
           import:: ds_oprnd_t,INTD
           implicit none
           integer(INTD):: stat                        !out: communication status
           class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
+          integer(INTD), intent(out), optional:: req  !out: communication request handle
          end function ds_oprnd_comm_i
    !acquire_rsc:
          subroutine ds_oprnd_acqr_i(this,ierr,init_rsc)

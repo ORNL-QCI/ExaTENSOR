@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/21
+!REVISION: 2018/08/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2415,26 +2415,27 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsLocated
-!------------------------------------------------------------
-        function TensOprndGetCommStat(this,ierr) result(stat)
+!----------------------------------------------------------------
+        function TensOprndGetCommStat(this,ierr,req) result(stat)
 !Returns the current communication status on the tensor operand body data.
          implicit none
          integer(INTD):: stat                        !out: communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
          class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,sts
+         integer(INTD), intent(out), optional:: req  !out: MPI communication request handle
+         integer(INTD):: errc,sts,creq
          class(tens_rcrsv_t), pointer:: tensor
          class(DataDescr_t), pointer:: descr
 
-         stat=DS_OPRND_NO_COMM
+         stat=DS_OPRND_NO_COMM; creq=MPI_REQUEST_NULL
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock()
            tensor=>this%get_tensor(errc)
            if(errc.eq.0) then
             descr=>tensor%get_data_descr(errc)
-            if(errc.eq.TEREC_SUCCESS) then
-             sts=descr%get_comm_stat(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
+             sts=descr%get_comm_stat(errc,creq)
              if(errc.eq.0) then
               if(sts.eq.DDSS_COMM_READ) then
                stat=DS_OPRND_FETCHING
@@ -2446,8 +2447,12 @@
              else
               errc=-5
              endif
-            else
-             errc=-4
+            else !data descriptor is absent => no communication
+             if(errc.eq.TEREC_INVALID_REQUEST.and.(.not.associated(descr))) then
+              errc=0
+             else
+              errc=-4
+             endif
             endif
            else
             errc=-3
@@ -2459,6 +2464,11 @@
          else
           errc=-1
          endif
+         if(errc.ne.0.and.VERBOSE) then
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.get_comm_stat): Error ",i11)') errc
+          flush(CONS_OUT)
+         endif
+         if(present(req)) req=creq
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetCommStat
@@ -2725,7 +2735,7 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: wait        !in: FALSE activates TEST instead of WAIT synchronization (default)
-         integer(INTD):: errc,sts
+         integer(INTD):: errc,sts,req
          class(DataDescr_t), pointer:: descr
          logical:: tw
 
@@ -2733,26 +2743,39 @@
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock()
-           sts=this%get_comm_stat()
-           if(sts.ne.DS_OPRND_NO_COMM) then
-            descr=>this%tensor%get_data_descr(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
-             if(descr%is_set(errc)) then
-              if(errc.eq.0) then
-               if(tw) then
-                call descr%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-9; endif
-               else
-                res=descr%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-8; endif
-               endif
-               if(res) then
-                if(sts.eq.DS_OPRND_FETCHING) then
-                 call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
-                elseif(sts.eq.DS_OPRND_UPLOADING) then
-                 call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
-                 call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-7 !local buffer has been accumulated, thus must be reset to zero
+           sts=this%get_comm_stat(errc,req)
+           if(errc.eq.0) then
+            if(sts.ne.DS_OPRND_NO_COMM) then
+             descr=>this%tensor%get_data_descr(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
+              if(descr%is_set(errc)) then
+               if(errc.eq.0) then
+                if(tw) then
+                 if(DEBUG.gt.0) then
+                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Waiting on MPI communication with request = ",i12)') req
+                  flush(CONS_OUT)
+                 endif
+                 call descr%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-10; endif
+                 if(DEBUG.gt.0) then
+                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Finished wait on MPI communication with request ",i12,'//&
+                  &'": Success = ",l1)') req,res
+                  flush(CONS_OUT)
+                 endif
                 else
-                 errc=-6 !trap
+                 res=descr%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-9; endif
                 endif
+                if(res) then
+                 if(sts.eq.DS_OPRND_FETCHING) then
+                  call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
+                 elseif(sts.eq.DS_OPRND_UPLOADING) then
+                  call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                  call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-8 !local buffer has been accumulated, thus must be reset to zero
+                 else
+                  errc=-7 !trap
+                 endif
+                endif
+               else
+                errc=-6
                endif
               else
                errc=-5
@@ -2761,10 +2784,10 @@
               errc=-4
              endif
             else
-             errc=-3
+             res=.TRUE.
             endif
            else
-            res=.TRUE.
+            errc=-3
            endif
            call this%unlock()
           else
@@ -2774,7 +2797,8 @@
           errc=-1
          endif
          if(errc.ne.0.and.VERBOSE) then
-          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.sync): Error ",i11)') errc; flush(CONS_OUT)
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.sync): Error ",i11)') errc
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -2882,7 +2906,7 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id
          integer(INTD), intent(in), optional:: nspaces !in: left alignment
-         integer(INTD):: errc,devo,nsp,j
+         integer(INTD):: errc,devo,nsp,j,sts
 !$OMP FLUSH
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
@@ -2891,13 +2915,14 @@
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR OPERAND{")')
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+         sts=this%get_comm_stat()
          if(associated(this%cache_entry)) then
           write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2,"; RW/DRW = ",i3,1x,i3,"; Block = ",l1)')&
-          &this%is_active(),this%is_present(),this%get_comm_stat(),&
+          &this%is_active(),this%is_present(),sts,&
           &this%cache_entry%get_rw_counter(),this%cache_entry%get_rw_counter(defer=.TRUE.),this%cache_entry%is_blocked()
          else
           write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2)')&
-          &this%is_active(),this%is_present(),this%get_comm_stat()
+          &this%is_active(),this%is_present(),sts
          endif
          if(associated(this%tensor)) then
           call this%tensor%print_it(errc,devo,nsp+1); if(errc.ne.TEREC_SUCCESS) errc=-2

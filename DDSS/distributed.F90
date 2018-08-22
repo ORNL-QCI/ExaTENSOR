@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/02 (started 2015/03/18)
+!REVISION: 2018/08/22 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -89,6 +89,7 @@
         implicit none
         private
 !EXPOSE some <service_mpi>:
+        public MPI_COMM_NULL,MPI_REQUEST_NULL !MPI null objects
         public INT_MPI,INT_ADDR,INT_OFFSET,INT_COUNT !MPI integer kinds
         public jo                  !process log output device
         public impis               !size of the global MPI communicator
@@ -219,7 +220,7 @@
          integer(INT_MPI), private:: DataType     !data type of each element: {R4,R8,C4,C8,...}, see <dil_basic.F90>
          integer(8), private:: TransID=0_8        !absolute value = data transfer request ID (or zero if none); sign = data transfer direction {READ_SIGN,WRITE_SIGN}
          integer(INT_MPI), private:: StatMPI=MPI_STAT_NONE !status of the data transfer request (see MPI_STAT_XXX parameters above)
-         integer(INT_MPI), private:: ReqHandle    !MPI request handle (for MPI communications with a request handle)
+         integer(INT_MPI), private:: ReqHandle=MPI_REQUEST_NULL !MPI request handle (for MPI communications with a request handle)
          contains
           procedure, private:: clean=>DataDescrClean            !clean a data descriptor
           procedure, private:: init=>DataDescrInit              !set up a data descriptor (initialization)
@@ -1472,16 +1473,17 @@
          if(present(ierr)) ierr=errc
          return
         end function DataDescrGetDataPtr
-!-----------------------------------------------------------
-        function DataDescrGetCommStat(this,ierr) result(sts)
+!---------------------------------------------------------------
+        function DataDescrGetCommStat(this,ierr,req) result(sts)
 !Returns the current communication status of the data descriptor.
          implicit none
          integer(INT_MPI):: sts                         !out: communication status: {DDSS_COMM_NONE,DDSS_COMM_READ,DDSS_COMM_WRITE}
          class(DataDescr_t), intent(in):: this          !in: data descriptor
          integer(INT_MPI), intent(out), optional:: ierr !out: error code (0:success)
-         integer(INT_MPI):: errc
+         integer(INT_MPI), intent(out), optional:: req  !out: MPI communication request handle, if set
+         integer(INT_MPI):: errc,creq
 
-         errc=0; sts=DDSS_COMM_NONE
+         errc=0; sts=DDSS_COMM_NONE; creq=MPI_REQUEST_NULL
          if(this%StatMPI.eq.MPI_STAT_PROGRESS_NRM.or.this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then
           if(this%TransID.gt.0) then
            sts=DDSS_COMM_READ
@@ -1490,9 +1492,11 @@
           else
            errc=-2
           endif
+          if(this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) creq=this%ReqHandle
          elseif(this%StatMPI.eq.MPI_STAT_ONESIDED_ERR) then
           errc=-1
          endif
+         if(present(req)) req=creq
          if(present(ierr)) ierr=errc
          return
         end function DataDescrGetCommStat

@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/20
+!REVISION: 2018/08/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -57,7 +57,7 @@
         use talsh, only: get_contr_pattern_sym
         use subspaces
         use pack_prim
-        use distributed, only: DataDescr_t
+        use distributed, only: DataDescr_t,MPI_REQUEST_NULL
         implicit none
         private
 !PARAMETERS:
@@ -4192,7 +4192,7 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id (6:screen)
          integer(INTD), intent(in), optional:: nspaces !out: left alignment
-         integer(INTD):: errc,dev,i,rank,comm
+         integer(INTD):: errc,dev,i,rank,comm,sts,req
          integer(INTL):: ds
          class(tens_layout_t), pointer:: tens_layout
          class(DataDescr_t), pointer:: descr
@@ -4215,10 +4215,16 @@
            descr=>tens_layout%get_data_descr()
            if(associated(descr)) then
             if(descr%is_set(errc,rank,comm)) then
-             do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+             sts=descr%get_comm_stat(errc,req)
              ds=descr%data_size()
-             write(dev,'(" Data descriptor: Comm = ",i11,"; Rank = ",i7,"; Size (B) = ",i12)')&
-             &comm,rank,ds
+             do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+             if(req.ne.MPI_REQUEST_NULL) then
+              write(dev,'(" Data descriptor: Comm = ",i11,"; Rank = ",i7,"; Size (B) = ",i12,"; Request = ",i12)')&
+              &comm,rank,ds,req
+             else
+              write(dev,'(" Data descriptor: Comm = ",i11,"; Rank = ",i7,"; Size (B) = ",i12)')&
+              &comm,rank,ds
+             endif
             else
              do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
              write(dev,'(" Data descriptor empty")')
