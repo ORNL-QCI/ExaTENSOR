@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/22
+!REVISION: 2018/08/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1684,7 +1684,14 @@
          errc=0
          call this%lock()
          if(.not.talsh_tensor_is_empty(this%talsh_tens)) then
-          errc=talsh_tensor_destruct(this%talsh_tens); if(errc.ne.TALSH_SUCCESS) errc=-1
+          errc=talsh_tensor_destruct(this%talsh_tens)
+          if(errc.ne.TALSH_SUCCESS) then
+           if(VERBOSE) then
+            write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_entry_wrk_t.release_talsh_tensor): Error ",i11)') errc
+            flush(CONS_OUT)
+           endif
+           errc=-1
+          endif
          endif
          call this%unlock()
          if(present(ierr)) ierr=errc
