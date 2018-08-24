@@ -3329,7 +3329,7 @@
          implicit none
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG Decomposer DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid,iec,sts,opcode,num_processed,base_created,i,n
+         integer(INTD):: errc,ier,thid,iec,sts,opcode,num_processed,base_created,i,n,uid
          integer:: dec_timer
          logical:: active,stopping,expired,last_instr
          class(dsvp_t), pointer:: dsvp
@@ -3338,9 +3338,9 @@
          class(tens_instr_t), pointer:: tens_instr
          class(*), pointer:: uptr
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
 !Initialize queues:
@@ -3376,7 +3376,7 @@
           ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-47; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," received ",i9," instructions from Locator")')&
-           &impir,this%get_id(),i
+           &impir,uid,i
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
@@ -3431,7 +3431,7 @@
              &num_processed.ge.MAX_DECOMPOSE_PRNT_INSTR.or.stopping) then
             if(DEBUG.gt.0) then
              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," entered distribution phase")')&
-             &impir,this%get_id()
+             &impir,uid
              flush(CONS_OUT)
             endif
    !Clone control instructions for Collector:
@@ -3454,7 +3454,7 @@
              if(ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-24; exit wloop; endif
              if(DEBUG.gt.0.and.n.gt.0) then
               write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," copied ",i9," control instructions for Collector")')&
-              &impir,this%get_id(),n
+              &impir,uid,n
               flush(CONS_OUT)
              endif
             endif
@@ -3465,7 +3465,7 @@
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
              if(DEBUG.gt.0.and.n.gt.0) then
               write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," passed ",i9," parent instructions to Collector")')&
-              &impir,this%get_id(),n
+              &impir,uid,n
               flush(CONS_OUT)
              endif
             endif
@@ -3486,7 +3486,7 @@
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
               if(DEBUG.gt.0.and.n.gt.0) then
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," passed ",i9," subinstructions to Dispatcher")')&
-               &impir,this%get_id(),n
+               &impir,uid,n
                flush(CONS_OUT)
               endif
              endif
@@ -3497,7 +3497,7 @@
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
               if(DEBUG.gt.0.and.n.gt.0) then
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," passed ",i9," subinstructions back to Locator")')&
-               &impir,this%get_id(),n
+               &impir,uid,n
                flush(CONS_OUT)
               endif
              endif
@@ -3518,7 +3518,7 @@
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
               if(DEBUG.gt.0.and.n.gt.0) then
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," passed ",i9," subinstructions to Dispatcher")')&
-               &impir,this%get_id(),n
+               &impir,uid,n
                flush(CONS_OUT)
               endif
              endif
@@ -3531,8 +3531,7 @@
              if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
             endif
             if(DEBUG.gt.0) then
-             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," exited distribution phase")')&
-             &impir,this%get_id()
+             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," exited distribution phase")') impir,uid
              flush(CONS_OUT)
             endif
            endif !distribution phase
@@ -3558,12 +3557,12 @@
          implicit none
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG Decomposer DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,uid
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer stopped as DSVU # ",i2," (thread ",i2,")")')&
-          &impir,this%get_id(),thid
+          &impir,uid,thid
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -3649,11 +3648,12 @@
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG Decomposer DSVU
          class(tens_instr_t), intent(inout):: tens_instr    !in: parental tensor instruction (.error_code field will be set to the subinstruction count)
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,opcode,init_stat,init_tag
+         integer(INTD):: errc,opcode,init_stat,init_tag,uid
          integer(INTL):: parent_id
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
 
+         uid=this%get_id()
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            dsvp=>this%get_dsvp(errc)
@@ -3890,10 +3890,10 @@
           if(DEBUG.gt.0) then
            if(jerr.eq.0) then
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_CREATE subinstructions")')&
-            &impir,this%get_id(),num_subinstr
+            &impir,uid,num_subinstr
            else
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
-            &'" failed to create TENS_CREATE subinstructions: Error ",i11)') impir,this%get_id(),jerr
+            &'" failed to create TENS_CREATE subinstructions: Error ",i11)') impir,uid,jerr
            endif
            flush(CONS_OUT)
           endif
@@ -4004,10 +4004,10 @@
           if(DEBUG.gt.0) then
            if(jerr.eq.0) then
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_DESTROY subinstructions")')&
-            &impir,this%get_id(),num_subinstr
+            &impir,uid,num_subinstr
            else
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
-            &'" failed to create TENS_DESTROY subinstructions: Error ",i11)') impir,this%get_id(),jerr
+            &'" failed to create TENS_DESTROY subinstructions: Error ",i11)') impir,uid,jerr
            endif
            flush(CONS_OUT)
           endif
@@ -4145,11 +4145,11 @@
           if(DEBUG.gt.0) then
            if(jerr.eq.0) then
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_CONTRACT subinstructions")')&
-            &impir,this%get_id(),num_subinstr
+            &impir,uid,num_subinstr
            else
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
             &'" failed to create TENS_CONTRACT subinstructions with error ",i11," for parent tensor instruction:")')&
-            &impir,this%get_id(),jerr
+            &impir,uid,jerr
             call tens_instr%print_it(dev_id=CONS_OUT)
            endif
            flush(CONS_OUT)
@@ -4197,17 +4197,17 @@
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid,i,n,opcode,sts,iec,channel
+         integer(INTD):: errc,ier,thid,i,n,opcode,sts,iec,channel,uid
          logical:: active,stopping,synced
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
          class(tens_instr_t), pointer:: tens_instr
          class(*), pointer:: uptr
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,'//&
-          &'") with ",i4," channels over communicator ",i11)') impir,this%get_id(),thid,this%num_ranks,this%dispatch_comm
+          &'") with ",i4," channels over communicator ",i11)') impir,uid,thid,this%num_ranks,this%dispatch_comm
           flush(CONS_OUT)
          endif
 !Reserve bytecode buffers and clean communication handles:
@@ -4251,7 +4251,7 @@
           ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher unit ",i2," received ",i9," instructions from Decomposer")')&
-           &impir,this%get_id(),i
+           &impir,uid,i
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
@@ -4334,12 +4334,11 @@
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid,i
+         integer(INTD):: errc,ier,thid,i,uid
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher stopped as DSVU # ",i2," (thread ",i2,")")')&
-          &impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -4618,6 +4617,7 @@
          integer(INTD), intent(in):: channel                !in: offset in this.bytecode(1:max)
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc
+         integer(INTL):: npck
 
          errc=0
          if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
@@ -4637,8 +4637,9 @@
          endif
          if(DEBUG.gt.0) then
           if(errc.eq.0) then
+           npck=this%bytecode(channel)%get_num_packets()
            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.issue)[",i6,"]: Issued ",i6," instructions to channel ",i2,": Rank = ",i4)')&
-           &impir,this%bytecode(channel)%get_num_packets(),channel,this%dispatch_rank(channel)
+           &impir,npck,channel,this%dispatch_rank(channel)
           else
            write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.issue)[",i6,"]: Unable to issue bytecode to channel ",i2,": Error ",i11)')&
            &impir,channel,errc
@@ -4771,14 +4772,14 @@
          implicit none
          class(tavp_mng_replicator_t), intent(inout):: this !inout: TAVP-MNG replicator DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,uid
          logical:: active,stopping
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -4817,12 +4818,11 @@
          implicit none
          class(tavp_mng_replicator_t), intent(inout):: this !inout: TAVP-MNG replicator DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,uid
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator stopped as DSVU # ",i2," (thread ",i2,")")')&
-          &impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -4911,7 +4911,7 @@
          implicit none
          class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG Collector DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier,thid,cnt,iec,sts,opcode,i,n
+         integer(INTD):: errc,ier,thid,cnt,iec,sts,opcode,i,n,uid
          integer(INTL):: pid,cid
          logical:: active,stopping,matched,evicted
          class(dsvp_t), pointer:: dsvp
@@ -4922,9 +4922,9 @@
          class(*), pointer:: uptr
          type(list_pos_t):: list_pos
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
 !Initialize queues:
@@ -4956,7 +4956,7 @@
           ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-59; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector unit ",i2," received ",i9," parent instructions from Decomposer")')&
-           &impir,this%get_id(),i
+           &impir,uid,i
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
@@ -5026,7 +5026,7 @@
           ier=this%flush_port(1,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector unit ",i2," received ",i9," subinstructions from lower level")')&
-           &impir,this%get_id(),i
+           &impir,uid,i
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
@@ -5127,11 +5127,11 @@
          implicit none
          class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG Collector DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,uid
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:

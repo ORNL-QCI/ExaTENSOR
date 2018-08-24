@@ -1518,8 +1518,8 @@
          class(tens_entry_wrk_t), intent(inout):: this   !inout: active tensor cache entry
          integer(INTD), intent(out), optional:: ierr     !out: error code
          logical, intent(in), optional:: error_if_active !in: if TRUE, an error will be reported if the tensor cache entry is persistent and/or still in use
-         integer(INTD):: errc
-         logical:: lockable
+         integer(INTD):: errc,refc,resc,usec
+         logical:: lockable,pers
 
          lockable=this%is_lockable()
          if(lockable) call this%lock() !some tensor cache entries being destructed do not have locks (temporary allocated in tens_cache_t.store())
@@ -1532,9 +1532,9 @@
              call this%resource%free_buffer(errc)
              if(errc.ne.0) then
               if(VERBOSE) then
+               refc=this%get_ref_count(); resc=this%resource%get_ref_count()
                write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_entry_wrk_t.release_resource): Failed to free memory buffer: '//&
-               &'Error ",i11,": Cache entry refcount = ",i9,"; Resource refcount = ",i9)') errc,this%get_ref_count(),&
-               &this%resource%get_ref_count()
+               &'Error ",i11,": Cache entry refcount = ",i9,"; Resource refcount = ",i9)') errc,refc,resc
                flush(CONS_OUT)
               endif
               errc=-6
@@ -1558,9 +1558,9 @@
           endif
          endif
          if(errc.ne.0.and.VERBOSE) then
+          refc=this%get_ref_count(); usec=this%get_use_count(); pers=this%is_persistent()
           write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_entry_wrk_t.release_resource)[",i6,'//&
-          &'"]: Resource release error ",i3," for tensor cache entry below: ",i3,1x,i3,1x,l1)')&
-          &impir,errc,this%get_ref_count(),this%get_use_count(),this%is_persistent()
+          &'"]: Resource release error ",i3," for tensor cache entry below: ",i3,1x,i3,1x,l1)') impir,errc,refc,usec,pers
           call this%print_it(dev_id=CONS_OUT)
           flush(CONS_OUT)
          endif
@@ -1705,8 +1705,9 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id
          integer(INTD), intent(in), optional:: nspaces !in: left alignment
-         integer(INTD):: errc,devo,nsp,j
+         integer(INTD):: errc,devo,nsp,j,refc,usec,rwc,drwc
          class(tens_rcrsv_t), pointer:: tensor
+         logical:: pers,blkd
 !$OMP FLUSH
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
@@ -1718,10 +1719,11 @@
          tensor=>this%get_tensor(errc)
          if(errc.eq.0) call tensor%print_it(errc,devo,nsp+1)
  !Counters:
+         pers=this%is_persistent(); refc=this%get_ref_count(); usec=this%get_use_count()
+         rwc=this%get_rw_counter(); drwc=this%get_rw_counter(defer=.TRUE.); blkd=this%is_blocked()
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Persist = ",l1,". Counters: Ref = ",i5,"; Use = ",i2,"; RW/DRW = ",i3,1x,i3,"; Block = ",l1)')&
-         &this%is_persistent(),this%get_ref_count(),this%get_use_count(),this%get_rw_counter(),this%get_rw_counter(defer=.TRUE.),&
-         &this%is_blocked()
+         &pers,refc,usec,rwc,drwc,blkd
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
          call this%unlock()
@@ -1797,7 +1799,7 @@
          class(tens_oprnd_t), intent(inout):: this                         !inout: empty tensor operand (on entrance)
          class(tens_entry_wrk_t), intent(inout), target:: tens_cache_entry !in: tensor cache entry owning the tensor (and its resource)
          integer(INTD), intent(out), optional:: ierr                       !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,refc
 
          if(.not.this%is_active(errc)) then
           if(errc.eq.0) then
@@ -1812,8 +1814,8 @@
               if(associated(this%resource)) call this%resource%incr_ref_count()
               this%talsh_tens=>this%cache_entry%get_talsh_tensor()
               if(DEBUG.gt.1) then
-               write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Tensor operand associated with a cache entry(",i4,"):")')&
-               &impir,this%cache_entry%get_ref_count()
+               refc=this%cache_entry%get_ref_count()
+               write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Tensor operand associated with a cache entry(",i4,"):")') impir,refc
                call this%tensor%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
@@ -2923,7 +2925,8 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id
          integer(INTD), intent(in), optional:: nspaces !in: left alignment
-         integer(INTD):: errc,devo,nsp,j,sts
+         integer(INTD):: errc,devo,nsp,j,sts,rwc,drwc
+         logical:: actv,pres,blkd
 !$OMP FLUSH
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
@@ -2932,14 +2935,14 @@
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR OPERAND{")')
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         sts=this%get_comm_stat()
+         actv=this%is_active(); pres=this%is_present(); sts=this%get_comm_stat()
          if(associated(this%cache_entry)) then
+          rwc=this%cache_entry%get_rw_counter(); drwc=this%cache_entry%get_rw_counter(defer=.TRUE.)
+          blkd=this%cache_entry%is_blocked()
           write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2,"; RW/DRW = ",i3,1x,i3,"; Block = ",l1)')&
-          &this%is_active(),this%is_present(),sts,&
-          &this%cache_entry%get_rw_counter(),this%cache_entry%get_rw_counter(defer=.TRUE.),this%cache_entry%is_blocked()
+          &actv,pres,sts,rwc,drwc,blkd
          else
-          write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2)')&
-          &this%is_active(),this%is_present(),sts
+          write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2)') actv,pres,sts
          endif
          if(associated(this%tensor)) then
           call this%tensor%print_it(errc,devo,nsp+1); if(errc.ne.TEREC_SUCCESS) errc=-2
@@ -3716,7 +3719,8 @@
              case default !other tensor instructions
               if(VERBOSE) then
                write(CONS_OUT,'("#FATAL(TAVP-WRK:tens_instr_t.lay_output_operands): Unable to lay out an output operand in:")')
-               call this%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
+               call this%print_it(dev_id=CONS_OUT)
+               flush(CONS_OUT)
               endif
               call quit(-1,'#FATAL(TAVP-WRK:tens_instr_t.lay_output_operands): Tensor layout inferrence is not implemented'//&
                        &' for this tensor instruction!') !`Implement output tensor layout inferrence for other tensor instructions
@@ -4396,7 +4400,8 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id
          integer(INTD), intent(in), optional:: nspaces !in: left alignment
-         integer(INTD):: errc,devo,nsp,i,n
+         integer(INTD):: errc,ier,devo,nsp,i,n,opcode,sts
+         integer(INTL):: iid
          class(ds_instr_ctrl_t), pointer:: ctrl
          class(ds_oprnd_t), pointer:: oprnd
          real(8):: start,finish
@@ -4405,11 +4410,11 @@
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
 !$OMP CRITICAL (TAVP_PRINT)
+         iid=this%get_id(); opcode=this%get_code(); sts=this%get_status(errc,ier)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR INSTRUCTION{")')
          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("id = ",i11,"; opcode = ",i4,"; stat = ",i6,"; err = ",i11)')&
-         &this%get_id(),this%get_code(),this%get_status(errc,i),i
+         write(devo,'("id = ",i11,"; opcode = ",i4,"; stat = ",i6,"; err = ",i11)') iid,opcode,sts,ier
          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Number of completed independent local accumulations = ",i1)') this%num_accumulated
          start=this%get_issue_time(); finish=this%get_completion_time()
@@ -4630,18 +4635,22 @@
         subroutine tens_instr_dtor(this)
          implicit none
          type(tens_instr_t):: this !inout: empty or retired tensor instruction
-         integer(INTD):: sts,errc
+         integer(INTD):: sts,errc,opcode
 
-         sts=this%get_status(errc)
+         opcode=this%get_code(); sts=this%get_status(errc)
          if((sts.eq.DS_INSTR_EMPTY.or.sts.eq.DS_INSTR_RETIRED).and.errc.eq.DSVP_SUCCESS) then
           this%parent_instr=>NULL(); this%num_accumulated=0
           call this%timings%clean()
           call this%clean(errc)
           if(errc.ne.DSVP_SUCCESS) call quit(errc,'#FATAL(TAVP-WRK:tens_instr_dtor): Tensor instruction destruction failed!')
          else
-          if(errc.eq.DSVP_SUCCESS.and.DEBUG.gt.0)&
-          &write(CONS_OUT,'("#FATAL(TAVP-WRK:tens_instr_dtor): TAVP instruction is still active: code = ",i5,", status = ",i5)')&
-          &this%get_code(),sts
+          if(errc.eq.DSVP_SUCCESS.and.VERBOSE) then
+           write(CONS_OUT,'("#FATAL(TAVP-WRK:tens_instr_dtor): TAVP instruction is still active: code = ",i5,", status = ",i5)')&
+           &opcode,sts
+           call this%print_it(dev_id=CONS_OUT)
+           flush(CONS_OUT)
+          endif
+          !call crash()
           call quit(-1,'#FATAL(TAVP-WRK:tens_instr_dtor): Tensor instruction destructor failed!')
          endif
          return
@@ -4697,7 +4706,7 @@
          implicit none
          class(tavp_wrk_decoder_t), intent(inout):: this !inout: TAVP-WRK decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid,num_packets,opcode,sts,port_id,i,j
+         integer(INTD):: errc,ier,thid,num_packets,opcode,sts,port_id,i,j,uid
          logical:: active,stopping,new
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
@@ -4708,10 +4717,10 @@
          type(tens_instr_t), pointer:: tens_instr
          type(tens_instr_t):: tens_instr_empty
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder started as DSVU # ",i2," (thread ",i2,"): Listening to ",i11,1x,i6)')&
-          &impir,this%get_id(),thid,this%source_comm,this%source_rank
+          &impir,uid,thid,this%source_comm,this%source_rank
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -4741,7 +4750,7 @@
             num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-33; exit wloop; endif
             if(DEBUG.gt.0) then
              write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder unit ",i2," received ",i9," new instructions")')&
-             &impir,this%get_id(),num_packets
+             &impir,uid,num_packets
              flush(CONS_OUT)
             endif
             if(num_packets.gt.0) then
@@ -4835,13 +4844,13 @@
          implicit none
          class(tavp_wrk_decoder_t), intent(inout):: this !inout: TAVP-WRK decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,uid
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder DSVU # ",i2," (thread ",i2,"): Time stats (sec): ")',ADVANCE='NO')&
-          &impir,this%get_id(),thid; call this%print_timing(CONS_OUT)
+          &impir,uid,thid; call this%print_timing(CONS_OUT)
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -5153,7 +5162,7 @@
          implicit none
          class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid,i,n,opcode,sts,errcode,nce,num_processed
+         integer(INTD):: errc,ier,thid,i,n,opcode,sts,errcode,nce,num_processed,uid
          logical:: active,stopping,pending,evicted
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
@@ -5164,10 +5173,10 @@
          type(comm_handle_t):: comm_hl
          class(*), pointer:: uptr
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer started as DSVU # ",i2," (thread ",i2,"): Reporting to ",i11,1x,i6)')&
-          &impir,this%get_id(),thid,this%retire_comm,this%retire_rank
+          &impir,uid,thid,this%retire_comm,this%retire_rank
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -5190,7 +5199,7 @@
           ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer unit ",i2," received ",i6," instructions from Resourcer")')&
-           &impir,this%get_id(),n
+           &impir,uid,n
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
@@ -5253,8 +5262,7 @@
            call this%bytecode%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
           endif
           if(DEBUG.gt.0.and.num_processed.gt.0) then
-           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer unit ",i2," retired ",i6," instructions")')&
-           &impir,this%get_id(),num_processed
+           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer unit ",i2," retired ",i6," instructions")') impir,uid,num_processed
            flush(CONS_OUT)
           endif
  !Delete retired tensor instructions and evict their operands if no longer needed:
@@ -5302,11 +5310,11 @@
          implicit none
          class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,uid
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -5475,7 +5483,7 @@
          implicit none
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier,thid,n,num_staged,opcode,sts,errcode
+         integer(INTD):: errc,ier,thid,n,num_staged,opcode,sts,errcode,uid
          integer:: rsc_timer
          logical:: active,stopping,auxiliary,deferd,mainq,dependent,blocked,passed,expired,moved_fwd
          type(tens_instr_t):: instr_fence
@@ -5484,10 +5492,10 @@
          class(tavp_wrk_t), pointer:: tavp
          class(*), pointer:: uptr
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer started as DSVU # ",i2," (thread ",i2,"): Max memory (B) = ",i15)')&
-          impir,this%get_id(),thid,this%host_ram_size
+          &impir,uid,thid,this%host_ram_size
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
@@ -5576,7 +5584,7 @@
           ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-68; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," received ",i9," instructions from Decoder")')&
-           &impir,this%get_id(),n
+           &impir,uid,n
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
@@ -5718,7 +5726,7 @@
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
              if(DEBUG.gt.0.and.n.gt.0) then
               write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," passed ",i9," instructions to Communicator")')&
-              &impir,this%get_id(),n
+              &impir,uid,n
               flush(CONS_OUT)
              endif
              num_staged=0
@@ -5736,7 +5744,7 @@
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
            if(DEBUG.gt.0.and.n.gt.0) then
             write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," passed ",i9," instructions to Communicator")')&
-            &impir,this%get_id(),n
+            &impir,uid,n
             flush(CONS_OUT)
            endif
            num_staged=0
@@ -5759,7 +5767,7 @@
           ier=this%unload_port(1,this%rls_list,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," received ",i9," instructions from Communicator")')&
-           &impir,this%get_id(),n
+           &impir,uid,n
            !ier=this%rls_list%reset(); ier=this%rls_list%scanp(action_f=tens_instr_print); ier=this%rls_list%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
@@ -5825,7 +5833,7 @@
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
            if(DEBUG.gt.0.and.n.gt.0) then
             write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," passed ",i6," instructions to Retirer")')&
-            &impir,this%get_id(),n
+            &impir,uid,n
             flush(CONS_OUT)
            endif
           endif
@@ -5850,11 +5858,11 @@
          implicit none
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,uid
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -6399,7 +6407,7 @@
          class(tens_rcrsv_t), pointer:: tensor
          class(tens_cache_entry_t), pointer:: cache_entry
          character(TEREC_MAX_TENS_NAME_LEN+8):: tname
-         logical:: no_output,op_output,temp
+         logical:: no_output,op_output,temp,pres
 
          no_output=.FALSE.; if(present(omit_output)) no_output=omit_output
          n=tens_instr%get_num_operands(errc)
@@ -6416,9 +6424,11 @@
               call oprnd%acquire_rsc(ier,init_rsc=(op_output.and.temp)) !initialization to zero is only done for temporary output operands
               if(ier.eq.0) then
                if(DEBUG.gt.0) then
+                pres=oprnd%is_present()
                 tensor=>oprnd%get_tensor(ier); call tensor%get_name(tname,l,ier)
                 write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer.acquire_resources)[",i6,"]: Acquired resource for tensor")',ADVANCE='NO')&
-                &impir; write(CONS_OUT,*) tname(1:l); write(CONS_OUT,'("Presence = ",l1)') oprnd%is_present() !debug
+                &impir; write(CONS_OUT,*) tname(1:l)
+                write(CONS_OUT,'("Presence = ",l1)') pres !debug
                 flush(CONS_OUT)
                endif
               else
@@ -6520,7 +6530,7 @@
          implicit none
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
          integer(INTD), intent(out), optional:: ierr          !out: error code
-         integer(INTD):: errc,ier,thid,n,num_fetch,num_upload,opcode,sts,errcode
+         integer(INTD):: errc,ier,thid,n,num_fetch,num_upload,opcode,sts,errcode,uid
          integer:: com_timer
          logical:: active,stopping,really_stopping,delivered
          class(dsvp_t), pointer:: dsvp
@@ -6528,10 +6538,10 @@
          class(tens_instr_t), pointer:: tens_instr
          class(*), pointer:: uptr
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator started as DSVU # ",i2," (thread ",i2,'//&
-          '"): Number of dynamic MPI windows = ",i6)') impir,this%get_id(),thid,this%num_mpi_windows
+          &'"): Number of dynamic MPI windows = ",i6)') impir,uid,thid,this%num_mpi_windows
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
@@ -6552,7 +6562,7 @@
            this%addr_space=>tavp%addr_space
            this%arg_cache=>tavp%tens_cache
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," created a global addressing space successfully!")')&
-           &impir,this%get_id()
+           &impir,uid
           else
            if(errc.eq.0) errc=-58
           endif
@@ -6571,7 +6581,7 @@
           ier=this%unload_port(0,this%fet_list,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-53; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," received ",i9," instructions from Resourcer")')&
-           &impir,this%get_id(),n
+           &impir,uid,n
            !ier=this%fet_list%reset(); ier=this%fet_list%scanp(action_f=tens_instr_print); ier=this%fet_list%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
@@ -6628,7 +6638,7 @@
           ier=this%unload_port(1,this%upl_list,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-36; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," received ",i9," instructions from Dispatcher")')&
-           &impir,this%get_id(),n
+           &impir,uid,n
            !ier=this%upl_list%reset(); ier=this%upl_list%scanp(action_f=tens_instr_print); ier=this%upl_list%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
@@ -6749,7 +6759,7 @@
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
            if(DEBUG.gt.0.and.n.gt.0) then
             write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," passed ",i6," instructions to Dispatcher")')&
-            &impir,this%get_id(),n
+            &impir,uid,n
             flush(CONS_OUT)
            endif
           endif
@@ -6760,7 +6770,7 @@
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
            if(DEBUG.gt.0.and.n.gt.0) then
             write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," passed ",i6," instructions back to Resourcer")')&
-            &impir,this%get_id(),n
+            &impir,uid,n
             flush(CONS_OUT)
            endif
           endif
@@ -6784,12 +6794,11 @@
          implicit none
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
          integer(INTD), intent(out), optional:: ierr          !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,uid
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator stopped as DSVU # ",i2," (thread ",i2,")")')&
-          &impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -6798,7 +6807,7 @@
          call this%addr_space%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-14
          this%addr_space=>NULL()
          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," destroyed global addressing space: Status ",i11)')&
-         &impir,this%get_id(),ier
+         &impir,uid,ier
 !Deactivate the retire list:
          ier=this%ret_list%reset()
          if(ier.eq.GFC_SUCCESS) then
@@ -7048,17 +7057,17 @@
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid,n,sts,opcode,errcode,num_outstanding
+         integer(INTD):: errc,ier,thid,n,sts,opcode,errcode,num_outstanding,uid
          logical:: active,stopping,completed
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
          class(tens_instr_t), pointer:: tens_instr,parent
          class(*), pointer:: uptr
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher started as DSVU # ",i2,'//&
-          &'" (thread ",i2,"): Host buffer size (B) = ",i15)') impir,this%get_id(),thid,this%host_buf_size
+          &'" (thread ",i2,"): Host buffer size (B) = ",i15)') impir,uid,thid,this%host_buf_size
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
@@ -7090,7 +7099,7 @@
           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher unit ",i2," received ",i6," instructions from Communicator")')&
-           &impir,this%get_id(),n
+           &impir,uid,n
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
@@ -7188,7 +7197,7 @@
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
            if(DEBUG.gt.0.and.n.gt.0) then
             write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher unit ",i2," passed ",i6," instructions back to Communicator")')&
-            &impir,this%get_id(),n
+            &impir,uid,n
             flush(CONS_OUT)
            endif
           endif
@@ -7210,12 +7219,11 @@
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,uid
 
-         errc=0; thid=omp_get_thread_num()
+         errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher stopped as DSVU # ",i2," (thread ",i2,")")')&
-          &impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
