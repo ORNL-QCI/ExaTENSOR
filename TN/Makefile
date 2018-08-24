@@ -286,9 +286,9 @@ endif
 CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) $(PIC_FLAG)
 
 #FORTRAN FLAGS:
-FFLAGS_INTEL_DEV = -c -std08 -g -O0 -fpp -vec-threshold4 -qopenmp -mkl=parallel
-FFLAGS_INTEL_OPT = -c -std08 -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
-FFLAGS_INTEL_PRF = -c -std08 -g -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
+FFLAGS_INTEL_DEV = -c -std08 -g -O0 -fpp -vec-threshold4 -traceback -qopenmp -mkl=parallel
+FFLAGS_INTEL_OPT = -c -std08 -O3 -fpp -vec-threshold4 -traceback -qopenmp -mkl=parallel
+FFLAGS_INTEL_PRF = -c -std08 -g -O3 -fpp -vec-threshold4 -traceback -qopenmp -mkl=parallel
 FFLAGS_CRAY_DEV = -c -g
 FFLAGS_CRAY_OPT = -c -O3
 FFLAGS_CRAY_PRF = -c -g -O3

@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/22
+!REVISION: 2018/08/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -88,6 +88,8 @@
         integer(INTD), parameter, public:: DSVP_STAT_ERR=-1         !DSVP encountered an error (generic)
  !DSVP specific kind (valid specific DSVP kinds must be non-negative):
         integer(INTD), parameter, public:: DSVP_NO_KIND=-1          !no specific kind
+ !Domain-specific unit:
+        real(8), parameter, public:: DS_UNIT_ALIVE_INTERVAL=1d-1    !interval (sec) upon which each DS unit is supposed to report that it is still alive
  !Domain-specific operand:
   !Data communication status:
         integer(INTD), parameter, public:: DS_OPRND_NO_COMM=0       !no pending communication on the domain-specific operand
@@ -203,12 +205,14 @@
         end type ds_unit_port_t
  !Domain-specific virtual unit (DSVU):
         type, abstract, public:: ds_unit_t
-         integer(INTD), private:: id=-1                       !unique ID of the DS unit: [0..max]
-         integer(INTD), private:: error_code=DSVP_SUCCESS     !error code
-         class(dsvp_t), pointer, private:: dsvp_p=>NULL()     !non-owning pointer to the DSVP the DS unit is part of
-         type(ds_unit_port_t), allocatable, private:: port(:) !DS unit port (for incoming DS instructions from other DS units)
-         type(list_bi_t), private:: queue                     !queue of the currently processed DS instructions stored by reference
-         type(list_iter_t), public:: iqueue                   !queue iterator
+         integer(INTD), private:: id=-1                           !unique ID of the DS unit: [0..max]
+         integer(INTD), private:: error_code=DSVP_SUCCESS         !error code
+         class(dsvp_t), pointer, private:: dsvp_p=>NULL()         !non-owning pointer to the DSVP the DS unit is part of
+         type(ds_unit_port_t), allocatable, private:: port(:)     !DS unit port (for incoming DS instructions from other DS units)
+         type(list_bi_t), private:: queue                         !queue of the currently processed DS instructions stored by reference
+         type(list_iter_t), public:: iqueue                       !queue iterator
+         real(8), private:: alive_interval=DS_UNIT_ALIVE_INTERVAL !current time interval (sec) for reporting that DS unit is still alive
+         real(8), private:: alive_last=-DS_UNIT_ALIVE_INTERVAL    !time stamp of the last alive report
          contains
           procedure(ds_unit_ctor_i), deferred, public:: configure !configures the DS unit
           procedure(ds_unit_self_i), deferred, public:: start     !starts, lives and stops the DS unit (the corresponding thread will run here until termination)
@@ -223,6 +227,7 @@
           procedure, public:: port_empty=>DSUnitPortEmpty         !returns TRUE if the DS unit port is empty, FALSE otherwise
           procedure, public:: lock_port=>DSUnitLockPort           !locks the DS unit port such that no other DS unit will be able to load it
           procedure, public:: unlock_port=>DSUnitUnlockPort       !unlocks the DS unit port
+          procedure, public:: report_alive=>DSUnitReportAlive     !reports that the DS unit is alive
           procedure, public:: get_dsvp=>DSUnitGetDSVP             !returns a pointer to the DSVP the DS unit is part of
           procedure, public:: get_id=>DSUnitGetId                 !returns the DS unit id
           procedure, private:: set_id=>DSUnitSetId                !sets the DS unit id (when the DSVU table is constructed)
@@ -506,6 +511,7 @@
         private DSUnitPortEmpty
         private DSUnitLockPort
         private DSUnitUnlockPort
+        private DSUnitReportAlive
         private DSUnitGetDSVP
         private DSUnitGetId
         private DSUnitSetId
@@ -1312,6 +1318,7 @@
               errc=DSVP_ERR_MEM_ALLOC_FAIL
              endif
             endif
+            if(errc.eq.DSVP_SUCCESS) this%alive_last=-DS_UNIT_ALIVE_INTERVAL
            else
             errc=DSVP_ERR_INVALID_ARGS
            endif
@@ -1475,6 +1482,33 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSUnitUnlockPort
+!---------------------------------------------------------------------------
+        subroutine DSUnitReportAlive(this,dev_out,curr_time_stamp,ierr,mesg)
+!Reports (periodically) that the DS unit is still alive.
+         implicit none
+         class(ds_unit_t), intent(inout):: this      !in: DS unit
+         integer(INTD), intent(in):: dev_out         !in: output device id
+         real(8), intent(in):: curr_time_stamp       !in: current time stamp
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         character(*), intent(in), optional:: mesg   !in: additional output message
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         if(this%id.ge.0) then
+          if(this%alive_last.eq.-DS_UNIT_ALIVE_INTERVAL.or.curr_time_stamp.gt.this%alive_last+this%alive_interval) then
+           this%alive_last=curr_time_stamp
+           write(dev_out,'("#MSG(ds_unit_t): DS unit ",i3," is alive with error status ",i11,".")',ADVANCE='NO')&
+           &this%id,this%error_code
+           if(present(mesg)) then; write(dev_out,*) mesg; else; write(dev_out,'()'); endif
+          endif
+         else
+          errc=DSVP_ERR_UNABLE_COMPLETE
+          write(dev_out,'("#ERROR(ds_unit_t.report_alive): Attempt to report alive for an uninitialized DS unit!")')
+         endif
+         flush(dev_out)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSUnitReportAlive
 !-----------------------------------------------------
         function DSUnitGetDSVP(this,ierr) result(dsvp)
 !Returns a pointer to the DSVP the DS unit is part of.

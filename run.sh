@@ -24,9 +24,9 @@ export KMP_AFFINITY="verbose,granularity=core,compact" #Intel CPU thread affinit
 export MIC_PREFIX=MIC                                  #mandatory when using MIC
 export MIC_ENV_PREFIX=MIC                              #mandatory when using MIC
 export MIC_OMP_PREFIX=MIC                              #mandatory when using MIC
-export MIC_OMP_NUM_THREADS=236                         #mandatory when using MIC
+export MIC_OMP_NUM_THREADS=256                         #mandatory when using MIC
 export MIC_MKL_NUM_THREADS=$MIC_OMP_NUM_THREADS        #mandatory when using MIC (Intel MIC MKL)
-export MIC_KMP_PLACE_THREADS="59c,4t"                  #Intel MIC thread placement
+export MIC_KMP_PLACE_THREADS="64c,4t"                  #Intel MIC thread placement
 export MIC_KMP_AFFINITY="granularity=fine,compact"     #Intel MIC thread affinity
 export MIC_USE_2MB_BUFFERS=64K                         #Intel MIC only
 export MKL_MIC_ENABLE=0                                #Intel MIC MKL auto-offloading
@@ -52,6 +52,8 @@ unset PAMI_IBV_ENABLE_DCT
 
 rm *.tmp *.log *.out *.x
 cp $QF_PATH/Qforce.x ./
+
+#jsrun -n8 -r2 -a1 -c21 -g3 -brs ./Qforce.x #>& qforce.log
 
 #/usr/local/mpi/openmpi-3.1.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE -oversubscribe ./Qforce.x #>& qforce.log
 
