@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/30
+!REVISION: 2018/08/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -43,16 +43,60 @@
 ! - device_id = [1:MAX_GPUS_PER_NODE]: NVidia GPUs (GPU#=device_id-1);
 ! - device_id = [MAX_GPUS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE]: Intel MICs (MIC#=device_id-1-MAX_GPUS_PER_NODE);
 ! - device_id = [MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE]: AMD GPUs;
+
+       module qforce_test
+        use exatensor
+        use stsubs, only: crash
+        implicit none
+        private
+
+        type, extends(tens_method_uni_t), public:: tens_init_test_t
+         real(8), private:: init_val=0d0
+         contains
+          procedure, public:: tens_init_test_ctor=>TensInitTestCtor
+          procedure, public:: apply=>TensInitTestApply
+        end type tens_init_test_t
+
+       contains
+
+        subroutine TensInitTestCtor(this,val)
+         implicit none
+         class(tens_init_test_t), intent(inout):: this
+         real(8), intent(in):: val
+
+         this%init_val=val
+        end subroutine TensInitTestCtor
+
+        function TensInitTestApply(this,tensor,scalar) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         class(tens_init_test_t), intent(in):: this
+         class(tens_rcrsv_t), intent(inout):: tensor
+         complex(8), intent(inout), optional:: scalar
+         class(tens_body_t), pointer:: body
+
+         body=>tensor%get_body(ierr)
+         if(ierr.eq.EXA_SUCCESS.and.associated(body)) then
+          
+         else
+          ierr=-1
+         endif
+        end function TensInitTestApply
+
+       end module qforce_test
+
        program main
         use exatensor
         use service_mpi
         use stsubs, only: wait_delay
+        use qforce_test
         implicit none
         integer(INTL), parameter:: TEST_SPACE_DIM=50_INTL
         type(spher_symmetry_t):: basis_symmetry(1:TEST_SPACE_DIM)
         type(subspace_basis_t):: basis
         class(h_space_t), pointer:: ao_space
         type(tens_rcrsv_t):: dtens,ltens,rtens
+        type(tens_init_test_t):: init1369
         integer(INT_MPI):: mpi_th_provided
         integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role
         integer(INTL):: l,ao_space_root
@@ -84,6 +128,14 @@
          endif
          ierr=exatns_space_register('AO_space',basis,ao_space_id,ao_space)
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
+         if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+!Application registers a user-defined method for tensor initialization:
+         if(my_rank.eq.comm_size-1) then
+          write(6,'("Registering a user-defined tensor initialization method ... ")',ADVANCE='NO'); flush(6)
+         endif
+         call init1369%tens_init_test_ctor(13.69d0)
+         ierr=exatns_method_register('SetTo13.69',init1369)
+         if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_method_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
 !Application runs ExaTENSOR within MPI_COMM_WORLD:
          ierr=exatns_start(MPI_COMM_WORLD)

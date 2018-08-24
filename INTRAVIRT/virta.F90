@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/21
+!REVISION: 2018/08/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -723,17 +723,19 @@
          integer(INTD), intent(out), optional:: ierr      !out: error code
          complex(8), intent(in), optional:: alpha         !in: scalar
          character(*), intent(in), optional:: method_name !in: external (registered) method name
-         integer(INTD):: errc
+         integer(INTD):: errc,l
 
          errc=0; this%method_name=' '
-         if(present(alpha)) this%alpha=alpha
          if(present(method_name)) then
-          if(len_trim(method_name).le.EXA_MAX_METHOD_NAME_LEN) then
-           this%method_name=method_name(1:len_trim(method_name))
+          l=len_trim(method_name)
+          if(l.le.EXA_MAX_METHOD_NAME_LEN) then
+           this%method_name(1:l)=method_name(1:l)
+           call this%map_method(errc); if(errc.ne.0) then; this%method_name=' '; errc=-2; endif
           else
            errc=-1
           endif
          endif
+         if(errc.eq.0.and.present(alpha)) this%alpha=alpha
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransCtor
@@ -747,9 +749,9 @@
 
          errc=0; l=len_trim(this%method_name)
          if(l.gt.0) then
-          this%definer=>method_register%retrieve_method(this%method_name(1:l),errc); if(errc.ne.0) errc=-1
+          this%definer=>method_register%retrieve_method(this%method_name(1:l),errc); if(errc.ne.0) errc=-2
          else
-          errc=-2
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -765,9 +767,9 @@
 
          call pack_builtin(packet,this%method_name(1:len_trim(this%method_name)),errc)
          if(errc.eq.PACK_SUCCESS) then
-          call pack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-1
+          call pack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-2
          else
-          errc=-2
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -786,12 +788,12 @@
          call unpack_builtin(packet,this%method_name,sl,errc)
          if(errc.eq.PACK_SUCCESS) then
           if(sl.le.EXA_MAX_METHOD_NAME_LEN) then
-           call unpack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-1
+           call unpack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-3
           else
            errc=-2
           endif
          else
-          errc=-3
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -823,6 +825,7 @@
 
          this%definer=>NULL()
          this%method_name=' '
+         this%alpha=(0d0,0d0)
          return
         end subroutine ctrl_tens_trans_dtor
 ![ctrl_tens_add_t]============================================
