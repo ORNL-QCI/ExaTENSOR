@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/24
+!REVISION: 2018/08/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -729,8 +729,10 @@
          if(present(method_name)) then
           l=len_trim(method_name)
           if(l.le.EXA_MAX_METHOD_NAME_LEN) then
-           this%method_name(1:l)=method_name(1:l)
-           call this%map_method(errc); if(errc.ne.0) then; this%method_name=' '; errc=-2; endif
+           if(l.gt.0) then
+            this%method_name(1:l)=method_name(1:l)
+            call this%map_method(errc); if(errc.ne.0) then; this%method_name=' '; errc=-2; endif
+           endif
           else
            errc=-1
           endif
@@ -810,9 +812,14 @@
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+         do l=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          l=len_trim(this%method_name)
-         if(l.gt.0) call printl(devo,'Method: '//this%method_name(1:l))
-         write(devo,'("Scalar: ",D24.14,1x,D24.14)') this%alpha
+         if(l.gt.0) then
+          call printl(devo,'Method: '//this%method_name(1:l)//';')
+         else
+          call printl(devo,'No method;')
+         endif
+         write(devo,'(" Scalar: ",D24.14,1x,D24.14)') this%alpha
          flush(devo)
          if(present(ierr)) ierr=errc
          return

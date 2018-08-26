@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/22
+!REVISION: 2018/08/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -72,8 +72,8 @@
         integer(INTD), parameter, public:: TEREC_INVALID_REQUEST=-2
         integer(INTD), parameter, public:: TEREC_MEM_ALLOC_FAILED=-3
         integer(INTD), parameter, public:: TEREC_MEM_FREE_FAILED=-4
-        integer(INTD), parameter, public:: TEREC_UNABLE_COMPLETE=-5
-        integer(INTD), parameter, public:: TEREC_OBJ_CORRUPTED=-6
+        integer(INTD), parameter, public:: TEREC_OBJ_CORRUPTED=-5
+        integer(INTD), parameter, public:: TEREC_UNABLE_COMPLETE=-6
         integer(INTD), parameter, public:: TEREC_OBJ_UNDEFINED=-7
  !Symbolic tensor name:
         integer(INTD), parameter, public:: TEREC_MAX_TENS_NAME_LEN=64 !max length of the tensor name (alphanumeric_ string)

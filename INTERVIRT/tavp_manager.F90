@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/23
+!REVISION: 2018/08/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1332,9 +1332,11 @@
            select case(op_code)
            case(TAVP_INSTR_NOOP)
            case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_DUMP_CACHE)
-            call construct_instr_ctrl(errc); if(errc.ne.0) errc=-10
+            call construct_instr_ctrl(errc); if(errc.ne.0) errc=-11
            case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
-            call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-9
+            call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-10
+           case(TAVP_INSTR_TENS_INIT)
+            call construct_instr_tens_transform(errc); if(errc.ne.0) errc=-9
            case(TAVP_INSTR_TENS_CONTRACT)
             call construct_instr_tens_contract(errc); if(errc.ne.0) errc=-8
            case default
@@ -1396,20 +1398,19 @@
              if(jerr.eq.0) then
               call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !tensor owner id is omitted here
               if(jerr.eq.0) then
-               oprnd=>tens_oprnd
-               call this%set_operand(0,oprnd,jerr)
+               oprnd=>tens_oprnd; call this%set_operand(0,oprnd,jerr) !ownership transfer for oprnd=tens_oprnd
                if(jerr.eq.DSVP_SUCCESS) then
                 if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
-                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand 0 is output
                 elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
-                 this%num_out_oprnds=0
+                 this%num_out_oprnds=0 !no output operands
                 endif
                else
-                jerr=-6
+                deallocate(tens_oprnd); jerr=-6
                endif
                oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
               else
-               jerr=-5
+               deallocate(tens_oprnd); jerr=-5
               endif
               tens_oprnd=>NULL()
              else
@@ -1427,6 +1428,89 @@
           endif
           return
          end subroutine construct_instr_tens_create_destroy
+
+         subroutine construct_instr_tens_transform(jerr)
+          !INIT/TRANSFORM a tensor:
+          !op_spec={tens_transformation_t}
+          integer(INTD), intent(out):: jerr
+          class(ds_oprnd_t), pointer:: oprnd
+          class(ds_instr_ctrl_t), pointer:: instr_ctrl
+          class(tens_transformation_t), pointer:: tens_trans
+          class(ctrl_tens_trans_t), pointer:: tens_trans_ctrl
+          class(tens_rcrsv_t), pointer:: tensor
+          class(tens_oprnd_t), pointer:: tens_oprnd
+          character(:), allocatable:: method_name
+          complex(8):: scalar
+          logical:: defined
+
+          jerr=0; tens_trans=>NULL()
+          select type(op_spec); class is(tens_transformation_t); tens_trans=>op_spec; end select
+          if(associated(tens_trans)) then
+           if(tens_trans%is_set()) then
+            call tens_trans%get_method(defined,scalar,method_name,jerr)
+            if(jerr.eq.TEREC_SUCCESS) then
+             allocate(tens_trans_ctrl,STAT=jerr)
+             if(jerr.eq.0) then
+              if(allocated(method_name)) then
+               call tens_trans_ctrl%ctrl_tens_trans_ctor(jerr,scalar,method_name)
+              else
+               call tens_trans_ctrl%ctrl_tens_trans_ctor(jerr,scalar)
+              endif
+              if(jerr.eq.0) then
+               instr_ctrl=>tens_trans_ctrl; call this%set_control(instr_ctrl,jerr) !ownership transfer for instr_ctrl=tens_trans_ctrl
+               if(jerr.eq.DSVP_SUCCESS) then
+                call this%alloc_operands(1,jerr)
+                if(jerr.eq.DSVP_SUCCESS) then
+                 tensor=>tens_trans%get_argument(0,jerr)
+                 if(jerr.eq.TEREC_SUCCESS) then
+                  allocate(tens_oprnd,STAT=jerr)
+                  if(jerr.eq.0) then
+                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr)
+                   if(jerr.eq.0) then
+                    oprnd=>tens_oprnd; call this%set_operand(0,oprnd,jerr) !ownership transfer for oprnd=tens_oprnd
+                    if(jerr.eq.DSVP_SUCCESS) then
+                     this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+                    else
+                     deallocate(tens_oprnd); jerr=-11
+                    endif
+                    oprnd=>NULL()
+                   else
+                    deallocate(tens_oprnd); jerr=-10
+                   endif
+                   tens_oprnd=>NULL()
+                  else
+                   jerr=-9
+                  endif
+                 else
+                  jerr=-8
+                 endif
+                 tensor=>NULL()
+                else
+                 jerr=-7
+                endif
+               else
+                deallocate(tens_trans_ctrl); jerr=-6
+               endif
+               instr_ctrl=>NULL()
+              else
+               deallocate(tens_trans_ctrl); jerr=-5
+              endif
+              tens_trans_ctrl=>NULL()
+             else
+              jerr=-4
+             endif
+            else
+             jerr=-3
+            endif
+           else
+            jerr=-2
+           endif
+           tens_trans=>NULL()
+          else
+           jerr=-1
+          endif
+          return
+         end subroutine construct_instr_tens_transform
 
          subroutine construct_instr_tens_contract(jerr)
           !CONTRACT two tensors into another tensor:
@@ -1451,28 +1535,28 @@
              if(jerr.eq.0) then
               call tens_contr_ctrl%ctrl_tens_contr_ctor(contr_ptrn,jerr,tens_contr%get_prefactor()) !contraction pattern is cloned by value
               if(jerr.eq.0) then
-               instr_ctrl=>tens_contr_ctrl
-               call this%set_control(instr_ctrl,jerr) !ownership transfer for instr_ctrl=tens_contr_ctrl
+               instr_ctrl=>tens_contr_ctrl; call this%set_control(instr_ctrl,jerr) !ownership transfer for instr_ctrl=tens_contr_ctrl
                if(jerr.eq.DSVP_SUCCESS) then
                 call this%alloc_operands(3,jerr)
                 if(jerr.eq.DSVP_SUCCESS) then
                  do jj=0,2
                   tensor=>tens_contr%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
                   allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
-                  call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
-                  oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
+                  call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) then; deallocate(tens_oprnd); exit; endif
+                  oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr) !ownership transfer for oprnd=tens_oprnd
+                  if(jerr.ne.DSVP_SUCCESS) then; oprnd=>NULL(); deallocate(tens_oprnd); exit; endif
                   oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
                  enddo
-                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand 0 is output
                 else
                  jerr=-7
                 endif
                else
-                jerr=-6
+                deallocate(tens_contr_ctrl); jerr=-6
                endif
                instr_ctrl=>NULL()
               else
-               jerr=-5
+               deallocate(tens_contr_ctrl); jerr=-5
               endif
               tens_contr_ctrl=>NULL() !<tens_contr_ctrl> pointer was saved in the tensor instruction and will later be deallocated
              else
