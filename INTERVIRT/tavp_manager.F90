@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/26
+!REVISION: 2018/08/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1469,7 +1469,7 @@
                    if(jerr.eq.0) then
                     oprnd=>tens_oprnd; call this%set_operand(0,oprnd,jerr) !ownership transfer for oprnd=tens_oprnd
                     if(jerr.eq.DSVP_SUCCESS) then
-                     this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+                     this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand #0 is output
                     else
                      deallocate(tens_oprnd); jerr=-11
                     endif
@@ -1613,9 +1613,11 @@
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
                  case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_DUMP_CACHE)
-                  call encode_instr_ctrl(errc); if(errc.ne.0) errc=-12
+                  call encode_instr_ctrl(errc); if(errc.ne.0) errc=-13
                  case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
-                  call encode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-11
+                  call encode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-12
+                 case(TAVP_INSTR_TENS_INIT)
+                  call encode_instr_tens_transform(errc); if(errc.ne.0) errc=-11
                  case(TAVP_INSTR_TENS_CONTRACT)
                   call encode_instr_tens_contract(errc); if(errc.ne.0) errc=-10
                  case default
@@ -1697,6 +1699,61 @@
           endif
           return
          end subroutine encode_instr_tens_create_destroy
+
+         subroutine encode_instr_tens_transform(jerr)
+          !TRANSFORM/INIT a tensor: tensor0=value
+          !Packed format: {id|op_code|status|error|ctrl_tens_trans_t|tensor_operand0}
+          integer(INTD), intent(out):: jerr
+          class(ds_oprnd_t), pointer:: oprnd
+          class(tens_rcrsv_t), pointer:: tensor
+          class(ds_instr_ctrl_t), pointer:: tens_trans_ctrl
+
+          jerr=0
+          tens_trans_ctrl=>this%get_control(jerr)
+          if(jerr.eq.DSVP_SUCCESS) then
+           select type(tens_trans_ctrl)
+           class is(ctrl_tens_trans_t)
+            call tens_trans_ctrl%pack(instr_packet,jerr); if(jerr.ne.0) jerr=-8
+           class default
+            jerr=-7
+           end select
+           if(jerr.eq.0) then
+            tensor=>NULL()
+            oprnd=>this%get_operand(0,jerr)
+            if(jerr.eq.DSVP_SUCCESS) then
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              call oprnd%lock()
+              tensor=>oprnd%get_tensor(jerr)
+              if(jerr.eq.0) then
+               if(tensor%is_set()) then !trap
+                call pack_builtin(instr_packet,oprnd%get_owner_id(),jerr)
+                if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_read_count(),jerr)
+                if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_write_count(),jerr)
+                if(jerr.eq.0) call tensor%pack(instr_packet,jerr)
+                if(jerr.ne.0) jerr=-6
+               else
+                jerr=-5
+               endif
+              else
+               jerr=-4
+              endif
+              tensor=>NULL()
+              call oprnd%unlock()
+             class default
+              jerr=-3
+             end select
+            else
+             jerr=-2
+            endif
+            oprnd=>NULL()
+           endif
+           tens_trans_ctrl=>NULL()
+          else
+           jerr=-1
+          endif
+          return
+         end subroutine encode_instr_tens_transform
 
          subroutine encode_instr_tens_contract(jerr)
           !CONTRACT two tensors: tensor0+=tensor1*tensor2*scalar:
@@ -1912,7 +1969,8 @@
          class(tens_instr_t), intent(in):: this                                     !in: tensor instruction
          class(tens_operation_t), allocatable, target, intent(out):: tens_operation !out: corresponding (encapsulated) tensor operation
          integer(INTD), intent(out), optional:: ierr                                !out: error code
-         integer(INTD):: errc,opcode,numo,i
+         integer(INTD):: errc,opcode,numo,i,sl
+         character(EXA_MAX_METHOD_NAME_LEN):: method_name
          complex(8):: alpha
          class(tens_rcrsv_t), pointer:: tensor
          class(ds_oprnd_t), pointer:: oprnd
@@ -1928,6 +1986,56 @@
              select case(opcode)
              case(TAVP_INSTR_TENS_CREATE) !no associated tensor operation
              case(TAVP_INSTR_TENS_DESTROY) !no associated tensor operation
+             case(TAVP_INSTR_TENS_INIT)
+              allocate(tens_transformation_t::tens_operation)
+              select type(tens_operation)
+              class is(tens_transformation_t)
+               oprnd=>this%get_operand(0,errc)
+               if(errc.eq.DSVP_SUCCESS) then
+                select type(oprnd)
+                class is(tens_oprnd_t)
+                 call oprnd%lock()
+                 tensor=>oprnd%get_tensor(errc)
+                 if(errc.eq.0.and.associated(tensor)) then
+                  call tens_operation%set_argument(tensor,errc); if(errc.ne.TEREC_SUCCESS) errc=-23
+                  tensor=>NULL()
+                 else
+                  errc=-22
+                 endif
+                 call oprnd%unlock()
+                class default
+                 errc=-21
+                end select
+                if(errc.eq.0) then
+                 instr_ctrl=>this%get_control(errc)
+                 if(errc.eq.DSVP_SUCCESS) then
+                  select type(instr_ctrl)
+                  class is(ctrl_tens_trans_t)
+                   call instr_ctrl%get_method(method_name,sl,errc,alpha)
+                   if(errc.eq.0) then
+#if !(defined(__GNUC__) && __GNUC__ < 8)
+                    call tens_operation%set_method(errc,alpha,.FALSE.,method_name(1:sl),method_map_f)
+#else
+                    call tens_operation%set_method(errc,alpha,.FALSE.,method_name(1:sl))
+#endif
+                    if(errc.ne.TEREC_SUCCESS) errc=-20
+                   else
+                    errc=-19
+                   endif
+                  class default
+                   errc=-18
+                  end select
+                 else
+                  errc=-17
+                 endif
+                 instr_ctrl=>NULL()
+                endif
+               else
+                errc=-16
+               endif
+              class default
+               errc=-15
+              end select
              case(TAVP_INSTR_TENS_CONTRACT)
               allocate(tens_contraction_t::tens_operation)
               select type(tens_operation)

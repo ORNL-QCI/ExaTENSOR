@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/26
+!REVISION: 2018/08/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -195,6 +195,7 @@
           procedure, private:: CtrlTensTransCtor                    !ctor
           generic, public:: ctrl_tens_trans_ctor=>CtrlTensTransCtor
           procedure, public:: map_method=>CtrlTensTransMapMethod    !maps the defining method name to the actual definer object
+          procedure, public:: get_method=>CtrlTensTransGetMethod    !returns the method name and alpha
           procedure, public:: pack=>CtrlTensTransPack               !packs the instruction control field into a plain byte packet
           procedure, public:: unpack=>CtrlTensTransUnpack           !unpacks the instruction control field from a plain byte packet
           procedure, public:: print_it=>CtrlTensTransPrintIt        !prints
@@ -383,6 +384,7 @@
  !ctrl_tens_trans_t:
         private CtrlTensTransCtor
         private CtrlTensTransMapMethod
+        private CtrlTensTransGetMethod
         private CtrlTensTransPack
         private CtrlTensTransUnpack
         private CtrlTensTransPrintIt
@@ -758,6 +760,24 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransMapMethod
+!------------------------------------------------------------------------
+        subroutine CtrlTensTransGetMethod(this,method_name,sl,ierr,alpha)
+!Returns the method name and alpha.
+         implicit none
+         class(ctrl_tens_trans_t), intent(in):: this !in: tensor transformation/initialization control field
+         character(*), intent(inout):: method_name   !out: method name
+         integer(INTD), intent(out):: sl             !out: length of the method name
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         complex(8), intent(out), optional:: alpha   !out: alpha
+         integer(INTD):: errc
+
+         errc=0
+         sl=len_trim(this%method_name)
+         if(sl.gt.0) method_name(1:sl)=this%method_name(1:sl)
+         if(present(alpha)) alpha=this%alpha
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensTransGetMethod
 !-----------------------------------------------------
         subroutine CtrlTensTransPack(this,packet,ierr)
 !Packer.
