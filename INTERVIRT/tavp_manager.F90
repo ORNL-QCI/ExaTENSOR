@@ -1969,125 +1969,23 @@
          class(tens_instr_t), intent(in):: this                                     !in: tensor instruction
          class(tens_operation_t), allocatable, target, intent(out):: tens_operation !out: corresponding (encapsulated) tensor operation
          integer(INTD), intent(out), optional:: ierr                                !out: error code
-         integer(INTD):: errc,opcode,numo,i,sl
-         character(EXA_MAX_METHOD_NAME_LEN):: method_name
-         complex(8):: alpha
-         class(tens_rcrsv_t), pointer:: tensor
-         class(ds_oprnd_t), pointer:: oprnd
-         class(ds_instr_ctrl_t), pointer:: instr_ctrl
-         type(contr_ptrn_ext_t), pointer:: contr_ptrn
+         integer(INTD):: errc,opcode
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           numo=this%get_num_operands(errc)
+           opcode=this%get_code(errc)
            if(errc.eq.DSVP_SUCCESS) then
-            opcode=this%get_code(errc)
-            if(errc.eq.DSVP_SUCCESS) then
-             select case(opcode)
-             case(TAVP_INSTR_TENS_CREATE) !no associated tensor operation
-             case(TAVP_INSTR_TENS_DESTROY) !no associated tensor operation
-             case(TAVP_INSTR_TENS_INIT)
-              allocate(tens_transformation_t::tens_operation)
-              select type(tens_operation)
-              class is(tens_transformation_t)
-               oprnd=>this%get_operand(0,errc)
-               if(errc.eq.DSVP_SUCCESS) then
-                select type(oprnd)
-                class is(tens_oprnd_t)
-                 call oprnd%lock()
-                 tensor=>oprnd%get_tensor(errc)
-                 if(errc.eq.0.and.associated(tensor)) then
-                  call tens_operation%set_argument(tensor,errc); if(errc.ne.TEREC_SUCCESS) errc=-23
-                  tensor=>NULL()
-                 else
-                  errc=-22
-                 endif
-                 call oprnd%unlock()
-                class default
-                 errc=-21
-                end select
-                if(errc.eq.0) then
-                 instr_ctrl=>this%get_control(errc)
-                 if(errc.eq.DSVP_SUCCESS) then
-                  select type(instr_ctrl)
-                  class is(ctrl_tens_trans_t)
-                   call instr_ctrl%get_method(method_name,sl,errc,alpha)
-                   if(errc.eq.0) then
-#if !(defined(__GNUC__) && __GNUC__ < 8)
-                    call tens_operation%set_method(errc,alpha,.FALSE.,method_name(1:sl),method_map_f)
-#else
-                    call tens_operation%set_method(errc,alpha,.FALSE.,method_name(1:sl))
-#endif
-                    if(errc.ne.TEREC_SUCCESS) errc=-20
-                   else
-                    errc=-19
-                   endif
-                  class default
-                   errc=-18
-                  end select
-                 else
-                  errc=-17
-                 endif
-                 instr_ctrl=>NULL()
-                endif
-               else
-                errc=-16
-               endif
-              class default
-               errc=-15
-              end select
-             case(TAVP_INSTR_TENS_CONTRACT)
-              allocate(tens_contraction_t::tens_operation)
-              select type(tens_operation)
-              class is(tens_contraction_t)
-               do i=0,numo-1
-                oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-14; exit; endif
-                select type(oprnd)
-                class is(tens_oprnd_t)
-                 call oprnd%lock()
-                 tensor=>oprnd%get_tensor(errc)
-                 if(errc.eq.0.and.associated(tensor)) then
-                  call tens_operation%set_argument(tensor,errc); if(errc.ne.TEREC_SUCCESS) errc=-13
-                  tensor=>NULL()
-                 else
-                  errc=-12
-                 endif
-                 call oprnd%unlock()
-                class default
-                 errc=-11
-                end select
-                if(errc.ne.0) exit
-               enddo
-               if(errc.eq.0) then
-                instr_ctrl=>this%get_control(errc)
-                if(errc.eq.DSVP_SUCCESS) then
-                 select type(instr_ctrl)
-                 class is(ctrl_tens_contr_t)
-                  contr_ptrn=>instr_ctrl%get_contr_ptrn(errc,alpha)
-                  if(errc.eq.0) then
-                   call tens_operation%set_contr_ptrn(contr_ptrn,errc,alpha); if(errc.ne.TEREC_SUCCESS) errc=-10
-                  else
-                   errc=-9
-                  endif
-                  nullify(contr_ptrn)
-                 class default
-                  errc=-8
-                 end select
-                else
-                 errc=-7
-                endif
-                nullify(instr_ctrl)
-               endif
-              class default
-               errc=-6
-              end select
-             case default
-              errc=-5
-              call quit(errc,'#FATAL(TAVP-MNG:tens_instr_t.get_operation): Not implemented!') !`Implement for other relevant tensor instructions
-             end select
-            else
+            select case(opcode)
+            case(TAVP_INSTR_TENS_CREATE) !no associated tensor operation
+            case(TAVP_INSTR_TENS_DESTROY) !no associated tensor operation
+            case(TAVP_INSTR_TENS_INIT)
+             call get_tens_transformation(errc); if(errc.ne.0) errc=-6
+            case(TAVP_INSTR_TENS_CONTRACT)
+             call get_tens_contraction(errc); if(errc.ne.0) errc=-5
+            case default
              errc=-4
-            endif
+             call quit(errc,'#FATAL(TAVP-MNG:tens_instr_t.get_operation): Not implemented!') !`Implement for other relevant tensor instructions
+            end select
            else
             errc=-3
            endif
@@ -2097,8 +1995,136 @@
          else
           errc=-1
          endif
+         if(errc.ne.0.and.allocated(tens_operation)) deallocate(tens_operation)
          if(present(ierr)) ierr=errc
          return
+
+         contains
+
+          subroutine get_tens_transformation(jerr)
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: sl
+           character(EXA_MAX_METHOD_NAME_LEN):: method_name
+           complex(8):: alpha
+           class(tens_rcrsv_t), pointer:: tensor
+           class(ds_oprnd_t), pointer:: oprnd
+           class(ds_instr_ctrl_t), pointer:: instr_ctrl
+
+           jerr=0
+           allocate(tens_transformation_t::tens_operation)
+           select type(tens_operation)
+           class is(tens_transformation_t)
+            oprnd=>this%get_operand(0,jerr)
+            if(jerr.eq.DSVP_SUCCESS) then
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              call oprnd%lock()
+              tensor=>oprnd%get_tensor(jerr)
+              if(jerr.eq.0.and.associated(tensor)) then
+               call tens_operation%set_argument(tensor,jerr); if(jerr.ne.TEREC_SUCCESS) jerr=-9
+               tensor=>NULL()
+              else
+               jerr=-8
+              endif
+              call oprnd%unlock()
+             class default
+              jerr=-7
+             end select
+             if(jerr.eq.0) then
+              instr_ctrl=>this%get_control(jerr)
+              if(jerr.eq.DSVP_SUCCESS) then
+               select type(instr_ctrl)
+               class is(ctrl_tens_trans_t)
+                call instr_ctrl%get_method(method_name,sl,jerr,alpha)
+                if(jerr.eq.0) then
+#if !(defined(__GNUC__) && __GNUC__ < 8)
+                 call tens_operation%set_method(jerr,alpha,.FALSE.,method_name(1:sl),method_map_f)
+#else
+                 call tens_operation%set_method(jerr,alpha,.FALSE.,method_name(1:sl))
+#endif
+                 if(jerr.ne.TEREC_SUCCESS) jerr=-6
+                else
+                 jerr=-5
+                endif
+               class default
+                jerr=-4
+               end select
+              else
+               jerr=-3
+              endif
+              instr_ctrl=>NULL()
+             endif
+            else
+             jerr=-2
+            endif
+           class default
+            jerr=-1
+           end select
+           return
+          end subroutine get_tens_transformation
+
+          subroutine get_tens_contraction(jerr)
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: numo,i
+           complex(8):: alpha
+           class(tens_rcrsv_t), pointer:: tensor
+           class(ds_oprnd_t), pointer:: oprnd
+           class(ds_instr_ctrl_t), pointer:: instr_ctrl
+           type(contr_ptrn_ext_t), pointer:: contr_ptrn
+
+           jerr=0
+           allocate(tens_contraction_t::tens_operation)
+           select type(tens_operation)
+           class is(tens_contraction_t)
+            numo=this%get_num_operands(jerr)
+            if(jerr.eq.DSVP_SUCCESS) then
+             do i=0,numo-1
+              oprnd=>this%get_operand(i,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-10; exit; endif
+              select type(oprnd)
+              class is(tens_oprnd_t)
+               call oprnd%lock()
+               tensor=>oprnd%get_tensor(jerr)
+               if(jerr.eq.0.and.associated(tensor)) then
+                call tens_operation%set_argument(tensor,jerr); if(jerr.ne.TEREC_SUCCESS) jerr=-9
+                tensor=>NULL()
+               else
+                jerr=-8
+               endif
+               call oprnd%unlock()
+              class default
+               jerr=-7
+              end select
+              if(jerr.ne.0) exit
+             enddo
+            else
+             jerr=-6
+            endif
+            if(jerr.eq.0) then
+             instr_ctrl=>this%get_control(jerr)
+             if(jerr.eq.DSVP_SUCCESS) then
+              select type(instr_ctrl)
+              class is(ctrl_tens_contr_t)
+               contr_ptrn=>instr_ctrl%get_contr_ptrn(jerr,alpha)
+               if(jerr.eq.0) then
+                call tens_operation%set_contr_ptrn(contr_ptrn,jerr,alpha); if(jerr.ne.TEREC_SUCCESS) jerr=-5
+               else
+                jerr=-4
+               endif
+               nullify(contr_ptrn)
+              class default
+               jerr=-3
+              end select
+             else
+              jerr=-2
+             endif
+             nullify(instr_ctrl)
+            endif
+           class default
+            jerr=-1
+           end select
+           return
+          end subroutine get_tens_contraction
+
         end subroutine TensInstrGetOperation
 !------------------------------------------------------------
         subroutine TensInstrPrintIt(this,ierr,dev_id,nspaces)
