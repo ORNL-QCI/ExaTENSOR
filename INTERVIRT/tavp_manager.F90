@@ -3945,6 +3945,9 @@
  !TENSOR DESTROY:
                case(TAVP_INSTR_TENS_DESTROY) !new subinstructions will go into the subinstruction list
                 call decompose_instr_tens_destroy(errc)
+ !TENSOR INIT:
+               case(TAVP_INSTR_TENS_INIT) !new subinstructions will go into the subinstruction list
+                call decompose_instr_tens_transform(errc)
  !TENSOR CONTRACT:
                case(TAVP_INSTR_TENS_CONTRACT) !new subinstructions will go into the subinstruction list
                 call decompose_instr_tens_contract(errc)
@@ -4279,6 +4282,21 @@
           endif
           return
          end subroutine decompose_instr_tens_destroy
+
+         subroutine decompose_instr_tens_transform(jerr)
+         !Decomposes TENSOR_INIT or TENSOR_UNARY instruction into subinstructions,
+         !subsequently appending them into the subinstruction list.
+          implicit none
+          integer(INTD), intent(out):: jerr !out: error code
+
+          jerr=this%sub_list%reset_back()
+          if(jerr.eq.GFC_SUCCESS) then
+           !`Finish
+          else
+           jerr=-1
+          endif
+          return
+         end subroutine decompose_instr_tens_transform
 
          subroutine decompose_instr_tens_contract(jerr)
          !Decomposes TENSOR_CONTRACT instruction into subinstructions,
