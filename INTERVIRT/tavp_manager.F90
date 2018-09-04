@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/31
+!REVISION: 2018/09/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2548,7 +2548,9 @@
                  case(TAVP_INSTR_NOOP)
                  case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_DUMP_CACHE)
                  case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
-                  call decode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-12
+                  call decode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-13
+                 case(TAVP_INSTR_TENS_INIT)
+                  call decode_instr_tens_transform(errc); if(errc.ne.0) errc=-12
                  case(TAVP_INSTR_TENS_CONTRACT)
                   call decode_instr_tens_contract(errc); if(errc.ne.0) errc=-11
                  case default
@@ -2744,6 +2746,52 @@
            return
           end subroutine decode_instr_tens_create_destroy
 
+          subroutine decode_instr_tens_transform(jerr)
+           !TRANSFORMS a tensor, either from a defined or undefined state
+           integer(INTD), intent(out):: jerr
+           class(ds_instr_ctrl_t), pointer:: instr_ctrl
+           class(ctrl_tens_trans_t), pointer:: tens_trans_ctrl
+
+           allocate(tens_trans_ctrl,STAT=jerr) !tensor transformation control will be owned by the tensor instruction
+           if(jerr.eq.0) then
+            call tens_trans_ctrl%unpack(instr_packet,jerr)
+            if(jerr.eq.0) then
+             instr_ctrl=>tens_trans_ctrl; call ds_instr%set_control(instr_ctrl,jerr) !tensor transformation control ownership is moved to the tensor instruction
+             if(jerr.eq.DSVP_SUCCESS) then
+              tens_trans_ctrl=>NULL()
+              call ds_instr%alloc_operands(1,jerr)
+              if(jerr.eq.DSVP_SUCCESS) then
+               call decode_instr_operands(jerr)
+               if(jerr.eq.0) then !mark output operands
+                select type(ds_instr)
+                class is(tens_instr_t)
+                 ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/) !tensor operand 0 is the output operand
+                end select
+               else
+                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-5
+               endif
+              else
+               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-4
+              endif
+             else
+              deallocate(tens_trans_ctrl)
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-3
+             endif
+            else
+             deallocate(tens_trans_ctrl)
+             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-2
+            endif
+           else
+            call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
+           endif
+           if(jerr.ne.0.and.VERBOSE) then
+            write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_tens_transform)[",i6,":",i3,"]: Error ",i11)')&
+            &impir,omp_get_thread_num(),jerr
+            flush(CONS_OUT)
+           endif
+           return
+          end subroutine decode_instr_tens_transform
+
           subroutine decode_instr_tens_contract(jerr)
            !CONTRACT two tensors and accumulate the result into another tensor
            integer(INTD), intent(out):: jerr
@@ -2782,7 +2830,7 @@
            else
             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
            endif
-           if(DEBUG.gt.0.and.jerr.ne.0) then
+           if(jerr.ne.0.and.VERBOSE) then
             write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_tens_contract)[",i6,":",i3,"]: Error ",i11)')&
             &impir,omp_get_thread_num(),jerr
             flush(CONS_OUT)
