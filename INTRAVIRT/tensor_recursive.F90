@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/05
+!REVISION: 2018/09/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -487,11 +487,11 @@
           procedure, private:: TensContractionSetContrPtrnExt              !sets the tensor contraction pattern using extended format (all tensor arguments must have been set already)
           generic, public:: set_contr_ptrn=>TensContractionSetContrPtrnBas,TensContractionSetContrPtrnExt
           procedure, public:: set_operl_symm=>TensContractionSetOperlSymm  !sets index permutational symmetry restrictions due to tensor operation (both contraction pattern and arguments must have been set already)
-          procedure, public:: unpack=>TensContractionUnpack                !unpacks the object from a packet
-          procedure, public:: pack=>TensContractionPack                    !packs the object into a packet
           procedure, public:: get_prefactor=>TensContractionGetPrefactor   !returns the scalar prefactor
           procedure, public:: get_ext_contr_ptrn=>TensContractionGetExtContrPtrn !returns a pointer to the extended tensor contraction pattern
           procedure, public:: get_contr_ptrn=>TensContractionGetContrPtrn  !returns the classical (basic) digital tensor contraction pattern used by TAL-SH
+          procedure, public:: unpack=>TensContractionUnpack                !unpacks the object from a packet
+          procedure, public:: pack=>TensContractionPack                    !packs the object into a packet
           procedure, private:: import_replace=>TensContractionImportReplace!creates a new tensor contraction by replacing tensor arguments in an existing tensor contraction (plus symmetry adjustment)
           procedure, private:: TensContractionSplitFunc                    !splits the tensor contraction into a list of subtensor contractions based on the externally provided tensor splitting function
           procedure, private:: TensContractionSplitIntern                  !splits the tensor contraction into a list of subtensor contractions based on the internal lists of constituent argument subtensors
@@ -841,11 +841,11 @@
         private TensContractionSetContrPtrnBas
         private TensContractionSetContrPtrnExt
         private TensContractionSetOperlSymm
-        private TensContractionUnpack
-        private TensContractionPack
         private TensContractionGetPrefactor
         private TensContractionGetExtContrPtrn
         private TensContractionGetContrPtrn
+        private TensContractionUnpack
+        private TensContractionPack
         private TensContractionImportReplace
         private TensContractionSplitFunc
         private TensContractionSplitIntern
@@ -7394,15 +7394,22 @@
 !Creates a new tensor transformation by replacing the tensor argument in an existing tensor transformation.
 !The argument <clone> regulates whether the tensor will be cloned or merely associated as a tensor argument.
          implicit none
-         class(tens_transformation_t), intent(out):: this         !out: derived tensor transformation
-         class(tens_transformation_t), intent(in):: tens_trans    !in: parental tensor transformation
-         logical, intent(in):: clone                              !in: TRUE:Cloning, FALSE:Association
-         integer(INTD), intent(out), optional:: ierr              !out: error code
-         type(tens_rcrsv_t), intent(in), target, optional:: dtens !in: new tensor argument
+         class(tens_transformation_t), intent(out):: this          !out: derived tensor transformation
+         class(tens_transformation_t), intent(in):: tens_trans     !in: parental tensor transformation
+         logical, intent(in):: clone                               !in: TRUE:Cloning, FALSE:Association
+         integer(INTD), intent(out), optional:: ierr               !out: error code
+         class(tens_rcrsv_t), intent(in), target, optional:: dtens !in: new tensor argument
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
-         !`Finish
+         if(tens_trans%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           this=tens_trans !clone the parental tensor transformation
+           if(present(dtens)) call this%reset_argument(dtens,0,errc,clone) !replace the tensor argument
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_ARGS
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensTransformationImportReplace
@@ -7418,15 +7425,17 @@
          implicit none
          class(tens_transformation_t), intent(in):: this   !in: parental tensor transformation
          procedure(tens_rcrsv_dim_split_i):: tens_split_f  !in: tensor splitting function: Splits a tensor into a vector of unique subtensors
-         type(list_bi_t), intent(inout):: subops           !inout: list of subtensor transformations
+         type(list_bi_t), intent(inout):: subops           !inout: list of derived subtensor transformations
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_subops !out: number of subtransformations generated from the parental tensor transformation
          integer(INTD):: errc,n,ier
-         class(tens_rcrsv_t), pointer:: tensor
          type(tens_transformation_t):: tens_trans_empty
+         type(tens_rcrsv_t), pointer:: subtensor
+         class(tens_rcrsv_t), pointer:: tensor
          type(vector_t):: subtensors
          type(vector_iter_t):: vit
          type(list_iter_t):: slit
+         class(*), pointer:: uptr
 
          errc=TEREC_SUCCESS; n=0
          if(this%is_set(errc)) then
@@ -7438,11 +7447,25 @@
             errc=tens_split_f(tensor,subtensors,n)
             if(errc.eq.TEREC_SUCCESS.and.n.gt.0) then
  !Construct a list of subtransformations:
-             errc=vit%init(subtensors)
+             errc=slit%init(subops)
              if(errc.eq.GFC_SUCCESS) then
-              !`Finish
-              ier=vit%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_MEM_FREE_FAILED
-              ier=vit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+              errc=vit%init(subtensors)
+              if(errc.eq.GFC_SUCCESS) then
+               do while(errc.eq.GFC_SUCCESS)
+                uptr=>vit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
+                subtensor=>NULL(); select type(uptr); type is(tens_rcrsv_t); subtensor=>uptr; end select
+                if(.not.associated(subtensor)) then; errc=TEREC_UNABLE_COMPLETE; exit; endif !trap
+                !`Finish
+                errc=vit%next()
+               enddo
+               if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+               if(vit%get_status().ne.GFC_IT_DONE.and.errc.eq.GFC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+               ier=vit%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_MEM_FREE_FAILED
+               ier=vit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+              else
+               errc=TEREC_UNABLE_COMPLETE
+              endif
+              ier=slit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
              else
               errc=TEREC_UNABLE_COMPLETE
              endif
@@ -7977,51 +8000,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionSetOperlSymm
-!---------------------------------------------------------
-        subroutine TensContractionUnpack(this,packet,ierr)
-!Unpacks the object from a packet.
-         implicit none
-         class(tens_contraction_t), intent(out):: this !out: tensor contraction
-         class(obj_pack_t), intent(inout):: packet     !in: packet
-         integer(INTD), intent(out), optional:: ierr   !out: error code
-         integer(INTD):: errc,i,n
-         class(tens_rcrsv_t), pointer:: tens_p
-
-         call unpack_builtin(packet,n,errc)
-         if(errc.eq.PACK_SUCCESS) then
-          do i=0,n-1
-           call this%allocate_argument(errc); if(errc.ne.TEREC_SUCCESS) exit
-           tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
-           call tens_p%tens_rcrsv_ctor(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
-          enddo
-          if(errc.eq.PACK_SUCCESS) call this%contr_ptrn%unpack(packet,errc)
-          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%alpha,errc)
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensContractionUnpack
-!-------------------------------------------------------
-        subroutine TensContractionPack(this,packet,ierr)
-!Packs the object into a packet.
-         implicit none
-         class(tens_contraction_t), intent(in):: this !in: tensor contraction
-         class(obj_pack_t), intent(inout):: packet    !inout: packet
-         integer(INTD), intent(out), optional:: ierr  !out: error code
-         integer(INTD):: errc,i
-         class(tens_rcrsv_t), pointer:: tens_p
-
-         call pack_builtin(packet,this%num_args,errc)
-         if(errc.eq.PACK_SUCCESS) then
-          do i=0,this%num_args-1
-           tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
-           call tens_p%pack(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
-          enddo
-          if(errc.eq.PACK_SUCCESS) call this%contr_ptrn%pack(packet,errc)
-          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%alpha,errc)
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensContractionPack
 !------------------------------------------------------------------------
         function TensContractionGetPrefactor(this,ierr) result(prefactor)
 !Returns the scalar prefactor.
@@ -8069,18 +8047,63 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionGetContrPtrn
+!---------------------------------------------------------
+        subroutine TensContractionUnpack(this,packet,ierr)
+!Unpacks the object from a packet.
+         implicit none
+         class(tens_contraction_t), intent(out):: this !out: tensor contraction
+         class(obj_pack_t), intent(inout):: packet     !in: packet
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc,i,n
+         class(tens_rcrsv_t), pointer:: tens_p
+
+         call unpack_builtin(packet,n,errc)
+         if(errc.eq.PACK_SUCCESS) then
+          do i=0,n-1
+           call this%allocate_argument(errc); if(errc.ne.TEREC_SUCCESS) exit
+           tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
+           call tens_p%tens_rcrsv_ctor(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
+          enddo
+          if(errc.eq.PACK_SUCCESS) call this%contr_ptrn%unpack(packet,errc)
+          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%alpha,errc)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensContractionUnpack
+!-------------------------------------------------------
+        subroutine TensContractionPack(this,packet,ierr)
+!Packs the object into a packet.
+         implicit none
+         class(tens_contraction_t), intent(in):: this !in: tensor contraction
+         class(obj_pack_t), intent(inout):: packet    !inout: packet
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc,i
+         class(tens_rcrsv_t), pointer:: tens_p
+
+         call pack_builtin(packet,this%num_args,errc)
+         if(errc.eq.PACK_SUCCESS) then
+          do i=0,this%num_args-1
+           tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
+           call tens_p%pack(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
+          enddo
+          if(errc.eq.PACK_SUCCESS) call this%contr_ptrn%pack(packet,errc)
+          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%alpha,errc)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensContractionPack
 !--------------------------------------------------------------------------------------------
         subroutine TensContractionImportReplace(this,tens_contr,clone,ierr,dtens,ltens,rtens)
 !Creates a new tensor contraction by replacing tensor arguments in an existing tensor contraction (plus symmetry adjustment).
 !The argument <clone> regulates whether the tensors will be cloned or merely associated as tensor arguments.
          implicit none
-         class(tens_contraction_t), intent(out):: this            !out: derived tensor contraction
-         class(tens_contraction_t), intent(in):: tens_contr       !in: parental tensor contraction
-         logical, intent(in):: clone                              !in: TRUE:Cloning, FALSE:Association
-         integer(INTD), intent(out), optional:: ierr              !out: error code
-         type(tens_rcrsv_t), intent(in), target, optional:: dtens !in: new destination tensor argument
-         type(tens_rcrsv_t), intent(in), target, optional:: ltens !in: new left tensor argument
-         type(tens_rcrsv_t), intent(in), target, optional:: rtens !in: new right tensor argument
+         class(tens_contraction_t), intent(out):: this             !out: derived tensor contraction
+         class(tens_contraction_t), intent(in):: tens_contr        !in: parental tensor contraction
+         logical, intent(in):: clone                               !in: TRUE:Cloning, FALSE:Association
+         integer(INTD), intent(out), optional:: ierr               !out: error code
+         class(tens_rcrsv_t), intent(in), target, optional:: dtens !in: new destination tensor argument
+         class(tens_rcrsv_t), intent(in), target, optional:: ltens !in: new left tensor argument
+         class(tens_rcrsv_t), intent(in), target, optional:: rtens !in: new right tensor argument
          integer(INTD):: i,errc,nd,cmp
          integer(INTL):: sidx(1:MAX_TENSOR_RANK)
          type(tens_header_t), pointer:: thp
@@ -8176,7 +8199,7 @@
          implicit none
          class(tens_contraction_t), intent(in):: this      !in: parental tensor contraction
          procedure(tens_rcrsv_dim_split_i):: tens_split_f  !in: tensor splitting function: Splits a tensor into a vector of unique subtensors
-         type(list_bi_t), intent(inout):: subops           !inout: list of subtensor contractions (empty on entrance)
+         type(list_bi_t), intent(inout):: subops           !inout: list of derived subtensor contractions (empty on entrance)
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction
          integer(INTD):: i,errc,nsub,tcgl
