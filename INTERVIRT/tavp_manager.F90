@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/04
+!REVISION: 2018/09/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4288,12 +4288,137 @@
          !subsequently appending them into the subinstruction list.
           implicit none
           integer(INTD), intent(out):: jerr !out: error code
+          integer(INTD):: num_subinstr,num_subtrans,jer,jj,jn
+          integer(INTL):: iid
+          type(tens_entry_mng_ref_t):: cache_entries(0:0) !tensor transformation has 1 argument
+          class(tens_rcrsv_t), pointer:: subtensor
+          class(tens_operation_t), allocatable:: tens_trans
+          class(tens_transformation_t), pointer:: subtrans
+          class(tens_cache_entry_t), pointer:: tens_entry
+          class(ds_oprnd_t), pointer:: tens_oprnd
+          class(tens_instr_t), pointer:: subinstr
+          type(tens_instr_t):: tens_instr_empty
+          type(list_bi_t):: subtransformations
+          type(list_iter_t):: subit
+          class(*), pointer:: uptr
+          logical:: stored
 
           jerr=this%sub_list%reset_back()
           if(jerr.eq.GFC_SUCCESS) then
-           !`Finish
+ !Extract the underlying tensor operation (tensor transformation):
+           call tens_instr%get_operation(tens_trans,jerr)
+           if(jerr.eq.0) then
+            select type(tens_trans)
+            class is(tens_transformation_t)
+ !Decompose the tensor operation into suboperations:
+             num_subinstr=0; num_subtrans=0
+             call tens_trans%split(subtransformations,jerr,num_subtrans) !internal decomposition induced by the tensor structure
+             if(jerr.eq.TEREC_SUCCESS) then
+ !Generate subinstructions from the suboperations:
+              jerr=subit%init(subtransformations)
+              if(jerr.eq.GFC_SUCCESS) then
+               tens_entry=>NULL(); jerr=subit%get_status()
+               sloop: do while(jerr.eq.GFC_IT_ACTIVE)
+                uptr=>subit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-27; exit sloop; endif
+                subtrans=>NULL(); select type(uptr); class is(tens_transformation_t); subtrans=>uptr; end select
+                if(.not.associated(subtrans)) then; jerr=-26; exit sloop; endif !trap
+  !Store subtensors in the tensor cache if they are not there:
+                tens_entry=>NULL()
+                jn=subtrans%get_num_args(jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-25; exit sloop; endif
+                do jj=0,jn-1
+                 subtensor=>subtrans%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-24; exit sloop; endif
+                 stored=this%arg_cache%store(subtensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !<stored> assumes tensor ownership be moved
+                 if(jerr.ne.0) then; jerr=-23; exit sloop; endif
+                 call tens_entry%lock()
+                 if(stored) then !release ownership of the subtensor since it has been moved to the tensor cache
+                  call subtrans%donate_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-22; exit sloop; endif
+                 else !subtensor already existed in the tensor cache: Use it
+                  subtensor=>tens_entry%get_tensor(jerr); if(jerr.ne.0) then; jerr=-21; exit sloop; endif
+                  call subtrans%reset_argument(subtensor,jj,jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-20; exit sloop; endif
+                 endif
+                 select type(tens_entry)
+                 class is(tens_entry_mng_t)
+                  cache_entries(jj)%cache_entry=>tens_entry
+                 class default
+                  jerr=-19; exit sloop
+                 end select
+                 call tens_entry%unlock()
+                 tens_entry=>NULL()
+                enddo
+  !Construct a new subinstruction:
+                jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit sloop; endif
+                jerr=this%sub_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-17; exit sloop; endif
+                uptr=>this%sub_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-16; exit sloop; endif
+                subinstr=>NULL(); select type(uptr); class is(tens_instr_t); subinstr=>uptr; end select
+                if(.not.associated(subinstr)) then; jerr=-15; exit sloop; endif !trap
+                iid=dsvp%get_crtd_instr_counter()
+                call subinstr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,jerr,subtrans,iid)
+                if(jerr.ne.0) then; jerr=-14; exit sloop; endif
+  !Back-associate tensor operands with their corresponding tensor cache entries:
+                do jj=0,jn-1
+                 tens_oprnd=>subinstr%get_operand(jj,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-13; exit sloop; endif
+                 select type(tens_oprnd)
+                 class is(tens_oprnd_t)
+                  call tens_oprnd%set_cache_entry(cache_entries(jj)%cache_entry,jerr)
+                  if(jerr.ne.0) then; jerr=-12; exit sloop; endif
+                  tens_entry=>cache_entries(jj)%cache_entry
+                  call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL(); cache_entries(jj)%cache_entry=>NULL()
+                 class default
+                  jerr=-11; exit sloop
+                 end select
+                enddo
+  !Register the new subinstruction:
+                call subinstr%set_status(init_stat,jerr,init_tag) !instruction status and error code will depend on whether the TAVP-MNG is bottom or not
+                if(jerr.ne.DSVP_SUCCESS) then; jerr=-10; exit sloop; endif
+                call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-9; exit sloop; endif
+                call dsvp%incr_crtd_instr_counter(); num_subinstr=num_subinstr+1 !new subinstruction has been created
+  !Delete the processed suboperation:
+                jerr=subit%delete(); if(jerr.ne.GFC_SUCCESS) then; jerr=-8; exit sloop; endif
+                jerr=subit%get_status()
+               enddo sloop
+               if(jerr.ne.0) then
+                if(associated(tens_entry)) then !in case of error
+                 call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+                endif
+                do jj=ubound(cache_entries,1),lbound(cache_entries,1),-1 !in case of error
+                 if(associated(cache_entries(jj)%cache_entry)) then
+                  tens_entry=>cache_entries(jj)%cache_entry
+                  call this%arg_cache%release_entry(tens_entry); cache_entries(jj)%cache_entry=>NULL(); tens_entry=>NULL()
+                 endif
+                enddo
+               endif
+               if(jerr.eq.GFC_IT_EMPTY) jerr=subit%get_status(); if(jerr.eq.GFC_IT_EMPTY) jerr=0
+               if(jerr.eq.0) then
+                call tens_instr%set_status(DS_INSTR_ISSUED,jerr,num_subinstr) !.error_code of the parent instruction will store the number of subinstructions (in Collector)
+                if(jerr.ne.DSVP_SUCCESS) jerr=-7
+               endif
+               jer=subit%release(); if(jer.ne.GFC_SUCCESS.and.jerr.eq.0) jerr=-6
+              else
+               jerr=-5
+              endif
+             else
+              jerr=-4
+             endif
+            class default
+             jerr=-3
+            end select
+           else
+            jerr=-2
+           endif
           else
            jerr=-1
+          endif
+          if(DEBUG.gt.0) then
+           if(jerr.eq.0) then
+            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_INIT subinstructions")')&
+            &impir,uid,num_subinstr
+           else
+            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
+            &'" failed to create TENS_INIT subinstructions with error ",i11," for parent tensor instruction:")')&
+            &impir,uid,jerr
+            call tens_instr%print_it(dev_id=CONS_OUT)
+           endif
+           flush(CONS_OUT)
           endif
           return
          end subroutine decompose_instr_tens_transform
@@ -4305,7 +4430,7 @@
           integer(INTD), intent(out):: jerr !out: error code
           integer(INTD):: jj,jn,num_subinstr,num_subcontr
           integer(INTL):: iid
-          type(tens_entry_mng_ref_t):: cache_entries(0:2)
+          type(tens_entry_mng_ref_t):: cache_entries(0:2) !tensor contraction has 3 arguments
           class(tens_rcrsv_t), pointer:: subtensor
           class(tens_operation_t), allocatable:: tens_contr
           class(tens_contraction_t), pointer:: subcontr
@@ -4361,7 +4486,7 @@
                  call tens_entry%unlock()
                  tens_entry=>NULL()
                 enddo
-  !Construct the new subinstruction:
+  !Construct a new subinstruction:
                 jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit sloop; endif
                 jerr=this%sub_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-17; exit sloop; endif
                 uptr=>this%sub_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-16; exit sloop; endif
