@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/26
+!REVISION: 2018/09/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -50,6 +50,7 @@
         implicit none
         private
 
+ !Tensor initialization functor:
         type, extends(tens_method_uni_t), public:: tens_init_test_t
          real(8), private:: init_val=0d0
          contains

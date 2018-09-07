@@ -2035,7 +2035,7 @@
               if(jerr.eq.DSVP_SUCCESS) then
                select type(instr_ctrl)
                class is(ctrl_tens_trans_t)
-                call instr_ctrl%get_method(method_name,sl,jerr,alpha)
+                call instr_ctrl%get_method(method_name,sl,jerr,scalar=alpha)
                 if(jerr.eq.0) then
 #if !(defined(__GNUC__) && __GNUC__ < 8)
                  call tens_operation%set_method(jerr,alpha,.FALSE.,method_name(1:sl),method_map_f)

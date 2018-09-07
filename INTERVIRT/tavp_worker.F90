@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/04
+!REVISION: 2018/09/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4016,7 +4016,7 @@
               if(jerr.eq.DSVP_SUCCESS) then
                select type(instr_ctrl)
                class is(ctrl_tens_trans_t)
-                call instr_ctrl%get_method(method_name,sl,jerr,alpha)
+                call instr_ctrl%get_method(method_name,sl,jerr,scalar=alpha)
                 if(jerr.eq.0) then
 #if !(defined(__GNUC__) && __GNUC__ < 8)
                  call tens_operation%set_method(jerr,alpha,.FALSE.,method_name(1:sl),method_map_f)
@@ -7830,10 +7830,71 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
-         integer(INTD):: errc
+         integer(INTD):: errc,dev,sl
+         character(EXA_MAX_METHOD_NAME_LEN):: method_name
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_oprnd_t), pointer:: op0
+         class(tens_rcrsv_t), pointer:: tensor0
+         type(talsh_tens_t), pointer:: tens0
+         class(ds_instr_ctrl_t), pointer:: ctrl
+         class(ctrl_tens_trans_t), pointer:: ctrl_trans
+         class(tens_method_uni_t), pointer:: method
+         complex(8):: alpha
 !$OMP FLUSH
          errc=0
-         !`Implement
+         dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
+         oprnd=>tens_instr%get_operand(0,errc)
+         op0=>NULL(); select type(oprnd); class is(tens_oprnd_t); op0=>oprnd; end select; oprnd=>NULL()
+         if(errc.eq.DSVP_SUCCESS.and.associated(op0)) then
+          tensor0=>op0%get_tensor(errc)
+          if(errc.eq.0) then
+           tens0=>op0%get_talsh_tensor(errc)
+           if(errc.eq.0) then
+            ctrl=>tens_instr%get_control(errc)
+            ctrl_trans=>NULL(); select type(ctrl); class is(ctrl_tens_trans_t); ctrl_trans=>ctrl; end select
+            if(errc.eq.DSVP_SUCCESS.and.associated(ctrl_trans)) then
+             call ctrl_trans%get_method(method_name,sl,errc,method,alpha)
+             if(errc.eq.0) then
+              if(associated(method)) then
+ !Initialization/transformation by a user-defined method:
+               if(sl.gt.0) then
+                errc=method%apply(tensor0,alpha)
+                if(errc.ne.0) then
+                 if(VERBOSE) then
+                  write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorInit): Used-defined method failed with error ",i11)') errc
+                  flush(CONS_OUT)
+                 endif
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+              else
+ !Initialization to a scalar:
+               errc=talsh_tensor_init(tens0,val=alpha,dev_id=dev,copy_ctrl=COPY_T,talsh_task=tens_instr%talsh_task)
+               if(errc.ne.TALSH_SUCCESS) then
+                if(VERBOSE) then
+                 write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorInit): talsh_tensor_init failed with error ",i11)') errc
+                 flush(CONS_OUT)
+                endif
+                errc=-6
+               endif
+              endif
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKExecTensorInit

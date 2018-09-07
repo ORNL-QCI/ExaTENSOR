@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/31
+!REVISION: 2018/09/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -760,21 +760,25 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransMapMethod
-!------------------------------------------------------------------------
-        subroutine CtrlTensTransGetMethod(this,method_name,sl,ierr,alpha)
+!--------------------------------------------------------------------------------
+        subroutine CtrlTensTransGetMethod(this,method_name,sl,ierr,method,scalar)
 !Returns the method name and alpha.
          implicit none
-         class(ctrl_tens_trans_t), intent(in):: this !in: tensor transformation/initialization control field
-         character(*), intent(inout):: method_name   !out: method name
-         integer(INTD), intent(out):: sl             !out: length of the method name
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         complex(8), intent(out), optional:: alpha   !out: alpha
+         class(ctrl_tens_trans_t), intent(in):: this   !in: tensor transformation/initialization control field
+         character(*), intent(inout):: method_name     !out: method name
+         integer(INTD), intent(out):: sl               !out: length of the method name
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         class(tens_method_uni_t), pointer, intent(out), optional:: method !out: method functor
+         complex(8), intent(out), optional:: scalar    !out: scalar
          integer(INTD):: errc
 
-         errc=0
+         errc=0; method=>NULL()
          sl=len_trim(this%method_name)
-         if(sl.gt.0) method_name(1:sl)=this%method_name(1:sl)
-         if(present(alpha)) alpha=this%alpha
+         if(sl.gt.0) then
+          method_name(1:sl)=this%method_name(1:sl)
+          if(present(method)) method=>this%definer
+         endif
+         if(present(scalar)) scalar=this%alpha
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransGetMethod
@@ -810,7 +814,14 @@
          call unpack_builtin(packet,this%method_name,sl,errc)
          if(errc.eq.PACK_SUCCESS) then
           if(sl.le.EXA_MAX_METHOD_NAME_LEN) then
-           call unpack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-3
+           call unpack_builtin(packet,this%alpha,errc)
+           if(errc.eq.PACK_SUCCESS) then
+            if(sl.gt.0) then
+             call this%map_method(errc); if(errc.ne.0) then; this%method_name=' '; errc=-4; endif
+            endif
+           else
+            errc=-3
+           endif
           else
            errc=-2
           endif
