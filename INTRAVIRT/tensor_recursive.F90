@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/06
+!REVISION: 2018/09/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -7428,10 +7428,10 @@
          type(list_bi_t), intent(inout):: subops           !inout: list of derived subtensor transformations
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_subops !out: number of subtransformations generated from the parental tensor transformation
-         integer(INTD):: errc,n,ier
+         integer(INTD):: errc,n,m,ier
          type(tens_transformation_t):: tens_trans_empty
-         type(tens_rcrsv_t), pointer:: subtensor
-         class(tens_rcrsv_t), pointer:: tensor
+         class(tens_transformation_t), pointer:: subtens_trans
+         class(tens_rcrsv_t), pointer:: tensor,subtensor
          type(vector_t):: subtensors
          type(vector_iter_t):: vit
          type(list_iter_t):: slit
@@ -7447,19 +7447,25 @@
             errc=tens_split_f(tensor,subtensors,n)
             if(errc.eq.TEREC_SUCCESS.and.n.gt.0) then
  !Construct a list of subtransformations:
+             m=n
              errc=slit%init(subops)
              if(errc.eq.GFC_SUCCESS) then
               errc=vit%init(subtensors)
               if(errc.eq.GFC_SUCCESS) then
                do while(errc.eq.GFC_SUCCESS)
                 uptr=>vit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
-                subtensor=>NULL(); select type(uptr); type is(tens_rcrsv_t); subtensor=>uptr; end select
+                subtensor=>NULL(); select type(uptr); class is(tens_rcrsv_t); subtensor=>uptr; end select
                 if(.not.associated(subtensor)) then; errc=TEREC_UNABLE_COMPLETE; exit; endif !trap
-                !`Finish
-                errc=vit%next()
+                errc=slit%append(tens_trans_empty); if(errc.ne.GFC_SUCCESS) then; errc=TEREC_UNABLE_COMPLETE; exit; endif
+                errc=slit%reset_back(); if(errc.ne.GFC_SUCCESS) then; errc=TEREC_UNABLE_COMPLETE; exit; endif
+                uptr=>slit%get_value(errc); if(errc.ne.GFC_SUCCESS) then; errc=TEREC_UNABLE_COMPLETE; exit; endif
+                subtens_trans=>NULL(); select type(uptr); class is(tens_transformation_t); subtens_trans=>uptr; end select
+                if(.not.associated(subtens_trans)) then; errc=TEREC_UNABLE_COMPLETE; exit; endif !trap
+                call subtens_trans%import_replace(this,.TRUE.,errc,subtensor); if(errc.ne.TEREC_SUCCESS) exit
+                m=m-1; errc=vit%next()
                enddo
                if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
-               if(vit%get_status().ne.GFC_IT_DONE.and.errc.eq.GFC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+               if((vit%get_status().ne.GFC_IT_DONE.or.m.ne.0).and.errc.eq.GFC_SUCCESS) errc=TEREC_UNABLE_COMPLETE !trap
                ier=vit%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_MEM_FREE_FAILED
                ier=vit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
               else
