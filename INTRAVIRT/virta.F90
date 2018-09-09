@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/07
+!REVISION: 2018/09/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -771,13 +771,15 @@
          class(tens_method_uni_t), pointer, intent(out), optional:: method !out: method functor
          complex(8), intent(out), optional:: scalar    !out: scalar
          integer(INTD):: errc
+         class(tens_method_uni_t), pointer:: meth
 
-         errc=0; method=>NULL()
+         errc=0; meth=>NULL()
          sl=len_trim(this%method_name)
          if(sl.gt.0) then
           method_name(1:sl)=this%method_name(1:sl)
-          if(present(method)) method=>this%definer
+          meth=>this%definer
          endif
+         if(present(method)) method=>meth
          if(present(scalar)) scalar=this%alpha
          if(present(ierr)) ierr=errc
          return

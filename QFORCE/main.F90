@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/07
+!REVISION: 2018/09/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -58,6 +58,14 @@
           procedure, public:: apply=>TensInitTestApply
         end type tens_init_test_t
 
+ !Tensor printing functor:
+        type, extends(tens_method_uni_t), public:: tens_print_test_t
+         integer(INTD), private:: dev_id=6
+         contains
+          procedure, public:: tens_print_test_ctor=>TensPrintTestCtor
+          procedure, public:: apply=>TensPrintTestApply
+        end type tens_print_test_t
+
        contains
 
         subroutine TensInitTestCtor(this,val)
@@ -84,7 +92,32 @@
          endif
         end function TensInitTestApply
 
+        subroutine TensPrintTestCtor(this,dev_out)
+         implicit none
+         class(tens_print_test_t), intent(out):: this
+         integer(INTD), intent(in), optional:: dev_out
+
+         if(present(dev_out)) this%dev_id=dev_out
+        end subroutine TensPrintTestCtor
+
+        function TensPrintTestApply(this,tensor,scalar) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         class(tens_print_test_t), intent(in):: this
+         class(tens_rcrsv_t), intent(inout):: tensor
+         complex(8), intent(inout), optional:: scalar
+         class(tens_body_t), pointer:: body
+
+         body=>tensor%get_body(ierr)
+         if(ierr.eq.EXA_SUCCESS.and.associated(body)) then
+          
+         else
+          ierr=-1
+         endif
+        end function TensPrintTestApply
+
        end module qforce_test
+
 
        program main
         use exatensor
@@ -98,6 +131,7 @@
         class(h_space_t), pointer:: ao_space
         type(tens_rcrsv_t):: dtens,ltens,rtens
         type(tens_init_test_t):: init1369
+        type(tens_print_test_t):: tens_printer
         integer(INT_MPI):: mpi_th_provided
         integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role
         integer(INTL):: l,ao_space_root
@@ -130,12 +164,19 @@
          ierr=exatns_space_register('AO_space',basis,ao_space_id,ao_space)
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
-!Application registers a user-defined method for tensor initialization:
+!Application registers user-defined methods for tensor initialization and printing:
          if(my_rank.eq.comm_size-1) then
           write(6,'("Registering a user-defined tensor initialization method ... ")',ADVANCE='NO'); flush(6)
          endif
          call init1369%tens_init_test_ctor(13.69d0)
          ierr=exatns_method_register('SetTo13.69',init1369)
+         if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_method_register() failed!')
+         if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+         if(my_rank.eq.comm_size-1) then
+          write(6,'("Registering a user-defined tensor printing method ... ")',ADVANCE='NO'); flush(6)
+         endif
+         call tens_printer%tens_print_test_ctor()
+         ierr=exatns_method_register('PrintTensor',tens_printer)
          if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_method_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
 !Application runs ExaTENSOR within MPI_COMM_WORLD:
@@ -174,6 +215,23 @@
            !ierr=exatns_dump_cache()
            !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
            !write(6,'("Tensor cache dumped")')
+ !Initialize input tensors:
+  !ltens:
+           write(6,'("Initializing tensor ltens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_init(ltens,'SetTo13.69')
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !rtens:
+           write(6,'("Initializing tensor rtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_init(rtens,'SetTo13.69')
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Contract tensors:
            write(6,'("Contracting tensors ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()

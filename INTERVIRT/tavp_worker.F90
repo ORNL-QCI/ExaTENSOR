@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/07
+!REVISION: 2018/09/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -387,7 +387,8 @@
          type(tavp_wrk_retirer_t), private:: retirer              !DSVU: retires processed tensor instructions and sends them back to the manager
          type(tavp_wrk_resourcer_t), private:: resourcer          !DSVU: allocates local resources for tensor instructions (only for defined tensor operands)
          type(tavp_wrk_communicator_t), private:: communicator    !DSVU: fetches/uploads remote tensor operands
-         type(tavp_wrk_dispatcher_t), private:: dispatcher        !DSVU: dispatches and executes ready to be executed tensor instructions to compute devices (runs the microcode)
+         type(tavp_wrk_dispatcher_t), private:: dispatcher        !DSVU: dispatches and executes ready to be executed tensor instructions on compute devices (runs the microcode)
+         logical, private:: talsh_in_use=.FALSE.                  !TAL-SH init/shutdown synchronization flag
          contains
           procedure, public:: configure=>TAVPWRKConfigure         !configures the TAVP-WRK DSVP
         end type tavp_wrk_t
@@ -6123,12 +6124,20 @@
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,ier,thid,uid
+         class(dsvp_t), pointer:: dsvp
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
+!Release TAL-SH:
+         dsvp=>this%get_dsvp()
+         select type(dsvp)
+         class is(tavp_wrk_t)
+!$OMP ATOMIC WRITE
+          dsvp%talsh_in_use=.FALSE.
+         end select
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
 !Deactivate the release list:
@@ -7345,6 +7354,8 @@
          if(associated(tavp)) then
           ier=talsh_init(this%host_buf_size,this%host_arg_max,this%gpu_list,this%mic_list,this%amd_list)
           if(ier.eq.TALSH_SUCCESS) then
+!$OMP ATOMIC WRITE
+           tavp%talsh_in_use=.TRUE.
            this%arg_cache=>tavp%tens_cache
           else
            if(errc.eq.0) errc=-35
@@ -7484,16 +7495,27 @@
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid,uid
+         class(dsvp_t), pointer:: dsvp
+         logical:: talsh_on
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           flush(CONS_OUT)
          endif
+!Shutdown the numerical computing runtime (TAL-SH):
+         dsvp=>this%get_dsvp()
+         select type(dsvp)
+         class is(tavp_wrk_t)
+          talsh_on=.TRUE.
+          do while(talsh_on)
+!$OMP ATOMIC READ
+           talsh_on=dsvp%talsh_in_use !wait until Resourcer releases TAL-SH
+          enddo
+         end select
+         ier=talsh_shutdown(); if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-8
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
-!Shutdown the numerical computing runtime (TAL-SH):
-         ier=talsh_shutdown(); if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-8
 !Deactivate the completed list:
          ier=this%cml_list%reset()
          if(ier.eq.GFC_SUCCESS) then
