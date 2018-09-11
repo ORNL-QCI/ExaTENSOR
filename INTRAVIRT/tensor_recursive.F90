@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/07
+!REVISION: 2018/09/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -204,6 +204,7 @@
           procedure, public:: get_shape=>TensHeaderGetShape         !returns the pointer the the tensor shape
           procedure, public:: compare=>TensHeaderCompare            !compares the tensor header with another tensor header: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: print_it=>TensHeaderPrintIt           !prints the tensor header
+          procedure, public:: print_head=>TensHeaderPrintHead       !prints only the signature and shape in one line
           procedure, public:: rename=>TensHeaderRename              !renames the tensor without restrictions (for internal use)
 #if !(defined(__GNUC__) && __GNUC__ < 8)
           final:: tens_header_dtor
@@ -667,6 +668,7 @@
         private TensHeaderGetShape
         private TensHeaderCompare
         private TensHeaderPrintIt
+        private TensHeaderPrintHead
         private TensHeaderRename
         public tens_header_dtor
  !tens_simple_part_t:
@@ -3130,6 +3132,40 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensHeaderPrintIt
+!---------------------------------------------------------------
+        subroutine TensHeaderPrintHead(this,ierr,dev_id,nspaces)
+!Prints only the signature and shape in one line.
+         implicit none
+         class(tens_header_t), intent(in):: this       !in: tensor header
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device id (6:screen)
+         integer(INTD), intent(in), optional:: nspaces !out: left alignment
+         integer(INTD):: errc,dev,i,l,k,n
+         character(256):: str
+
+         errc=TEREC_SUCCESS; l=0
+         if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
+         if(present(nspaces)) then; str(l+1:l+nspaces)=' '; l=l+nspaces; endif
+         if(allocated(this%signature%char_name)) then
+          k=len(this%signature%char_name); str(l+1:l+k)=this%signature%char_name(1:k); l=l+k
+         endif
+         n=this%signature%num_dims
+         if(n.gt.0) then
+          if(allocated(this%signature%hspace)) then
+           if(allocated(this%signature%space_idx)) then
+            
+           endif
+          else
+           if(allocated(this%signature%space_idx)) then
+            
+           endif
+          endif
+         endif
+         call printl(dev,str(1:l))
+         flush(dev)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderPrintHead
 !-------------------------------------------------------
         subroutine TensHeaderRename(this,tens_name,ierr)
 !Renames the tensor without restrictions.

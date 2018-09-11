@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/09
+!REVISION: 2018/09/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2926,7 +2926,7 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id
          integer(INTD), intent(in), optional:: nspaces !in: left alignment
-         integer(INTD):: errc,devo,nsp,j,sts,rwc,drwc
+         integer(INTD):: errc,devo,nsp,j,sts,rwc,drwc,rfc,usc
          logical:: actv,pres,blkd
 !$OMP FLUSH
          errc=0
@@ -2938,10 +2938,11 @@
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
          actv=this%is_active(); pres=this%is_present(); sts=this%get_comm_stat()
          if(associated(this%cache_entry)) then
+          rfc=this%cache_entry%get_ref_count(); usc=this%cache_entry%get_use_count()
           rwc=this%cache_entry%get_rw_counter(); drwc=this%cache_entry%get_rw_counter(defer=.TRUE.)
           blkd=this%cache_entry%is_blocked()
-          write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2,"; RW/DRW = ",i3,1x,i3,"; Block = ",l1)')&
-          &actv,pres,sts,rwc,drwc,blkd
+          write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2,'//&
+          &'"; Ref/Use = ",i3,1x,i3,"; RW/DRW = ",i3,1x,i3,"; Block = ",l1)') actv,pres,sts,rfc,usc,rwc,drwc,blkd
          else
           write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2)') actv,pres,sts
          endif
@@ -5427,13 +5428,14 @@
          implicit none
          class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid,i,n,opcode,sts,errcode,nce,num_processed,uid
+         integer(INTD):: errc,ier,thid,i,l,n,opcode,sts,errcode,nce,num_processed,uid
          logical:: active,stopping,pending,evicted
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
          class(tens_rcrsv_t), pointer:: tensor
          class(tens_instr_t), pointer:: tens_instr
          type(tens_entry_wrk_ref_t):: cache_entries(1:MAX_TENSOR_OPERANDS)
+         character(TEREC_MAX_TENS_NAME_LEN):: tname
          type(obj_pack_t):: instr_packet
          type(comm_handle_t):: comm_hl
          class(*), pointer:: uptr
@@ -5540,11 +5542,27 @@
             if(ier.eq.DSVP_SUCCESS) then
              call tens_instr%extract_cache_entries(cache_entries,nce,ier)
              if(ier.ne.0.and.errc.eq.0) then; errc=-8; exit wloop; endif
+             tens_instr=>NULL(); uptr=>NULL()
              ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
   !Evict tensor cache entries if no longer in use:
              do i=1,nce
               tensor=>cache_entries(i)%cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-6; exit; endif
-              evicted=this%arg_cache%evict(tensor,ier,decr_use=.TRUE.); if(ier.ne.0.and.errc.eq.0) then; errc=-5; exit; endif
+              if(DEBUG.gt.0) call tensor%get_name(tname,l)
+              evicted=this%arg_cache%evict(tensor,ier,decr_use=.TRUE.)
+              if(ier.eq.0) then
+               if(DEBUG.gt.0) then
+                write(CONS_OUT,'("#MSG(TAVP-WRK:Retirer)[",i6,"]: Evicted temporary tensor")',ADVANCE='NO') impir
+                write(CONS_OUT,*) tname(1:l)
+                flush(CONS_OUT)
+               endif
+              else
+               if(VERBOSE.and.DEBUG.gt.0) then
+                write(CONS_OUT,'("#ERROR(TAVP-WRK:Retirer)[",i6,"]: Eviction failed for tensor")',ADVANCE='NO') impir
+                write(CONS_OUT,*) tname(1:l)
+                flush(CONS_OUT)
+               endif
+               errc=-5; exit
+              endif
               cache_entries(i)%cache_entry=>NULL()
              enddo
              if(errc.eq.0) then; num_processed=num_processed-1; else; exit wloop; endif
@@ -6574,7 +6592,7 @@
                   do i=1,nce
                    tensor=>cache_entries(i)%cache_entry%get_tensor(errc)
                    if(errc.eq.0) then
-                    if(DEBUG.gt.0) call tensor%get_name(tname,l,errc)
+                    if(DEBUG.gt.0) call tensor%get_name(tname,l)
                     evicted=this%arg_cache%evict(tensor,errc,decr_use=.TRUE.)
                     if(errc.eq.0) then
                      if(DEBUG.gt.0) then
@@ -6583,14 +6601,15 @@
                       flush(CONS_OUT)
                      endif
                     else
-                     if(DEBUG.gt.0) then
+                     if(VERBOSE.and.DEBUG.gt.0) then
                       write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.restore_output)[",i6,"]: Eviction failed for tensor")',&
-                           &ADVANCE='NO') impir
+                      &ADVANCE='NO') impir
                       write(CONS_OUT,*) tname(1:l)
                       flush(CONS_OUT)
                      endif
                      errc=-15; exit
                     endif
+                    cache_entries(i)%cache_entry=>NULL()
                    else
                     errc=-14; exit
                    endif
