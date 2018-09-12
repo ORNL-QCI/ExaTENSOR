@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/09
+!REVISION: 2018/09/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1852,8 +1852,10 @@
            if(res.eq.GFC_FOUND) then
             select type(uptr)
             class is(tens_cache_entry_t)
+             call uptr%lock() !may cause a deadlock?
              if(decr) call uptr%decr_use_count()
              ready_to_die=(uptr%get_ref_count().eq.0.and.uptr%get_use_count().eq.0.and.(.not.uptr%is_persistent()))
+             call uptr%unlock() !may cause a deadlock?
             class default
              errc=-6
             end select

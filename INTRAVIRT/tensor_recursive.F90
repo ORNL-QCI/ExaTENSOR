@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/11
+!REVISION: 2018/09/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -333,6 +333,7 @@
           procedure, private:: TensRcrsvExtractSubtensorsVector      !extracts subtensor headers from the tensor and fills in a vector of subtensors the tensor is composed of
           generic, public:: extract_subtensors=>TensRcrsvExtractSubtensorsList,TensRcrsvExtractSubtensorsVector
           procedure, public:: print_it=>TensRcrsvPrintIt             !prints the tensor info
+          procedure, public:: print_head=>TensRcrsvPrintHead         !prints only the signature+shape in one line
           procedure, public:: rename=>TensRcrsvRename                !renames the tensor without restrictions (for internal use)
 #if !(defined(__GNUC__) && __GNUC__ < 8)
           final:: tens_rcrsv_dtor
@@ -756,6 +757,7 @@
         private TensRcrsvExtractSubtensorsList
         private TensRcrsvExtractSubtensorsVector
         private TensRcrsvPrintIt
+        private TensRcrsvPrintHead
         private TensRcrsvRename
         public tens_rcrsv_dtor
         public tens_rcrsv_dim_resolve_i
@@ -3134,14 +3136,16 @@
         end subroutine TensHeaderPrintIt
 !---------------------------------------------------------------
         subroutine TensHeaderPrintHead(this,ierr,dev_id,nspaces)
-!Prints only the signature and shape in one line.
+!Prints only the signature and shape in one line. Format:
+! tensor_name(HSpaceId:SubspaceId,...)[DimExtent,...]
          implicit none
          class(tens_header_t), intent(in):: this       !in: tensor header
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id (6:screen)
          integer(INTD), intent(in), optional:: nspaces !out: left alignment
-         integer(INTD):: errc,dev,i,l,k,n
-         character(256):: str
+         integer(INTD):: errc,dev,i,j,l,k,n
+         integer(INTL):: il
+         character(1024):: str !long enough to hold any reasonable tensor header
 
          errc=TEREC_SUCCESS; l=0
          if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
@@ -3151,15 +3155,43 @@
          endif
          n=this%signature%num_dims
          if(n.gt.0) then
+          str(l+1:l+1)='('; l=l+1
           if(allocated(this%signature%hspace)) then
            if(allocated(this%signature%space_idx)) then
-            
+            do i=1,n
+             j=this%signature%hspace(i)%space_id
+             call numchar(j,k,str(l+1:)); l=l+k
+             str(l+1:l+1)=':'; l=l+1
+             il=this%signature%space_idx(i)
+             call longnumchar(il,k,str(l+1:)); l=l+k
+             str(l+1:l+1)=','; l=l+1
+            enddo
            endif
           else
            if(allocated(this%signature%space_idx)) then
-            
+            do i=1,n
+             il=this%signature%space_idx(i)
+             call longnumchar(il,k,str(l+1:)); l=l+k
+             str(l+1:l+1)=','; l=l+1
+            enddo
            endif
           endif
+          str(l:l)=')' !will replace the last comma
+          str(l+1:l+1)='['; l=l+1
+          if(allocated(this%shape%dim_extent)) then
+           n=this%shape%num_dims
+           if(n.gt.0) then
+            do i=1,n
+             il=this%shape%dim_extent(i)
+             call longnumchar(il,k,str(l+1:)); l=l+k
+             str(l+1:l+1)=','; l=l+1
+            enddo
+            l=l-1 !ignore the last comma
+           endif
+          endif
+          str(l+1:l+1)=']'; l=l+1
+         else
+          str(l+1:l+4)='()[]'; l=l+4
          endif
          call printl(dev,str(1:l))
          flush(dev)
@@ -5895,6 +5927,22 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvPrintIt
+!--------------------------------------------------------------
+        subroutine TensRcrsvPrintHead(this,ierr,dev_id,nspaces)
+!Prints only the tensor signature+shape in one line.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this        !in: tensor
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device (defaults to screen)
+         integer(INTD), intent(in), optional:: nspaces !in: number of leading spaces
+         integer(INTD):: errc,devo,nsp
+
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+         call this%header%print_head(errc,devo,nsp)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvPrintHead
 !------------------------------------------------------
         subroutine TensRcrsvRename(this,tens_name,ierr)
 !Renames the tensor without restrictions.

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/11
+!REVISION: 2018/09/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1526,7 +1526,8 @@
          if(lockable) call this%lock() !some tensor cache entries being destructed do not have locks (temporary allocated in tens_cache_t.store())
          if(.not.this%resource%is_empty(errc)) then
           if(errc.eq.0) then
-           if((.not.this%is_persistent()).and.(this%get_use_count().eq.0).and.(this%get_ref_count().le.1)) then !at most one tensor operand can still be associated with this temporary cache entry
+           !if((.not.this%is_persistent()).and.(this%get_use_count().eq.0).and.(this%get_ref_count().le.1)) then !at most one tensor operand can still be associated with this temporary cache entry
+           if((.not.this%is_persistent()).and.(this%get_ref_count().le.1)) then !at most one tensor operand can still be associated with this temporary cache entry
             call this%release_talsh_tensor(errc)
             if(errc.eq.0) then
              call this%set_up_to_date(.FALSE.)
@@ -4516,7 +4517,7 @@
            opcode=this%get_code(errc)
            if(errc.eq.DSVP_SUCCESS) then
             if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
-             if(this%num_out_oprnds.gt.0) then !output operand(s) exist
+             if(this%num_out_oprnds.gt.0) then !output operand(s) exist: Automatically excludes TENS_DESTROY
               if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.&           !TENS_CREATE does not require output upload since it creates its output locally
                 &opcode.ne.TAVP_INSTR_TENS_ACCUMULATE) res=.TRUE. !TENS_ACCUMULATE is normally expected to perform a local accumulation (special TAVP-WRK tensor instruction)
              endif
@@ -4537,7 +4538,8 @@
         function TensInstrOutputSubstituted(this,ierr) result(res)
 !Returns TRUE if the (persistent) output tensor operand(s) is(are)
 !substituted with a temporary tensor(s). If there are multiple
-!output tensor operands, they all must be either substituted or not.
+!output tensor operands, they must be either all substituted or all not.
+!Local TENS_ACCUMULATE instructions are considered substituted.
          implicit none
          logical:: res                               !out: result
          class(tens_instr_t), intent(in):: this      !in: active tensor instruction
@@ -4689,8 +4691,9 @@
               call oprnd%lock()
               tens_entry=>oprnd%get_cache_entry(errc)
               if(errc.eq.0.and.associated(tens_entry)) then
-               if(tens_entry%get_ref_count().eq.1.and.tens_entry%get_use_count().eq.0.and.&
-                 &(.not.tens_entry%is_persistent())) then
+               !if(tens_entry%get_ref_count().eq.1.and.tens_entry%get_use_count().eq.0.and.&
+                 !&(.not.tens_entry%is_persistent())) then
+               if((tens_entry%get_ref_count().le.1).and.(.not.tens_entry%is_persistent())) then
                 call tens_entry%incr_use_count() !to protect from repeated evictions by multiple DSVU (will be decremented by .evict())
                 num_entries=num_entries+1; cache_entries(num_entries)%cache_entry=>tens_entry
                endif
@@ -5678,12 +5681,14 @@
                         cache_entry=>this%arg_cache%lookup(acc,errc)
                         if(errc.eq.0) then
                          if(associated(cache_entry)) then !accumulator tensor is still alive
+                          call cache_entry%lock()
                           select type(cache_entry)
                           class is(tens_entry_wrk_t)
                            if(cache_entry%get_upload_time().le.instr_compl_time) completed=.FALSE.
                           class default
                            errc=-16
                           end select
+                          call cache_entry%unlock()
                           call this%arg_cache%release_entry(cache_entry,ier); if(ier.ne.0.and.errc.eq.0) errc=-15
                           if((.not.completed).or.(errc.ne.0)) exit oloop
                          endif

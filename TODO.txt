@@ -21,3 +21,6 @@
             It must reach each DSVU the last, that is, each DSVU must pass the STOP instruction as its last instruction.
 2018-08-20: Temporary (output) tensors must be reused, especially if they are already on GPU.
 2018-08-24: Cache dump causes the following TENS_DESTROY instruction to hang!
+2018-09-12: Tensor transformation requires MPI_PUT and MPI_GET for output tensor arguments:
+            Get output tensor argument --> Transform it locally --> Put output tensor argument.
+            Tensor initialization requires MPI_PUT.
