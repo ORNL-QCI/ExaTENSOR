@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/08/26
+!REVISION: 2018/09/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -80,6 +80,12 @@
        end type exatns_space_status_t
 !INTERFACES:
  !Overloads:
+  !Create tensor:
+       interface exatns_tensor_create
+        module procedure exatns_tensor_create_scalar
+        module procedure exatns_tensor_create_tensor
+       end interface exatns_tensor_create
+  !Initialize tensor:
        interface exatns_tensor_init
         module procedure exatns_tensor_init_scalar
         module procedure exatns_tensor_init_method
@@ -136,6 +142,8 @@
        public exatns_tensor_load          !loads a tensor from persistent storage (create + populate)
        public exatns_tensor_save          !saves a tensor to persistent storage
        public exatns_tensor_status        !returns the status of the tensor (e.g., empty, initialized, being updated, etc.)
+       private exatns_tensor_create_scalar!creates an empty scalar (order-0 tensor)
+       private exatns_tensor_create_tensor!creates an empty tensor (order-1 and higher tensors)
  !Tensor operations (Driver only):
        public exatns_tensor_init          !initializes a tensor to a real/complex value or invokes an external initialization method
        public exatns_tensor_copy          !copies the content of one tensor into another tensor, allowing for permutation, slicing, or insertion
@@ -877,8 +885,23 @@
         call quit(-1,'FATAL(exatensor:index_unregister): Not implemented yet!') !`Implement
         return
        end function exatns_index_unregister
-![ExaTENSOR Tensor API]--------------------------------------------------------------------------------------------------------
-       function exatns_tensor_create(tensor,tens_name,hspaces,subspaces,data_kind,dim_extent,dim_group,group_spec) result(ierr)
+![ExaTENSOR Tensor API]-------------------------------------------------------------
+       function exatns_tensor_create_scalar(tensor,tens_name,data_kind) result(ierr)
+!Creates a scalar (order-0 tensor).
+        implicit none
+        integer(INTD):: ierr                       !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor !out: tensor (must be empty on entrance)
+        character(*), intent(in):: tens_name       !in: symbolic tensor name
+        integer(INTD), intent(in):: data_kind      !in: data kind of tensor elements: {EXA_DATA_KIND_XX: XX = R4,R8,C4,C8}
+        integer(INTD):: hspaces(1)
+        integer(INTL):: subspaces(1)
+
+        ierr=exatns_tensor_create_tensor(tensor,tens_name,hspaces(1:0),subspaces(1:0),data_kind)
+        return
+       end function exatns_tensor_create_scalar
+!-------------------------------------------------------------------------------------------------------------------------
+       function exatns_tensor_create_tensor(tensor,tens_name,hspaces,subspaces,data_kind,dim_extent,dim_group,group_spec)&
+                                           &result(ierr)
 !Creates a tensor.
         implicit none
         integer(INTD):: ierr                                 !out: error code
@@ -977,7 +1000,7 @@
          ierr=-1
         endif
         return
-       end function exatns_tensor_create
+       end function exatns_tensor_create_tensor
 !---------------------------------------------------------
        function exatns_tensor_destroy(tensor) result(ierr)
 !Destroys a tensor.

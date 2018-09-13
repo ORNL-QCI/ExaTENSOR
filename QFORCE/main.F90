@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/11
+!REVISION: 2018/09/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -129,12 +129,12 @@
         type(spher_symmetry_t):: basis_symmetry(1:TEST_SPACE_DIM)
         type(subspace_basis_t):: basis
         class(h_space_t), pointer:: ao_space
-        type(tens_rcrsv_t):: dtens,ltens,rtens
+        type(tens_rcrsv_t):: etens,dtens,ltens,rtens
         type(tens_init_test_t):: init1369
         type(tens_print_test_t):: tens_printer
         integer(INT_MPI):: mpi_th_provided
-        integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role
-        integer(INTL):: l,ao_space_root
+        integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role,hsp(1:MAX_TENSOR_RANK)
+        integer(INTL):: l,ao_space_root,ssp(1:MAX_TENSOR_RANK)
         real(8):: tms,tmf
 
 !Application initializes MPI:
@@ -187,6 +187,16 @@
 !Driver drives tensor workload:
  !Create tensors:
            ao_space_root=ao_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
+  !etens (scalar):
+#if 0
+           write(6,'("Creating scalar etens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(etens,'etens',EXA_DATA_KIND_R8)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+#endif
   !dtens:
            write(6,'("Creating tensor dtens over a hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
@@ -273,6 +283,16 @@
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !etens:
+#if 0
+           write(6,'("Destroying scalar etens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(etens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+#endif
  !Dump cache (debug):
            ierr=exatns_dump_cache()
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
