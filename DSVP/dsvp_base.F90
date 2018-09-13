@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/24
+!REVISION: 2018/09/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -266,6 +266,7 @@
          character(:), allocatable, private:: description      !symbolic description of the DSVP: Set by .configure()
          type(ds_unit_ref_t), allocatable, private:: units(:)  !DSVU table (enumerated references to DSVU the DSVP is composed of): Set by .configure()
          integer(INTD), private:: num_units=0                  !number of set DSVU in the DSVU table: [0..num_units-1]: Set by .configure()
+         logical, private:: decode_paused=.FALSE.              !TRUE pauses decoding of incoming DS instructions until released
          real(8), private:: time_start                         !start time stamp (sec): Set by .start()
          integer(INTD), private:: sync_count=0                 !INTERNAL USE ONLY (used for DS unit synchronization)
          contains
@@ -290,6 +291,9 @@
           procedure, public:: is_configured=>DSVPIsConfigured                    !returns TRUE if the DSVP is configured, FALSE otherwise
           procedure, public:: time_active=>DSVPTimeActive                        !returns the time DSVP is active in seconds
           procedure, public:: sync_units=>DSVPSyncUnits                          !synchronizes DS units within DSVP
+          procedure, public:: pause_decode=>DSVPPauseDecode                      !pauses decoding of incoming DS instructions until explicitly resumed
+          procedure, public:: resume_decode=>DSVPResumeDecode                    !resumes decoding of incoming DS instructions after pause
+          procedure, public:: decode_is_paused=>DSVPDecodeIsPaused               !returns TRUE if decoding of incoming DS instructions is currently paused
           procedure, public:: get_status=>DSVPGetStatus                          !returns the current status of the DSVP
           procedure, private:: set_status=>DSVPSetStatus                         !sets the DSVP status
           procedure, private:: start_time=>DSVPStartTime                         !starts the time when DSVP is initialized (status set to DSVP_STAT_ON)
@@ -546,6 +550,9 @@
         private DSVPIsConfigured
         private DSVPTimeActive
         private DSVPSyncUnits
+        private DSVPPauseDecode
+        private DSVPResumeDecode
+        private DSVPDecodeIsPaused
         private DSVPGetStatus
         private DSVPSetStatus
         private DSVPStartTime
@@ -1632,6 +1639,7 @@
            mthreads=omp_get_max_threads()
           endif
           if(mthreads.ge.nthreads) then
+           this%decode_paused=.FALSE.
            this%sync_count=this%num_units
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(tid,ier) NUM_THREADS(nthreads)
            if(omp_get_num_threads().eq.nthreads) then
@@ -1678,6 +1686,7 @@
 
          errc=DSVP_SUCCESS
          !`Finish
+         this%decode_paused=.FALSE.
          this%sync_count=0
          call this%set_status(DSVP_STAT_OFF,errc)
          if(present(ierr)) ierr=errc
@@ -1700,6 +1709,7 @@
           endif
           call this%free_units(errc)
           this%num_units=0
+          this%decode_paused=.FALSE.
           this%instr_received=0
           this%instr_processed=0
           this%instr_created=0
@@ -2084,17 +2094,69 @@
          endif
          return
         end subroutine DSVPSyncUnits
-!----------------------------------------------------
-        function DSVPGetStatus(this,ierr) result(sts)
+!--------------------------------------------
+        subroutine DSVPPauseDecode(this,ierr)
+!Pauses decoding of incoming DS instructions until explicitly resumed.
+         implicit none
+         class(dsvp_t), intent(inout):: this         !inout: DSVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+!$OMP ATOMIC WRITE
+         this%decode_paused=.TRUE.
+!$OMP FLUSH
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end subroutine DSVPPauseDecode
+!---------------------------------------------
+        subroutine DSVPResumeDecode(this,ierr)
+!Resumes decoding of incoming DS isntructions after a pause.
+         implicit none
+         class(dsvp_t), intent(inout):: this         !inout: DSVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+!$OMP ATOMIC WRITE
+         this%decode_paused=.FALSE.
+!$OMP FLUSH
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end subroutine DSVPResumeDecode
+!------------------------------------------------------------
+        function DSVPDecodeIsPaused(this,ierr) result(paused)
+!Returns TRUE if decoding of incoming DS instructions is currently paused.
+         implicit none
+         logical:: paused                            !out: result
+         class(dsvp_t), intent(in):: this            !in: active DSVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS; paused=.FALSE.
+         if(this%stat.ne.DSVP_STAT_OFF) then
+!$OMP FLUSH
+!$OMP ATOMIC READ
+          paused=this%decode_paused
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DSVPDecodeIsPaused
+!-----------------------------------------------------------
+        function DSVPGetStatus(this,ierr,paused) result(sts)
 !Returns the current status of the DSVP.
          implicit none
          integer(INTD):: sts                         !out: DSVP current status
          class(dsvp_t), intent(in):: this            !in: DSVP
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(out), optional:: paused     !out: TRUE if decode is currently paused
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
          sts=this%stat
+         if(present(paused)) then
+!$OMP FLUSH
+!$OMP ATOMIC READ
+          paused=this%decode_paused
+         endif
          if(present(ierr)) ierr=errc
          return
         end function DSVPGetStatus

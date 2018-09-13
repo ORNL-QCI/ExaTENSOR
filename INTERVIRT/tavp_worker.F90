@@ -4937,6 +4937,8 @@
          type(comm_handle_t):: comm_hl
          type(tens_instr_t), pointer:: tens_instr
          type(tens_instr_t):: tens_instr_empty
+         type(list_bi_t):: dump_cache
+         type(list_iter_t):: dumpi
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
@@ -4945,30 +4947,32 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-41
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-48
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-40
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-47
 !Initialize the control list:
-         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-39
+         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-46
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-38
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-45
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-37
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-44
          endif
+!Initialize the tensor cache dump list iterator:
+         ier=dumpi%init(dump_cache); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-43
 !Work loop:
          active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
           if(.not.stopping) then
  !Receive new bytecode (if posted):
-           call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-36; exit wloop; endif
+           call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-42; exit wloop; endif
            new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,tag=TAVP_DISPATCH_TAG,comm=this%source_comm)
-           if(ier.ne.0.and.errc.eq.0) then; errc=-35; exit wloop; endif
+           if(ier.ne.0.and.errc.eq.0) then; errc=-41; exit wloop; endif
            if(new) then !new bytecode is available
-            call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-34; exit wloop; endif
-            num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-33; exit wloop; endif
+            call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-40; exit wloop; endif
+            num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-39; exit wloop; endif
             if(DEBUG.gt.0) then
              write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder unit ",i2," received ",i9," new instructions")')&
              &impir,uid,num_packets
@@ -4976,80 +4980,101 @@
             endif
             if(num_packets.gt.0) then
  !Decode new bytecode:
-             ier=this%ctrl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
-             ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
+             ier=this%ctrl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
+             ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-37; exit wloop; endif
              do i=1,num_packets
   !Extract an instruction:
               call this%bytecode%extract_packet(i,instr_packet,ier,preclean=.TRUE.)
-              if(ier.ne.0.and.errc.eq.0) then; errc=-30; exit wloop; endif
+              if(ier.ne.0.and.errc.eq.0) then; errc=-36; exit wloop; endif
   !Append an empty instruction at the end of the main queue:
-              ier=this%iqueue%append(tens_instr_empty); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
-              ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
-              uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
+              ier=this%iqueue%append(tens_instr_empty); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-35; exit wloop; endif
+              ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-34; exit wloop; endif
+              uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-33; exit wloop; endif
               tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
-              if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-26; exit wloop; endif !trap
+              if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-32; exit wloop; endif !trap
   !Construct the instruction by decoding the extracted instruction:
-              call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-25; exit wloop; endif
-              sts=tens_instr%get_status(ier,j); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
-              opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
+              call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-31; exit wloop; endif
+              sts=tens_instr%get_status(ier,j); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
+              opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
               if(DEBUG.gt.0) then
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Decoder): Decoded a new tensor instruction:")')
                call tens_instr%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
+              if(uid.eq.0.and.opcode.eq.TAVP_INSTR_CTRL_DUMP_CACHE) then
+  !TAVP_INSTR_CTRL_DUMP_CACHE needs a special treatment:
+               if(i.gt.1.and.errc.eq.0) then; errc=-28; exit wloop; endif !trap: DUMP_CACHE must always be invoked after synchronization
+               call tavp%pause_decode() !tensor cache dump will require a TAVP pause
+               if(DEBUG.gt.0) then
+                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Decoder): Decoding paused for tensor cache dumping!")')
+                flush(CONS_OUT)
+               endif
+               ier=this%iqueue%move_elem(dumpi); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif !remove DUMP_CACHE from the main queue
+               ier=this%get_acceptor(acceptor,port_id); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
+               if(associated(acceptor)) then
+                ier=acceptor%load_port(port_id,dumpi); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif !pass DUMP_CACHE further down the pipeline
+                do while(tavp%decode_is_paused()); enddo !wait until decoding is resumed (after DUMP_CACHE has been executed)
+               else
+                if(errc.eq.0) then; errc=-24; exit wloop; endif
+               endif
+              else
   !Clone CONTROL instructions for own port:
-              if(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !copy control instructions to own port
-               if(opcode.eq.TAVP_INSTR_CTRL_STOP.and.i.ne.num_packets.and.errc.eq.0) then; errc=-22; exit wloop; endif !STOP must be the last instruction in the packet
-               ier=this%ctrl_list%append(tens_instr); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+               if(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !copy control instructions to own port
+                if(opcode.eq.TAVP_INSTR_CTRL_STOP.and.i.ne.num_packets.and.errc.eq.0) then; errc=-23; exit wloop; endif !STOP must be the last instruction in the packet
+                ier=this%ctrl_list%append(tens_instr); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+               endif
               endif
              enddo
  !Pass cloned control instructions to own port:
-             ier=this%ctrl_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+             ier=this%ctrl_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
              if(this%ctrl_list%get_status().eq.GFC_IT_ACTIVE) then
-              ier=this%load_port(0,this%ctrl_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
+              ier=this%load_port(0,this%ctrl_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
              endif
  !Pass all decoded instructions to the acceptor unit (Resourcer in this case):
-             ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
+             ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
              if(this%iqueue%get_status().eq.GFC_IT_ACTIVE) then
-              ier=this%get_acceptor(acceptor,port_id); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
+              ier=this%get_acceptor(acceptor,port_id); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
               if(associated(acceptor)) then
-               ier=acceptor%load_port(port_id,this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
-               if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-15; exit wloop; endif !trap
+               ier=acceptor%load_port(port_id,this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
+               if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-16; exit wloop; endif !trap
               else
-               if(errc.eq.0) then; errc=-14; exit wloop; endif
+               if(errc.eq.0) then; errc=-15; exit wloop; endif
               endif
              endif
             endif
-            call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
+            call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-14; exit wloop; endif
            endif !new bytecode
           else !stopping
-           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
+           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
            if(this%iqueue%get_status().eq.GFC_IT_EMPTY) then
             active=.FALSE.
            else
-            if(errc.eq.0) then; errc=-11; exit wloop; endif
+            if(errc.eq.0) then; errc=-12; exit wloop; endif
            endif
-           if(.not.this%port_empty(0,ier).and.errc.eq.0) then; errc=-10; exit wloop; endif !trap
+           if(.not.this%port_empty(0,ier).and.errc.eq.0) then; errc=-11; exit wloop; endif !trap
           endif
  !Check own port for control instructions:
-          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
+          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
           ier=this%iqueue%get_status()
           do while(ier.eq.GFC_IT_ACTIVE)
-           uptr=>NULL(); uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
+           uptr=>NULL(); uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
-           if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-6; exit wloop; endif !trap
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+           if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-7; exit wloop; endif !trap
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
            if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE. !only STOP instruction is expected
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
-           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
            ier=this%iqueue%next(); ier=this%iqueue%get_status() !in general more control instructions can be expected
           enddo
  !Clear the instruction queue (control instructions only):
           if(ier.eq.GFC_IT_DONE) then !control list was not empty
-           ier=this%iqueue%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
+           ier=this%iqueue%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
           endif
          enddo wloop
+!Release the tensor cache dump list iterator:
+         ier=dumpi%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
+         ier=dumpi%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_WRK)[",i6,"]: Decoder error ",i11," by thread ",i2)')&
@@ -7441,6 +7466,11 @@
              write(jo,'("#DEBUG(TAVP-WRK): TENSOR CACHE DUMP:")')
              call this%arg_cache%print_it()
              flush(jo)
+             call tavp%resume_decode() !decoding was paused for tensor cache dumping
+             if(DEBUG.gt.0) then
+              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Dispatcher): Decoding resumed after tensor cache dumping!")')
+              flush(CONS_OUT)
+             endif
             endif
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
