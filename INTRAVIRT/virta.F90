@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/12
+!REVISION: 2018/09/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1714,7 +1714,6 @@
            if(res.eq.GFC_FOUND) then
             select type(uptr)
             class is(tens_cache_entry_t)
-             !call uptr%lock() !can cause a deadlock
              call uptr%incr_use_count()
              tens_entry_p=>uptr
             end select
@@ -1792,7 +1791,6 @@
                endif
               endif
               if(errc.eq.0.and.present(tens_entry_p)) then
-               !call tcep%lock() !can cause a deadlock
                call tcep%incr_use_count()
                tens_entry_p=>tcep
               endif
@@ -1895,16 +1893,27 @@
 !---------------------------------------------------------------
         subroutine TensCacheReleaseEntry(this,tens_entry_p,ierr)
 !Releases an explicitly previously obtained pointer to a tensor cache entry.
+!If the tensor cache entry is temporary and its reference and use counts
+!become zero here, it will be evicted from the tensor cache.
          implicit none
-         class(tens_cache_t), intent(in):: this                           !in: tensor cache
+         class(tens_cache_t), intent(inout):: this                        !inout: tensor cache
          class(tens_cache_entry_t), pointer, intent(inout):: tens_entry_p !inout: pointer to a tensor cache entry (will sink here)
          integer(INTD), intent(out), optional:: ierr                      !out: error code
          integer(INTD):: errc
+         logical:: evicted
+         class(tens_rcrsv_t), pointer:: tensor
 
          errc=0
          if(associated(tens_entry_p)) then
           call tens_entry_p%decr_use_count()
-          !call tens_entry_p%unlock() !can cause a deadlock
+          if(tens_entry_p%get_ref_count().eq.0.and.tens_entry_p%get_use_count().eq.0.and.(.not.tens_entry_p%is_persistent())) then
+           tensor=>tens_entry_p%get_tensor(errc)
+           if(errc.eq.0) then
+            evicted=this%evict(tensor,errc); if(errc.ne.0) errc=-3
+           else
+            errc=-2
+           endif
+          endif
           tens_entry_p=>NULL()
          else
           errc=-1

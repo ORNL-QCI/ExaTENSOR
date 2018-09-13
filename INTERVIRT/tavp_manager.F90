@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/07
+!REVISION: 2018/09/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2169,7 +2169,7 @@
 !-----------------------------------------------------------------------------------
         subroutine TensInstrExtractCacheEntries(this,cache_entries,num_entries,ierr)
 !Returns an array of references to tensor cache entries associated with the tensor operands for subsequent eviction.
-!Only temporary tensor cache entries with single reference and zero use counts are returned.
+!Only temporary tensor cache entries with reference count of 1 are returned.
          implicit none
          class(tens_instr_t), intent(inout):: this                     !in: tensor instruction
          type(tens_entry_mng_ref_t), intent(inout):: cache_entries(1:) !out: references to the tensor cache entries to be evicted
@@ -2191,9 +2191,10 @@
               call oprnd%lock()
               tens_entry=>oprnd%get_cache_entry(errc)
               if(errc.eq.0.and.associated(tens_entry)) then
-               if(tens_entry%get_ref_count().le.1.and.tens_entry%get_use_count().eq.0.and.&
-                 &(.not.tens_entry%is_persistent())) then
-                call tens_entry%incr_use_count() !to protect from repeated evictions by multiple DSVU (will be decremented by .evict())
+               !if(tens_entry%get_ref_count().le.1.and.tens_entry%get_use_count().eq.0.and.&
+                 !&(.not.tens_entry%is_persistent())) then
+               if((tens_entry%get_ref_count().le.1).and.(.not.tens_entry%is_persistent())) then
+                call tens_entry%incr_use_count() !to protect from repeated evictions (will be decremented by .evict())
                 num_entries=num_entries+1; cache_entries(num_entries)%cache_entry=>tens_entry
                endif
               else
