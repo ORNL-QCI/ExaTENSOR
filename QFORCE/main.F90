@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/13
+!REVISION: 2018/09/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -188,7 +188,6 @@
  !Create tensors:
            ao_space_root=ao_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
   !etens (scalar):
-#if 0
            write(6,'("Creating scalar etens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_create(etens,'etens',EXA_DATA_KIND_R8)
@@ -196,7 +195,10 @@
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
-#endif
+ !Dump cache (debug):
+           ierr=exatns_dump_cache()
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
+           write(6,'("Tensor cache dumped")')
   !dtens:
            write(6,'("Creating tensor dtens over a hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
@@ -283,8 +285,11 @@
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+ !Dump cache (debug):
+           ierr=exatns_dump_cache()
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
+           write(6,'("Tensor cache dumped")')
   !etens:
-#if 0
            write(6,'("Destroying scalar etens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_destroy(etens)
@@ -292,7 +297,6 @@
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
-#endif
  !Dump cache (debug):
            ierr=exatns_dump_cache()
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')

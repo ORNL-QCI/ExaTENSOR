@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/13
+!REVISION: 2018/09/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4092,11 +4092,11 @@
              call oprnd%reset_persistency(.TRUE.) !mark the parental tensor cache entry as persistent in the tensor cache
              tensor=>oprnd%get_tensor(jerr) !parental tensor
              if(jerr.eq.0) then
-              !if(DEBUG.gt.0) then
-               !write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer.decompose)[",i6,"]: Decomposing TENS_CREATE for tensor:")') impir
-               !call tensor%print_it(dev_id=CONS_OUT)
-               !flush(CONS_OUT)
-              !endif
+              if(DEBUG.gt.1) then
+               write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer.decompose)[",i6,"]: Decomposing TENS_CREATE for tensor:")') impir
+               call tensor%print_it(dev_id=CONS_OUT)
+               flush(CONS_OUT)
+              endif
               data_type=tensor%get_data_type() !parental tensor data type, if any, will propagate into subtensors
               if(tensor%get_num_subtensors().gt.0) then !tensor must have an internal structure
                subtensors=>tensor%get_subtensors(jerr) !list of subtensors in terms of tensor headers
@@ -4115,37 +4115,41 @@
                    call subtensor%set_data_type(data_type,jerr)
                    if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-22; exit cloop; endif
                   endif
-                  !if(DEBUG.gt.0) then
-                   !write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer.decompose)[",i6,"]: TENS_CREATE created a subtensor:")') impir
-                   !call subtensor%print_it(dev_id=CONS_OUT)
-                   !flush(CONS_OUT)
-                  !endif
+                  if(DEBUG.gt.1) then
+                   write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer.decompose)[",i6,"]: TENS_CREATE created a subtensor:")') impir
+                   call subtensor%print_it(dev_id=CONS_OUT)
+                   flush(CONS_OUT)
+                  endif
                   stored=this%arg_cache%store(subtensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !new subtensor: Ownership transferred to the tensor cache
-                  if(.not.(jerr.eq.0.and.stored.and.associated(tens_entry))) then
+                  if(.not.(jerr.eq.0.and.associated(tens_entry))) then
                    deallocate(subtensor); jerr=-21; exit cloop
                   endif
                   call tens_entry%lock()
+                  if(.not.stored) then !subtensor is already in the tensor cache (in case a tensor is composed of itself)
+                   deallocate(subtensor)
+                   subtensor=>tens_entry%get_tensor(jerr); if(jerr.ne.0) then; jerr=-20; exit cloop; endif
+                  endif
                   call tens_entry%set_persistency(.TRUE.) !mark subtensor as persistent in the tensor cache
                   tens_entry_mng=>NULL()
                   select type(tens_entry); class is(tens_entry_mng_t); tens_entry_mng=>tens_entry; end select
-                  jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-20; exit cloop; endif
-                  jerr=this%sub_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-19; exit cloop; endif
-                  uptr=>this%sub_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit cloop; endif
+                  jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-19; exit cloop; endif
+                  jerr=this%sub_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit cloop; endif
+                  uptr=>this%sub_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-17; exit cloop; endif
                   subinstr=>NULL(); select type(uptr); class is(tens_instr_t); subinstr=>uptr; end select
-                  if(.not.associated(subinstr)) then; jerr=-17; exit cloop; endif !trap
+                  if(.not.associated(subinstr)) then; jerr=-16; exit cloop; endif !trap
                   iid=dsvp%get_crtd_instr_counter()
                   call subinstr%tens_instr_ctor(TAVP_INSTR_TENS_CREATE,jerr,subtensor,iid)
-                  if(jerr.ne.0) then; jerr=-16; exit cloop; endif
-                  tens_oprnd=>subinstr%get_operand(0,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-15; exit cloop; endif
+                  if(jerr.ne.0) then; jerr=-15; exit cloop; endif
+                  tens_oprnd=>subinstr%get_operand(0,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-14; exit cloop; endif
                   select type(tens_oprnd)
                   class is(tens_oprnd_t)
-                   call tens_oprnd%set_cache_entry(tens_entry_mng,jerr); if(jerr.ne.0) then; jerr=-14; exit cloop; endif
+                   call tens_oprnd%set_cache_entry(tens_entry_mng,jerr); if(jerr.ne.0) then; jerr=-13; exit cloop; endif
                   class default
-                   jerr=-13; exit cloop
+                   jerr=-12; exit cloop
                   end select
                   call subinstr%set_status(init_stat,jerr,init_tag) !instruction status and error code will depend on whether the TAVP-MNG is bottom or not
-                  if(jerr.ne.DSVP_SUCCESS) then; jerr=-12; exit cloop; endif
-                  call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-11; exit cloop; endif
+                  if(jerr.ne.DSVP_SUCCESS) then; jerr=-11; exit cloop; endif
+                  call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-10; exit cloop; endif
                   call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                   call dsvp%incr_crtd_instr_counter(); num_subinstr=num_subinstr+1 !new subinstruction has been created
                   jerr=lit%next()
@@ -4155,9 +4159,7 @@
                  endif
                  if(jerr.eq.GFC_NO_MOVE) then
                   call tens_instr%set_status(DS_INSTR_ISSUED,jerr,num_subinstr) !.error_code of the parent instruction will store the number of subinstructions (in Collector)
-                  if(jerr.ne.DSVP_SUCCESS) jerr=-10
-                 else
-                  jerr=-9
+                  if(jerr.ne.DSVP_SUCCESS) jerr=-9
                  endif
                  jj=lit%release(); if(jj.ne.GFC_SUCCESS.and.jerr.eq.0) jerr=-8
                 else
