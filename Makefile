@@ -101,9 +101,15 @@ else
 	cp ./TALSH/dil_basic.mod ./include/
 	cp ./TALSH/talsh.mod ./
 endif
+ifeq ($(EXA_OS),LINUX)
 	cp -u ./[A-Z]*/*.h ./include/
 	cp -u ./[A-Z]*/*.hpp ./include/
 	cp -u ./TN/*.cpp ./include/
+else
+	cp ./[A-Z]*/*.h ./include/
+	cp ./[A-Z]*/*.hpp ./include/
+	cp ./TN/*.cpp ./include/
+endif
 	cp ./[A-Z]*/*.a ./lib/
 	cp ./[A-Z]*/*.x ./bin/
 	cp ./QFORCE/Qforce.x ./
