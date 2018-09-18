@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/16
+!REVISION: 2018/09/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -77,7 +77,10 @@
 !       instances of returned pointers pointing to the cache entry.
 !   (D) Each tensor argument cache entry has an <owner_id> field referring to a TAVP-MNG
 !       which owns the tensor metadata stored in that cache entry. A negative value
-!       of this field means that the owning TAVP-MNG is not (yet) known.
+!       of this field means that the owning TAVP-MNG is not (yet) known. Sometimes,
+!       when a tensor does not split at that level of hierarchy, it will have two
+!       separate owner ids, one as a parent tensor and one as a child tensor, both
+!       instances obviously being the same tensor, yet the owner id will be case specific.
 !   (E) Tensor argument cache entries storing local tensors (owned by the current TAVP)
 !       are only deleted when the tensor is destroyed. Tensor argument cache entries
 !       storing subtensors of local tensors are only deleted when the tensor is destroyed.
@@ -135,12 +138,12 @@
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
-         integer(INTD), private:: owner_id=-1                         !tensor meta-data owner id (non-negative TAVP-MNG id), negative means the tensor is remote with an unknown location
+         integer(INTD), private:: owner_id(1:2)=-1                    !tensor meta-data owner id (non-negative TAVP-MNG id), negative means the tensor is remote with an unknown location
          contains
           procedure, private:: TensEntryMngCtor                       !ctor
           generic, public:: tens_entry_mng_ctor=>TensEntryMngCtor
-          procedure, public:: get_owner_id=>TensEntryMngGetOwnerId    !returns the tensor owner id
-          procedure, public:: set_owner_id=>TensEntryMngSetOwnerId    !set the tensor owner id
+          procedure, public:: get_owner_id=>TensEntryMngGetOwnerId    !returns the tensor owner id (either as a parent or as a child, if different)
+          procedure, public:: set_owner_id=>TensEntryMngSetOwnerId    !sets the tensor owner id (either as a parent or as a child, if different)
           procedure, public:: holds_remote=>TensEntryMngHoldsRemote   !returns TRUE if the stored tensor is remote, FALSE otherwise
           procedure, public:: print_it=>TensEntryMngPrintIt           !prints
           final:: tens_entry_mng_dtor
@@ -153,7 +156,7 @@
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
          class(tens_entry_mng_t), pointer, private:: cache_entry=>NULL() !non-owning pointer to a tensor cache entry where the tensor is stored (optional)
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()          !non-owning pointer to a persistent recursive tensor (normally stored in the tensor cache)
-         integer(INTD), private:: owner_id=-1                            !non-negative tensor meta-data owner id (TAVP-MNG id), normally a copy of the value from the tensor cache entry (optional)
+         integer(INTD), private:: owner_id(1:2)=-1                       !non-negative tensor meta-data owner id (TAVP-MNG id), normally a copy of the value from the tensor cache entry (optional)
          contains
           procedure, private:: TensOprndCtorTensor                       !ctor by tensor only
           procedure, private:: TensOprndCtorCache                        !ctor by cache entry only
@@ -161,9 +164,9 @@
           procedure, public:: get_tensor=>TensOprndGetTensor             !returns a pointer to the tensor
           procedure, public:: get_cache_entry=>TensOprndGetCacheEntry    !returns a pointer to the tensor cache entry (may be NULL)
           procedure, public:: set_cache_entry=>TensOprndSetCacheEntry    !sets the associated tensor cache entry (may be NULL)
-          procedure, public:: get_owner_id=>TensOprndGetOwnerId          !returns the tensor owner id
-          procedure, public:: set_owner_id=>TensOprndSetOwnerId          !sets the tensor owner id (with or without cache update)
-          procedure, public:: sync_owner_id=>TensOprndSyncOwnerId        !synchronizes the tensor owner id between public cache and private reference
+          procedure, public:: get_owner_id=>TensOprndGetOwnerId          !returns the tensor owner id, either as a parent or as a child, if different
+          procedure, public:: set_owner_id=>TensOprndSetOwnerId          !sets the tensor owner id, either as a parent or as a child, if different (with or without cache update)
+          procedure, public:: sync_owner_id=>TensOprndSyncOwnerId        !synchronizes the tensor owner id between the public cache value and the private reference by importing the public cache value
           procedure, public:: reset_persistency=>TensOprndResetPersistency !resets the persistency status of the underlying tensor cache entry
           procedure, public:: get_data_descriptor=>TensOprndGetDataDescriptor !returns a pointer to the tensor data descriptor or NULL if not available yet
           procedure, public:: register_read=>TensOprndRegisterRead       !registers a new read access on the tensor operand
@@ -534,7 +537,7 @@
          implicit none
          class(tens_entry_mng_t), intent(out):: this          !out: specialized tensor cache entry
          class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: pointer to an allocated tensor (ownership transfer will occur here!)
-         integer(INTD), intent(in):: owner                    !in: tensor owner id
+         integer(INTD), intent(in):: owner(1:2)               !in: tensor owner id (parent, child)
          integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTD):: errc
 
@@ -545,7 +548,7 @@
           call this%set_tensor(tensor,errc)
           if(errc.eq.0) then
            tensor=>NULL() !transfer the ownership
-           this%owner_id=owner
+           this%owner_id(:)=owner(:)
           else
            errc=-2
           endif
@@ -556,19 +559,27 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryMngCtor
-!------------------------------------------------------------
-        function TensEntryMngGetOwnerId(this,ierr) result(id)
-!Returns the tensor owner id.
+!---------------------------------------------------------------------
+        function TensEntryMngGetOwnerId(this,ierr,as_child) result(id)
+!Returns the tensor owner id, either as a parent or as a child (if different).
          implicit none
          integer(INTD):: id                            !out: tensor owner id
          class(tens_entry_mng_t), intent(inout):: this !in: specialized tensor cache entry
          integer(INTD), intent(out), optional:: ierr   !out: error code
+         logical, intent(in), optional:: as_child      !in: if TRUE, the owner id will refer to as a child (defaults to FALSE)
          integer(INTD):: errc
 
          id=-1
          call this%lock()
          if(this%is_set(errc)) then
-          if(errc.eq.0) id=this%owner_id
+          if(errc.eq.0) then
+           id=this%owner_id(1) !owner id as a parent
+           if(present(as_child)) then
+            if(as_child) id=this%owner_id(2) !owner id as a child
+           endif
+          else
+           errc=-2
+          endif
          else
           errc=-1
          endif
@@ -576,18 +587,24 @@
          if(present(ierr)) ierr=errc
          return
         end function TensEntryMngGetOwnerId
-!------------------------------------------------------
-        subroutine TensEntryMngSetOwnerId(this,id,ierr)
-!Sets the tensor owner id.
+!---------------------------------------------------------------
+        subroutine TensEntryMngSetOwnerId(this,id,ierr,as_child)
+!Sets the tensor owner id (if needed, id as a child will be different).
          implicit none
-         class(tens_entry_mng_t), intent(inout):: this !inout: specialized tensor cache entry
-         integer(INTD), intent(in):: id                !in: tensor owner id
-         integer(INTD), intent(out), optional:: ierr   !out: error code
+         class(tens_entry_mng_t), intent(inout):: this  !inout: specialized tensor cache entry
+         integer(INTD), intent(in):: id                 !in: tensor owner id as a parent
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD), intent(in), optional:: as_child !in: if present, the id as a child (may differ from <id> above)
          integer(INTD):: errc
 
          call this%lock()
          if(this%is_set(errc)) then
-          if(errc.eq.0) this%owner_id=id
+          if(errc.eq.0) then
+           this%owner_id(1:2)=id
+           if(present(as_child)) this%owner_id(2)=as_child
+          else
+           errc=-2
+          endif
          else
           errc=-1
          endif
@@ -598,8 +615,8 @@
 !--------------------------------------------------------------
         function TensEntryMngHoldsRemote(this,ierr) result(res)
 !Returns TRUE if the stored tensor is remote, FALSE otherwise.
-!This information is inferred from the .owner_id field which
-!has to be set in order to provide a meaningful answer.
+!This information is inferred from the .owner_id as a parent field
+!which has to be set in order to provide a meaningful answer.
          implicit none
          logical:: res                                 !out: answer
          class(tens_entry_mng_t), intent(inout):: this !in: specialized tensor cache entry
@@ -608,7 +625,7 @@
 
          errc=0
          call this%lock()
-         id=this%owner_id
+         id=this%owner_id(1)
          call this%unlock()
          res=(id.ne.role_rank)
          if(present(ierr)) ierr=errc
@@ -637,7 +654,7 @@
          if(errc.eq.0) call tensor%print_it(errc,devo,nsp+1)
  !Metadata owner id:
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("Metadata owner TAVP-MNG id = ",i6)') this%owner_id
+         write(devo,'("Metadata owner TAVP-MNG id = (",i4,1x,i4,")")') this%owner_id(1:2)
  !Counters:
          pers=this%is_persistent(); refc=this%get_ref_count(); usec=this%get_use_count()
          rwc=this%get_rw_counter(); drwc=this%get_rw_counter(defer=.TRUE.)
@@ -657,7 +674,7 @@
          implicit none
          type(tens_entry_mng_t):: this !inout: specialized tensor cache entry
 
-         this%owner_id=-1
+         this%owner_id(:)=-1
          call this%destroy(.TRUE.) !deallocate the tensor component (if it is set)
          return
         end subroutine tens_entry_mng_dtor
@@ -678,7 +695,7 @@
          class(tens_oprnd_t), intent(inout):: this        !inout: empty tensor operand (on entrance)
          class(tens_rcrsv_t), intent(in), target:: tensor !in: defined persistent tensor
          integer(INTD), intent(out), optional:: ierr      !out: error code
-         integer(INTD), intent(in), optional:: owner      !in: tensor owner id (no restrictions)
+         integer(INTD), intent(in), optional:: owner(1:2) !in: tensor owner id (no restrictions)
          integer(INTD):: errc
 
          if(.not.this%is_active(errc)) then
@@ -688,9 +705,9 @@
              this%cache_entry=>NULL()
              this%tensor=>tensor
              if(present(owner)) then
-              this%owner_id=owner !metadata owner (TAVP-MNG id)
+              this%owner_id(:)=owner(:) !metadata owner (TAVP-MNG id)
              else
-              this%owner_id=-1
+              this%owner_id(:)=-1
              endif
             else
              errc=-4
@@ -714,7 +731,7 @@
          class(tens_oprnd_t), intent(inout):: this                         !inout: empty tensor operand (on entrance)
          class(tens_entry_mng_t), intent(inout), target:: tens_cache_entry !in: tensor cache entry owning the tensor
          integer(INTD), intent(out), optional:: ierr                       !out: error code
-         integer(INTD):: errc,refc
+         integer(INTD):: errc,refc,pid,cid
 
          if(.not.this%is_active(errc)) then
           if(errc.eq.0) then
@@ -725,7 +742,8 @@
              this%cache_entry=>tens_cache_entry
              this%tensor=>this%cache_entry%get_tensor(errc)
              if(errc.eq.0) then
-              this%owner_id=this%cache_entry%get_owner_id()
+              pid=this%cache_entry%get_owner_id(); cid=this%cache_entry%get_owner_id(as_child=.TRUE.)
+              this%owner_id(1:2)=(/pid,cid/)
               if(DEBUG.gt.1.and.errc.eq.0) then
                refc=this%cache_entry%get_ref_count()
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Tensor operand associated with a cache entry (",i4,"):")') impir,refc
@@ -786,7 +804,7 @@
          class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
          class(tens_entry_mng_t), intent(in), pointer:: cache_entry !in: pointer to a tensor cache entry containing the same tensor (may be NULL)
          integer(INTD), intent(out), optional:: ierr                !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,pid,cid
          class(tens_rcrsv_t), pointer:: tensor
 
          if(this%is_active(errc)) then
@@ -800,7 +818,8 @@
             if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry corresponds to the same tensor
              call cache_entry%incr_ref_count()
              this%cache_entry=>cache_entry
-             this%owner_id=this%cache_entry%get_owner_id()
+             pid=this%cache_entry%get_owner_id(); cid=this%cache_entry%get_owner_id(as_child=.TRUE.)
+             this%owner_id(1:2)=(/pid,cid/)
             else
              errc=-3
             endif
@@ -827,14 +846,11 @@
          integer(INTD):: errc
 
          errc=0; id=-1
-         !call this%lock() !only needed if syncing owner_id
          if(associated(this%tensor)) then
-          !if(this%owner_id.lt.0.and.associated(this%cache_entry)) this%owner_id=this%cache_entry%get_owner_id(errc) !sync owner_id
           id=this%owner_id
          else
           errc=-1
          endif
-         !call this%unlock() !only needed if syncing owner_id
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetOwnerId
