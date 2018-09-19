@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/13
+!REVISION: 2018/09/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3480,8 +3480,8 @@
          end subroutine construct_instr_tens_contract
 
         end subroutine TensInstrCtor
-!---------------------------------------------------------
-        subroutine TensInstrEncode(this,instr_packet,ierr)
+!-------------------------------------------------------------------
+        subroutine TensInstrEncode(this,instr_packet,ierr,direction)
 !Encodes a tensor instruction into the bytecode packet:
 ! 0. Instruction id;
 ! 1. Instruction code;
@@ -3495,6 +3495,7 @@
          class(tens_instr_t), intent(in):: this          !in: defined tensor instruction
          class(obj_pack_t), intent(inout):: instr_packet !out: instruction bytecode packet
          integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(in), optional:: direction !in: dispatch direction, not used in TAVP-WRK
          integer(INTD):: errc,op_code,stat,err_code
          integer(INTL):: iid
 

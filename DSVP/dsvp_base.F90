@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/13
+!REVISION: 2018/09/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -88,6 +88,10 @@
         integer(INTD), parameter, public:: DSVP_STAT_ERR=-1         !DSVP encountered an error (generic)
  !DSVP specific kind (valid specific DSVP kinds must be non-negative):
         integer(INTD), parameter, public:: DSVP_NO_KIND=-1          !no specific kind
+ !DSVP hierarchy direction:
+        integer(INTD), parameter, public:: DSVP_INSTR_DIR_DOWN=-1   !down the hierarchy
+        integer(INTD), parameter, public:: DSVP_INSTR_DIR_SIDE=0    !to the same hierarchy level
+        integer(INTD), parameter, public:: DSVP_INSTR_DIR_UP=1      !up the hierarchy
  !Domain-specific unit:
         real(8), parameter, public:: DS_UNIT_ALIVE_INTERVAL=1d-1    !interval (sec) upon which each DS unit is supposed to report that it is still alive
  !Domain-specific operand:
@@ -396,11 +400,12 @@
          end subroutine ds_instr_ctrl_print_i
   !ds_instr_t:
    !encode:
-         subroutine ds_instr_encode_i(this,instr_packet,ierr)
+         subroutine ds_instr_encode_i(this,instr_packet,ierr,direction)
           import:: ds_instr_t,obj_pack_t,INTD
           class(ds_instr_t), intent(in):: this            !in: domain-specific instruction to be encoded
           class(obj_pack_t), intent(inout):: instr_packet !out: instruction byte packet (bytecode)
           integer(INTD), intent(out), optional:: ierr     !out: error code
+          integer(INTD), intent(in), optional:: direction !in: direction the DS instruction will be sent to in the DSVP hierarchy (DSVP_INSTR_DIR_DOWN,DSVP_INSTR_DIR_SIDE,DSVP_INSTR_DIR_UP)
          end subroutine ds_instr_encode_i
    !print_it:
          subroutine ds_instr_print_i(this,ierr,dev_id,nspaces)
@@ -436,10 +441,10 @@
   !ds_encoder_t:
          subroutine ds_encoder_encode_i(this,ds_instr,instr_packet,ierr)
           import:: ds_encoder_t,ds_instr_t,obj_pack_t,INTD
-          class(ds_encoder_t), intent(inout):: this               !inout: DS encoder unit
-          class(ds_instr_t), intent(in), target:: ds_instr        !in: domain-specific instruction
-          class(obj_pack_t), intent(inout):: instr_packet         !out: instruction byte packet (bytecode)
-          integer(INTD), intent(out), optional:: ierr             !out: error code
+          class(ds_encoder_t), intent(inout):: this        !inout: DS encoder unit
+          class(ds_instr_t), intent(in), target:: ds_instr !in: domain-specific instruction
+          class(obj_pack_t), intent(inout):: instr_packet  !out: instruction byte packet (bytecode)
+          integer(INTD), intent(out), optional:: ierr      !out: error code
          end subroutine ds_encoder_encode_i
   !dsvp_t:
    !ctor:

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/18
+!REVISION: 2018/09/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -77,10 +77,11 @@
 !       instances of returned pointers pointing to the cache entry.
 !   (D) Each tensor argument cache entry has an <owner_id> field referring to a TAVP-MNG
 !       which owns the tensor metadata stored in that cache entry. A negative value
-!       of this field means that the owning TAVP-MNG is not (yet) known. Sometimes,
-!       when a tensor does not split at that level of hierarchy, it will have two
-!       separate owner ids, one as a parent tensor and one as a child tensor, both
-!       instances obviously being the same tensor, yet the owner id will be case specific.
+!       of this field means that the owning TAVP-MNG is not (yet) known. Sometimes, when
+!       a tensor does not split at that level of hierarchy, it will have two separate
+!       TAVP-MNG owner ids, one as a parent tensor and one as a child tensor, both
+!       instances being the same tensor. Consequently, its owner id will depend on
+!       the role it is expected to have during the request (parent or child).
 !   (E) Tensor argument cache entries storing local tensors (owned by the current TAVP)
 !       are only deleted when the tensor is destroyed. Tensor argument cache entries
 !       storing subtensors of local tensors are only deleted when the tensor is destroyed.
@@ -144,6 +145,7 @@
           generic, public:: tens_entry_mng_ctor=>TensEntryMngCtor
           procedure, public:: get_owner_id=>TensEntryMngGetOwnerId    !returns the tensor owner id (either as a parent or as a child, if different)
           procedure, public:: set_owner_id=>TensEntryMngSetOwnerId    !sets the tensor owner id (either as a parent or as a child, if different)
+          procedure, public:: has_one_owner=>TensEntryMngHasOneOwner  !returns TRUE if the owner id is the same as a parent and as a child, FALSE otherwise
           procedure, public:: holds_remote=>TensEntryMngHoldsRemote   !returns TRUE if the stored tensor is remote, FALSE otherwise
           procedure, public:: print_it=>TensEntryMngPrintIt           !prints
           final:: tens_entry_mng_dtor
@@ -212,6 +214,7 @@
          integer(INTD), private:: source_comm                       !bytecode source communicator
          integer(INTD), private:: source_rank=-1                    !bytecode source process rank (negative means ANY)
          integer(INT_MPI), private:: msg_tag=TAVP_DEFAULT_TAG       !target message tag
+         integer(INTD), private:: decodes_from                      !direction in the TAVP hierarchy the decoder will be decoding from
          type(pack_env_t), private:: bytecode                       !incoming bytecode buffer
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: control_list                    !list of control instructions
@@ -229,6 +232,7 @@
          integer(INT_MPI), public:: msg_tag                         !target message tag
          class(ds_unit_t), pointer, public:: acceptor=>NULL()       !non-owning pointer to the acceptor DS unit
          integer(INTD), public:: acceptor_port_id                   !associated acceptor unit port id
+         integer(INTD), public:: decodes_from                       !direction in the TAVP hierarchy the decoder will be decoding from
         end type tavp_mng_decoder_conf_t
  !TAVP-MNG retirer:
         type, extends(ds_encoder_t), private:: tavp_mng_retirer_t
@@ -424,6 +428,7 @@
         private TensEntryMngCtor
         private TensEntryMngGetOwnerId
         private TensEntryMngSetOwnerId
+        private TensEntryMngHasOneOwner
         private TensEntryMngHoldsRemote
         private TensEntryMngPrintIt
         public tens_entry_mng_dtor
@@ -594,13 +599,13 @@
          class(tens_entry_mng_t), intent(inout):: this  !inout: specialized tensor cache entry
          integer(INTD), intent(in):: id                 !in: tensor owner id as a parent
          integer(INTD), intent(out), optional:: ierr    !out: error code
-         integer(INTD), intent(in), optional:: as_child !in: if present, the id as a child (may differ from <id> above)
+         integer(INTD), intent(in), optional:: as_child !in: if present, this will be the id as a child (may differ from <id> above)
          integer(INTD):: errc
 
          call this%lock()
          if(this%is_set(errc)) then
           if(errc.eq.0) then
-           this%owner_id(1:2)=id
+           this%owner_id(:)=id
            if(present(as_child)) this%owner_id(2)=as_child
           else
            errc=-2
@@ -612,6 +617,23 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryMngSetOwnerId
+!--------------------------------------------------------------
+        function TensEntryMngHasOneOwner(this,ierr) result(res)
+!Returns TRUE if the tensor cache entry has the same owner as a parent and as a child,
+!FALSE otherwise. In case the tensor cache entry does not have any owner, TRUE is returned.
+         implicit none
+         logical:: res                                 !out: result
+         class(tens_entry_mng_t), intent(inout):: this !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         call this%lock()
+         res=(this%owner_id(1).eq.this%owner_id(2))
+         call this%unlock()
+         if(present(ierr)) ierr=errc
+         return
+        end function TensEntryMngHasOneOwner
 !--------------------------------------------------------------
         function TensEntryMngHoldsRemote(this,ierr) result(res)
 !Returns TRUE if the stored tensor is remote, FALSE otherwise.
@@ -625,7 +647,7 @@
 
          errc=0
          call this%lock()
-         id=this%owner_id(1)
+         id=this%owner_id(1) !owner id as a parent
          call this%unlock()
          res=(id.ne.role_rank)
          if(present(ierr)) ierr=errc
@@ -705,7 +727,7 @@
              this%cache_entry=>NULL()
              this%tensor=>tensor
              if(present(owner)) then
-              this%owner_id(:)=owner(:) !metadata owner (TAVP-MNG id)
+              this%owner_id(:)=owner(:) !metadata owner (TAVP-MNG id), as a parent and as a child (may differ in general)
              else
               this%owner_id(:)=-1
              endif
@@ -743,7 +765,7 @@
              this%tensor=>this%cache_entry%get_tensor(errc)
              if(errc.eq.0) then
               pid=this%cache_entry%get_owner_id(); cid=this%cache_entry%get_owner_id(as_child=.TRUE.)
-              this%owner_id(1:2)=(/pid,cid/)
+              this%owner_id(1:2)=(/pid,cid/) !import owner ids from the tensor cache entry
               if(DEBUG.gt.1.and.errc.eq.0) then
                refc=this%cache_entry%get_ref_count()
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Tensor operand associated with a cache entry (",i4,"):")') impir,refc
@@ -819,13 +841,14 @@
              call cache_entry%incr_ref_count()
              this%cache_entry=>cache_entry
              pid=this%cache_entry%get_owner_id(); cid=this%cache_entry%get_owner_id(as_child=.TRUE.)
-             this%owner_id(1:2)=(/pid,cid/)
+             this%owner_id(1:2)=(/pid,cid/) !import owner ids from the tensor cache entry
             else
              errc=-3
             endif
             call cache_entry%unlock()
            else
-            this%cache_entry=>NULL() !`owner_id is kept unchanged in the tensor operand
+            this%cache_entry=>NULL()
+           !this%owner_id(:)=-1 !`owner_id is kept unchanged
            endif
           else
            errc=-2
@@ -836,41 +859,47 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetCacheEntry
-!---------------------------------------------------------
-        function TensOprndGetOwnerId(this,ierr) result(id)
-!Returns the tensor owner id.
+!------------------------------------------------------------------
+        function TensOprndGetOwnerId(this,ierr,as_child) result(id)
+!Returns the tensor owner id, either as a parent or as a child (if differ).
          implicit none
          integer(INTD):: id                          !out: tensor owner id
          class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: as_child    !in: if TRUE, as-a-child owner id will be returned (defaults to FALSE)
          integer(INTD):: errc
 
          errc=0; id=-1
          if(associated(this%tensor)) then
-          id=this%owner_id
+          id=this%owner_id(1) !owner id as a parent
+          if(present(as_child)) then
+           if(as_child) id=this%owner_id(2) !owner id as a child
+          endif
          else
           errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetOwnerId
-!-------------------------------------------------------------------
-        subroutine TensOprndSetOwnerId(this,owner,ierr,update_cache)
-!Sets the tensor owner id, with or without tensor cache update.
+!----------------------------------------------------------------------------
+        subroutine TensOprndSetOwnerId(this,owner,ierr,update_cache,as_child)
+!Sets the tensor owner id, either as a parent or as a child, with or without tensor cache update.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this    !inout: active tensor operand
-         integer(INTD), intent(in):: owner            !in: tensor owner id (no restrictions)
-         integer(INTD), intent(out), optional:: ierr  !out: error code
-         logical, intent(in), optional:: update_cache !if TRUE, the owner id in the tensor cache will be updated as well (defaults to FALSE)
+         class(tens_oprnd_t), intent(inout):: this      !inout: active tensor operand
+         integer(INTD), intent(in):: owner              !in: tensor owner id (no restrictions)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         logical, intent(in), optional:: update_cache   !in: if TRUE, the owner id in the tensor cache will be updated as well (defaults to FALSE)
+         integer(INTD), intent(in), optional:: as_child !in: if provided, this is the owner id as a child (may be different)
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
           if(errc.eq.0) then
-           this%owner_id=owner
+           this%owner_id(:)=owner
+           if(present(as_child)) this%owner_id(2)=as_child
            if(present(update_cache)) then
             if(update_cache) then
              if(associated(this%cache_entry)) then
-              call this%cache_entry%set_owner_id(owner,errc); if(errc.ne.0) errc=-4
+              call this%cache_entry%set_owner_id(this%owner_id(1),errc,as_child=this%owner_id(2)); if(errc.ne.0) errc=-4
              else
               errc=-3
              endif
@@ -889,15 +918,26 @@
         subroutine TensOprndSyncOwnerId(this,ierr)
 !Synchronizes the tensor owner id between public cache and private reference,
 !that is, overwrites the private reference with the public cache value, if any.
+!If there is no associated cache entry, does nothing.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,pid,cid
 
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            if(associated(this%cache_entry)) then
-            this%owner_id=this%cache_entry%get_owner_id(errc); if(errc.ne.0) errc=-3
+            pid=this%cache_entry%get_owner_id(errc)
+            if(errc.eq.0) then
+             cid=this%cache_entry%get_owner_id(errc,as_child=.TRUE.)
+             if(errc.eq.0) then
+              this%owner_id(1:2)=(/pid,cid/) !(parent,child)
+             else
+              errc=-4
+             endif
+            else
+             errc=-3
+            endif
            endif
           else
            errc=-2
@@ -1074,7 +1114,7 @@
          logical:: res                               !out: result
          class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(out), optional:: remote     !out: TRUE if the operand is remote
+         logical, intent(out), optional:: remote     !out: TRUE if the operand is remote (determined via the owner id as a parent)
          logical, intent(out), optional:: valued     !out: TRUE if the operand is valued (neither undefined nor being updated)
          integer(INTD):: errc
          logical:: laid,locd
@@ -1114,7 +1154,7 @@
          else
           errc=-1
          endif
-         if(errc.ne.0) then
+         if(errc.ne.0) then !default values on error
           if(present(remote)) remote=.TRUE.
           if(present(valued)) valued=.FALSE.
          endif
@@ -1241,7 +1281,7 @@
           if(errc.eq.0) then
            call this%release_rsc(errc)
            if(errc.eq.0) then
-            this%owner_id=-1
+            this%owner_id(:)=-1
             if(associated(this%cache_entry)) then
              call this%cache_entry%decr_ref_count()
              this%cache_entry=>NULL()
@@ -1293,7 +1333,7 @@
          write(devo,'("TENSOR OPERAND{")')
          actv=this%is_active(); sts=this%get_comm_stat()
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("Active = ",l1,"; Communication = ",i2,"; Metadata owner = ",i6)') actv,sts,this%owner_id
+         write(devo,'("Active = ",l1,"; Communication = ",i2,"; Metadata owner = (",i4,1x,i4,")")') actv,sts,this%owner_id(1:2)
          if(associated(this%tensor)) then
           call this%tensor%print_it(errc,devo,nsp+1); if(errc.ne.TEREC_SUCCESS) errc=-1
          else
@@ -1593,8 +1633,8 @@
          end subroutine construct_instr_tens_contract
 
         end subroutine TensInstrCtor
-!---------------------------------------------------------
-        subroutine TensInstrEncode(this,instr_packet,ierr)
+!-------------------------------------------------------------------
+        subroutine TensInstrEncode(this,instr_packet,ierr,direction)
 !Encodes a tensor instruction into a bytecode packet:
 ! 0. Instruction id;
 ! 1. Instruction code;
@@ -1606,10 +1646,13 @@
          class(tens_instr_t), intent(in):: this          !in: defined tensor instruction
          class(obj_pack_t), intent(inout):: instr_packet !out: instruction bytecode packet
          integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(in), optional:: direction !in: direction of dispatch of the encoded instruction: {DSVP_INSTR_DIR_DOWN,DSVP_INSTR_DIR_SIDE,DSVP_INSTR_DIR_UP}
          integer(INTD):: errc,op_code,stat,err_code
          integer(INTL):: iid
+         logical:: as_parent
 
 !Pack the instruction attributes (id,op_code,status,error):
+         as_parent=.TRUE.; if(present(direction)) as_parent=(direction.ne.DSVP_INSTR_DIR_DOWN)
          if(.not.this%is_empty(errc)) then
           iid=this%get_id(errc)
           if(errc.eq.DSVP_SUCCESS) then
@@ -1693,7 +1736,7 @@
             tensor=>oprnd%get_tensor(jerr)
             if(jerr.eq.0) then
              if(tensor%is_set()) then
-              call pack_builtin(instr_packet,oprnd%get_owner_id(),jerr)
+              call pack_builtin(instr_packet,oprnd%get_owner_id(as_child=(.not.as_parent)),jerr)
               if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_read_count(),jerr)
               if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_write_count(),jerr)
               if(jerr.eq.0) call tensor%pack(instr_packet,jerr)
@@ -1743,7 +1786,7 @@
               tensor=>oprnd%get_tensor(jerr)
               if(jerr.eq.0) then
                if(tensor%is_set()) then !trap
-                call pack_builtin(instr_packet,oprnd%get_owner_id(),jerr)
+                call pack_builtin(instr_packet,oprnd%get_owner_id(as_child=(.not.as_parent)),jerr)
                 if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_read_count(),jerr)
                 if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_write_count(),jerr)
                 if(jerr.eq.0) call tensor%pack(instr_packet,jerr)
@@ -1799,7 +1842,7 @@
               tensor=>oprnd%get_tensor(jerr)
               if(jerr.eq.0) then
                if(.not.tensor%is_set()) then; jerr=-5; exit; endif !trap
-               call pack_builtin(instr_packet,oprnd%get_owner_id(),jerr)
+               call pack_builtin(instr_packet,oprnd%get_owner_id(as_child=(.not.as_parent)),jerr)
                if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_read_count(),jerr)
                if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_write_count(),jerr)
                if(jerr.eq.0) call tensor%pack(instr_packet,jerr)
@@ -2358,6 +2401,7 @@
            this%source_comm=conf%source_comm
            this%source_rank=conf%source_rank
            this%msg_tag=conf%msg_tag
+           this%decodes_from=conf%decodes_from
            call this%set_acceptor(conf%acceptor,conf%acceptor_port_id,errc); if(errc.ne.DSVP_SUCCESS) errc=-3
           else
            errc=-2
@@ -2677,7 +2721,7 @@
            class(ds_oprnd_t), pointer:: oprnd
            class(tens_cache_entry_t), pointer:: tens_entry
            class(tens_entry_mng_t), pointer:: tens_mng_entry
-           integer(INTD):: jj,jn,jown,jread,jwrite,jpwn
+           integer(INTD):: jj,jn,jown,jread,jwrite,jpwn,jcwn
            logical:: stored,updated
 
            jn=ds_instr%get_num_operands(jerr)
@@ -2719,6 +2763,8 @@
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-6; exit
              endif
              tensor=>tens_mng_entry%get_tensor() !use the tensor from the tensor cache
+             jpwn=tens_mng_entry%get_owner_id() !owner id as a parent from the tensor cache
+             jcwn=tens_mng_entry%get_owner_id(as_child=.TRUE.) !owner id as a child from the tensor cache
              if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
               if(DEBUG.gt.1) then
                write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decoder): Tensor info update in the tensor cache:")')
@@ -2729,7 +2775,6 @@
               call tensor%update(tensor_tmp,jerr,updated) !tensor metadata update is done inside the tensor cache
               if(DEBUG.gt.1.and.jerr.eq.TEREC_SUCCESS) then
                call tensor%print_it(dev_id=CONS_OUT)
-               jpwn=tens_mng_entry%get_owner_id()
                write(CONS_OUT,'("Update status = ",l1,": Metadata exporter = ",i5,", prev = ",i5," (Decoder id = ",i2,")")')&
                &updated,jown,jpwn,uid
                flush(CONS_OUT)
@@ -2746,7 +2791,15 @@
               endif
              endif
              if(updated.and.jown.ge.0) then !anonymous metadata updates (jown < 0) do not change the current owner
-              call tens_mng_entry%set_owner_id(jown) !update the tensor owner id if the tensor info was updated in the cache
+              if(tens_mng_entry%has_one_owner()) then !single-owner tensor cache entry (splitted tensor)
+               call tens_mng_entry%set_owner_id(jown) !update the tensor owner id (as a parent and as a child) if the tensor info has been updated in the cache
+              else
+               if(this%decodes_from.eq.DSVP_INSTR_DIR_DOWN) then
+                call tens_mng_entry%set_owner_id(jpwn,as_child=jown) !update only the owner id as a child
+               else
+                call tens_mng_entry%set_owner_id(jown,as_child=jcwn) !update only the owner id as a parent
+               endif
+              endif
               call tens_mng_entry%reset_rw_counters(jread,jwrite) !update the tensor access counters if the tensor info was updated in the cache
              endif
              allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
@@ -3095,7 +3148,7 @@
 
          if(ds_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           call ds_instr%encode(instr_packet,errc); if(errc.ne.PACK_SUCCESS) errc=-3
+           call ds_instr%encode(instr_packet,errc,DSVP_INSTR_DIR_UP); if(errc.ne.PACK_SUCCESS) errc=-3
           else
            errc=-2
           endif
@@ -3603,7 +3656,7 @@
 
          if(ds_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           call ds_instr%encode(instr_packet,errc); if(errc.ne.0) errc=-3
+           call ds_instr%encode(instr_packet,errc,DSVP_INSTR_DIR_SIDE); if(errc.ne.0) errc=-3
           else
            errc=-2
           endif
@@ -4121,15 +4174,15 @@
                 if(jerr.eq.GFC_SUCCESS) then
                  num_subinstr=0; tens_entry=>NULL()
                  cloop: do while(jerr.eq.GFC_SUCCESS)
-                  uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-26; exit cloop; endif
+                  uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-27; exit cloop; endif
                   header=>NULL(); select type(uptr); class is(tens_header_t); header=>uptr; end select
-                  if(.not.associated(header)) then; jerr=-25; exit cloop; endif !trap
-                  allocate(tens_rcrsv_t::subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-24; exit cloop; endif
+                  if(.not.associated(header)) then; jerr=-26; exit cloop; endif !trap
+                  allocate(tens_rcrsv_t::subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-25; exit cloop; endif
                   call subtensor%tens_rcrsv_ctor(header,jerr)
-                  if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-23; exit cloop; endif
+                  if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-24; exit cloop; endif
                   if(data_type.ne.EXA_DATA_KIND_NN) then
                    call subtensor%set_data_type(data_type,jerr)
-                   if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-22; exit cloop; endif
+                   if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-23; exit cloop; endif
                   endif
                   if(DEBUG.gt.1) then
                    write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer.decompose)[",i6,"]: TENS_CREATE created a subtensor:")') impir
@@ -4138,16 +4191,18 @@
                   endif
                   stored=this%arg_cache%store(subtensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !new subtensor: Ownership transferred to the tensor cache
                   if(.not.(jerr.eq.0.and.associated(tens_entry))) then
-                   deallocate(subtensor); jerr=-21; exit cloop
+                   deallocate(subtensor); jerr=-22; exit cloop
                   endif
+                  tens_entry_mng=>NULL()
+                  select type(tens_entry); class is(tens_entry_mng_t); tens_entry_mng=>tens_entry; end select
                   call tens_entry%lock()
                   if(.not.stored) then !subtensor is already in the tensor cache (in case a tensor is composed of itself)
                    deallocate(subtensor)
-                   subtensor=>tens_entry%get_tensor(jerr); if(jerr.ne.0) then; jerr=-20; exit cloop; endif
+                   subtensor=>tens_entry%get_tensor(jerr); if(jerr.ne.0) then; jerr=-21; exit cloop; endif
+                   call tens_entry_mng%set_owner_id(tens_entry_mng%get_owner_id(),jerr,as_child=-1) !reset owner id as a child to undefined (will be set by Dispatcher)
+                   if(jerr.ne.0) then; jerr=-20; exit cloop; endif
                   endif
                   call tens_entry%set_persistency(.TRUE.) !mark subtensor as persistent in the tensor cache
-                  tens_entry_mng=>NULL()
-                  select type(tens_entry); class is(tens_entry_mng_t); tens_entry_mng=>tens_entry; end select
                   jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-19; exit cloop; endif
                   jerr=this%sub_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit cloop; endif
                   uptr=>this%sub_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-17; exit cloop; endif
@@ -4836,7 +4891,7 @@
 
          if(ds_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           call ds_instr%encode(instr_packet,errc); if(errc.ne.PACK_SUCCESS) errc=-3
+           call ds_instr%encode(instr_packet,errc,DSVP_INSTR_DIR_DOWN); if(errc.ne.PACK_SUCCESS) errc=-3
           else
            errc=-2
           endif
@@ -4889,7 +4944,7 @@
                  errc=-8; exit
                 endif
                else
-                owner_ids(i)=tens_oprnd%get_owner_id(errc) !TAVP-MNG id
+                owner_ids(i)=tens_oprnd%get_owner_id(errc,as_child=.TRUE.) !TAVP-MNG owner id as a child
                 if(errc.ne.0) then; errc=-7; exit; endif
                endif
                call tens_oprnd%unlock()
@@ -4924,8 +4979,7 @@
         contains
 
          function map_by_arg_order(jerr) result(chnl)
-          !Selects the dispatch channel by argument locality with argument
-          !priority following the ascending argument order: 0,1,2,...
+          !Selects the dispatch channel by argument locality with argument priority 0,1,2,3,...
           implicit none
           integer(INTD):: chnl              !out: dispatch channel
           integer(INTD), intent(out):: jerr !out: error code
@@ -4987,7 +5041,7 @@
          class(tens_instr_t), target, intent(inout):: tens_instr !in: defined tensor instruction
          integer(INTD), intent(in):: channel                     !in: dispatch channel: offset in this.bytecode(1:max)
          integer(INTD), intent(out), optional:: ierr             !out: error code
-         integer(INTD):: errc,opcode,i,n,home
+         integer(INTD):: errc,opcode,i,n,home,pid
          type(obj_pack_t):: instr_packet
          integer(INTD), pointer:: out_oprs(:)
          class(ds_oprnd_t), pointer:: oprnd
@@ -5006,17 +5060,26 @@
                home=this%dispatch_rank(channel) !child TAVP-MNG id
               endif
               do i=lbound(out_oprs,1),ubound(out_oprs,1)
-               oprnd=>tens_instr%get_operand(out_oprs(i),errc); if(errc.ne.DSVP_SUCCESS) then; errc=-12; exit; endif
+               oprnd=>tens_instr%get_operand(out_oprs(i),errc); if(errc.ne.DSVP_SUCCESS) then; errc=-14; exit; endif
                select type(oprnd)
                class is(tens_oprnd_t)
-                if(oprnd%get_owner_id(errc).lt.0) then !no owner
-                 if(errc.eq.0) then
-                  call oprnd%set_owner_id(home,errc,update_cache=.TRUE.); if(errc.ne.0) then; errc=-11; exit; endif
-                 else
-                  errc=-10; exit
+                pid=oprnd%get_owner_id(errc)
+                if(errc.eq.0) then
+                 if(pid.lt.0) then !no owner at all
+                  call oprnd%set_owner_id(home,errc,update_cache=.TRUE.); if(errc.ne.0) then; errc=-13; exit; endif
+                 else !owner id as a parent is set
+                  if(oprnd%get_owner_id(errc,as_child=.TRUE.).lt.0) then !owner id as a child is absent (unsplit tensor)
+                   if(errc.eq.0) then
+                    call oprnd%set_owner_id(pid,errc,update_cache=.TRUE.,as_child=home); if(errc.ne.0) then; errc=-12; exit; endif
+                   else
+                    errc=-11; exit
+                   endif
+                  else
+                   if(errc.ne.0) then; errc=-10; exit; endif
+                  endif
                  endif
                 else
-                 if(errc.ne.0) then; errc=-9; exit; endif
+                 errc=-9; exit
                 endif
                class default
                 errc=-8; exit
@@ -5832,7 +5895,7 @@
   !Up-decoder:
              decode_acceptor=>this%locator
              decoder_conf=tavp_mng_decoder_conf_t(source_comm=conf%source_comm,source_rank=conf%source_rank,&
-                         &msg_tag=TAVP_DISPATCH_TAG,acceptor=decode_acceptor,acceptor_port_id=0)
+              &msg_tag=TAVP_DISPATCH_TAG,acceptor=decode_acceptor,acceptor_port_id=0,decodes_from=DSVP_INSTR_DIR_UP)
              call this%udecoder%configure(decoder_conf,errc)
              if(errc.eq.0) then
               num_units=num_units+1
@@ -5849,7 +5912,7 @@
   !Locating-decoder:
                 decode_acceptor=>this%locator
                 decoder_conf=tavp_mng_decoder_conf_t(source_comm=conf%ring_comm,source_rank=conf%ring_recv_rank,&
-                            &msg_tag=TAVP_LOCATE_TAG,acceptor=decode_acceptor,acceptor_port_id=1)
+                 &msg_tag=TAVP_LOCATE_TAG,acceptor=decode_acceptor,acceptor_port_id=1,decodes_from=DSVP_INSTR_DIR_SIDE)
                 call this%ldecoder%configure(decoder_conf,errc)
                 if(errc.eq.0) then
                  num_units=num_units+1
@@ -5872,7 +5935,7 @@
   !Replicating-decoder:
                     decode_acceptor=>this%replicator
                     decoder_conf=tavp_mng_decoder_conf_t(source_comm=role_comm,source_rank=MPI_ANY_SOURCE,&
-                                &msg_tag=TAVP_REPLICA_TAG,acceptor=decode_acceptor,acceptor_port_id=1)
+                     &msg_tag=TAVP_REPLICA_TAG,acceptor=decode_acceptor,acceptor_port_id=1,decodes_from=DSVP_INSTR_DIR_SIDE)
                     call this%rdecoder%configure(decoder_conf,errc)
                     if(errc.eq.0) then
                      num_units=num_units+1
@@ -5880,7 +5943,7 @@
   !Collecting-decoder:
                      decode_acceptor=>this%collector
                      decoder_conf=tavp_mng_decoder_conf_t(source_comm=conf%collect_comm,source_rank=MPI_ANY_SOURCE,&
-                                 &msg_tag=TAVP_COLLECT_TAG,acceptor=decode_acceptor,acceptor_port_id=1)
+                      &msg_tag=TAVP_COLLECT_TAG,acceptor=decode_acceptor,acceptor_port_id=1,decodes_from=DSVP_INSTR_DIR_DOWN)
                      call this%cdecoder%configure(decoder_conf,errc)
                      if(errc.eq.0) then
                       num_units=num_units+1
