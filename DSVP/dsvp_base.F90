@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/19
+!REVISION: 2018/09/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1690,7 +1690,12 @@
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-         !`Finish
+         if(VERBOSE) then
+          write(CONS_OUT,'("#MSG(DSVP): Shut down DSVP ",i6,":")',ADVANCE='NO') this%id
+          if(allocated(this%description)) write(CONS_OUT,*) this%description
+          write(CONS_OUT,'("#MSG(DSVP): Counters: Recv ",i12,"; Rtrd ",i12,"; Crtd ",i12,"; Fail ",i6)')&
+          &this%get_recv_instr_counter(),this%get_rtrd_instr_counter(),this%get_crtd_instr_counter(),this%get_fail_instr_counter()
+         endif
          this%decode_paused=.FALSE.
          this%sync_count=0
          call this%set_status(DSVP_STAT_OFF,errc)

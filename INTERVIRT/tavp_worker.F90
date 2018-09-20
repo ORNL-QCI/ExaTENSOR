@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/19
+!REVISION: 2018/09/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4997,6 +4997,7 @@
               call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-31; exit wloop; endif
               sts=tens_instr%get_status(ier,j); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
+              call tavp%incr_recv_instr_counter()
               if(DEBUG.gt.0) then
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Decoder): Decoded a new tensor instruction:")')
                call tens_instr%print_it(dev_id=CONS_OUT)
@@ -5532,6 +5533,7 @@
               call this%encode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-19; exit wloop; endif
               call this%bytecode%seal_packet(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
               num_processed=num_processed+1
+              call tavp%incr_rtrd_instr_counter(); if(errcode.ne.DSVP_SUCCESS) call tavp%incr_fail_instr_counter()
               if(DEBUG.gt.0) then
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Retirer): Retired tensor instruction:")')
                call tens_instr%print_it(dev_id=CONS_OUT)
@@ -5542,6 +5544,7 @@
              if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
              tens_instr%timings%time_retired=time_sys_sec()
              num_processed=num_processed+1
+             call tavp%incr_rtrd_instr_counter(); if(errcode.ne.DSVP_SUCCESS) call tavp%incr_fail_instr_counter()
             endif
             ier=this%iqueue%next()
            enddo
@@ -6246,6 +6249,7 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,i,n,nou,tc
          integer(INTD), pointer:: out_oprs(:)
+         class(dsvp_t), pointer:: tavp
          class(tens_instr_t), pointer:: tens_instr
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_rcrsv_t), pointer:: tensor
@@ -6254,6 +6258,7 @@
          class(tens_cache_entry_t), pointer:: tmp_cache_entry,acc_cache_entry
          class(*), pointer:: uptr
 
+         tavp=>this%get_dsvp()
          tens_instr=>NULL(); uptr=>this%iqueue%get_value(errc)
          select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
          if(errc.eq.GFC_SUCCESS.and.associated(tens_instr)) then
@@ -6302,6 +6307,7 @@
                         if(associated(acc_entry)) then
                          if(tc.eq.1) call acc_entry%update_upload_time(time_sys_sec()) !set initial (dummy) upload time for later sync purposes (now we know when acc entry was created)
                          call create_inject_accumulation(acc_entry,tmp_entry,errc); if(errc.ne.0) errc=-15
+                         call tavp%incr_crtd_instr_counter()
                          acc_entry=>NULL()
                         else
                          errc=-14

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/19
+!REVISION: 2018/09/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3044,6 +3044,7 @@
            if(sts.ne.DS_INSTR_COMPLETED.and.errc.eq.0) then; errc=-19; exit wloop; endif !trap
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,iec)
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
+           call tavp%incr_rtrd_instr_counter(); if(iec.ne.DSVP_SUCCESS) call tavp%incr_fail_instr_counter()
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
            if(DEBUG.gt.0) then
             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Retirer): Retired instruction:")')
@@ -4781,18 +4782,21 @@
             call tens_instr%print_it(dev_id=CONS_OUT)
             flush(CONS_OUT)
            endif
-           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
+           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
   !Encode a tensor instruction and dispatch it to the appropriate channel:
             channel=this%map_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
             if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
              errc=-11; exit wloop !trap
             endif
             call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
-           else
+           else !auxiliary/control instruction
   !Encode an auxiliary/control instruction and dispatch it to all channels:
             do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
              call this%dispatch(tens_instr,i,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-9; exit wloop; endif
             enddo
+            if(opcode.ne.TAVP_INSTR_CTRL_STOP) then !STOP will retire locally, but later (in Retirer)
+             call tavp%incr_rtrd_instr_counter(); if(iec.ne.DSVP_SUCCESS) call tavp%incr_fail_instr_counter() !ctrl/aux instructions retire locally in Dispatcher
+            endif
   !Check on control instructions:
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
              stopping=.TRUE.
