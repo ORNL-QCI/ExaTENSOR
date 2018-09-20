@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/12
+!REVISION: 2018/09/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -474,6 +474,7 @@
           generic, public:: get_add_ptrn=>TensAdditionGetAddPtrnBas,TensAdditionGetAddPtrnPrm
           procedure, public:: unpack=>TensAdditionUnpack                   !unpacks the object from a packet
           procedure, public:: pack=>TensAdditionPack                       !packs the object into a packet
+          procedure, public:: print_it=>TensAdditionPrintIt                !prints the tensor addition (copy/slice/insert)
           final:: tens_addition_dtor                                       !dtor
         end type tens_addition_t
  !Tensor contraction:
@@ -837,6 +838,7 @@
         private TensAdditionGetAddPtrnPrm
         private TensAdditionUnpack
         private TensAdditionPack
+        private TensAdditionPrintIt
         public tens_addition_dtor
  !tens_contraction_t:
         private TensContractionAssign
@@ -6354,7 +6356,7 @@
 !cannot have a sign.
          implicit none
          class(permutation_t), intent(out):: this    !out: permutation object
-         integer(INTD), intent(in):: perm(1:)        !in: permutation sequence
+         integer(INTD), intent(in):: perm(1:)        !in: permutation sequence, can be empty
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD), intent(in), optional:: psign !in: optional permutation sign (defaults to +1)
          integer(INTD):: errc
@@ -6397,10 +6399,10 @@
 !--------------------------------------------------------
         subroutine PermutationReset(this,perm,ierr,psign)
 !Resets (re-constructs) the permutation (ctor).
-!Zero-length permutations are valid.
+!Zero-length permutations are valid, but they cannot carry a sign.
          implicit none
          class(permutation_t), intent(inout):: this  !out: permutation object
-         integer(INTD), intent(in):: perm(1:)        !in: permutation sequence
+         integer(INTD), intent(in):: perm(1:)        !in: permutation sequence, can be empty
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD), intent(in), optional:: psign !in: optional permutation sign (defaults to +1)
          integer(INTD):: errc,length
@@ -6652,10 +6654,8 @@
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          if(this%length.gt.0) then
           write(devo,'("(",i2,"){")',ADVANCE='NO') this%prm(0) !sign
-          if(this%length.gt.0) then
-           write(devo,'(i2)',ADVANCE='NO') this%prm(1)
-           do i=2,this%length; write(devo,'(",",i2)',ADVANCE='NO') this%prm(i); enddo
-          endif
+          write(devo,'(i2)',ADVANCE='NO') this%prm(1)
+          do i=2,this%length; write(devo,'(",",i2)',ADVANCE='NO') this%prm(i); enddo
           write(devo,'("}")')
          else
           write(devo,'("(1){}")')
@@ -7716,7 +7716,7 @@
 ! b) Tensor addition/additive_slice/additive_insertion: <defined>=TRUE;
          implicit none
          class(tens_addition_t), intent(inout):: this !inout: tensor addition/copy/slice/insert
-         integer(INTD), intent(in):: permutation(1:)  !in: digital permutation (no sign)
+         integer(INTD), intent(in):: permutation(1:)  !in: digital permutation (no sign), can be empty
          integer(INTD), intent(out), optional:: ierr  !out: error code
          complex(8), intent(in), optional:: prefactor !in: numerical prefactor
          logical, intent(in), optional:: defined      !in: if TRUE, the destination tensor is assumed defined, otherwise undefined (default)
@@ -7869,6 +7869,44 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensAdditionPack
+!---------------------------------------------------------------
+        subroutine TensAdditionPrintIt(this,ierr,dev_id,nspaces)
+!Prints the tensor addition/copy/slice/insert info.
+         implicit none
+         class(tens_addition_t), intent(in):: this     !in: tensor addition/copy/slice/insert
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device (defaults to screen)
+         integer(INTD), intent(in), optional:: nspaces !in: number of leading spaces
+         integer(INTD):: errc,devo,nsp,ier,n,i
+         class(tens_rcrsv_t), pointer:: trp
+
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("TENSOR ADDITION{")')
+         if(this%is_set(errc)) then
+          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+          write(devo,'("Permutation: ")',ADVANCE='NO')
+          call this%permut%print_it(ier,devo,0); if(errc.eq.TEREC_SUCCESS.and.ier.ne.TEREC_SUCCESS) errc=ier
+          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+          write(devo,'("Complex Prefactor = (",D21.14,",",D21.14,")")') this%alpha
+          n=this%get_num_args(ier); if(errc.eq.TEREC_SUCCESS.and.ier.ne.TEREC_SUCCESS) errc=ier
+          do i=0,n-1
+           trp=>NULL(); trp=>this%get_argument(i,ier)
+           if(errc.eq.TEREC_SUCCESS.and.ier.ne.TEREC_SUCCESS) errc=ier
+           call trp%print_it(ier,devo,nsp+1)
+           if(errc.eq.TEREC_SUCCESS.and.ier.ne.TEREC_SUCCESS) errc=ier
+          enddo
+         else
+          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+          write(devo,'("Empty/invalid tensor addition")')
+         endif
+         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("}")')
+         flush(devo)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensAdditionPrintIt
 !------------------------------------------
         subroutine tens_addition_dtor(this)
          implicit none

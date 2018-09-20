@@ -3402,6 +3402,11 @@
              jerr=-3
             endif
            else
+            if(VERBOSE) then
+             write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_instr_ctor:construct_instr_tens_accumulate): Empty/invalid tensor addition:")')
+             call tens_add%print_it(dev_id=CONS_OUT)
+             flush(CONS_OUT)
+            endif
             jerr=-2
            endif
            tens_add=>NULL()
@@ -6491,10 +6496,8 @@
                 if(jerr.eq.TEREC_SUCCESS) then
                  call accumulation%set_argument(tmp,jerr)
                  if(jerr.eq.TEREC_SUCCESS) then
-                  if(arank.gt.0) then
-                   perm(1:arank)=(/(jj,jj=1,arank)/)
-                   call accumulation%set_add_ptrn(perm(1:arank),jerr)
-                  endif
+                  if(arank.gt.0) perm(1:arank)=(/(jj,jj=1,arank)/)
+                  call accumulation%set_add_ptrn(perm(1:arank),jerr)
                   if(jerr.eq.0) then
                    jerr=this%iqueue%insert_elem(acc_instr,no_move=.FALSE.) !will move to the newly added accumulate instruction
                    if(jerr.eq.GFC_SUCCESS) then
