@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/20
+!REVISION: 2018/09/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -54,7 +54,7 @@
         use gfc_vec_tree
         use gfc_dictionary
         use multords, only: multord_i8e
-        use talsh, only: get_contr_pattern_sym
+        use talsh, only: get_contr_pattern_sym,talsh_tens_data_t,talsh_tens_shape_t,talsh_tens_signature_t
         use subspaces
         use pack_prim
         use distributed, only: DataDescr_t,MPI_REQUEST_NULL
@@ -306,6 +306,7 @@
           procedure, public:: get_spec=>TensRcrsvGetSpec             !returns the tensor subspace multi-index (specification)
           procedure, public:: get_dims=>TensRcrsvGetDims             !returns tensor dimension extents
           procedure, public:: get_bases=>TensRcrsvGetBases           !returns the base offset for each tensor dimension
+          procedure, public:: get_attributes=>TensRcrsvGetAttributes !returns all major attributes of the tensor for TAL-SH
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
           procedure, public:: has_structure=>TensRcrsvHasStructure   !returns TRUE if the tensor structure (list of one or more constituent subtensors) is defined
@@ -733,6 +734,7 @@
         private TensRcrsvGetSpec
         private TensRcrsvGetDims
         private TensRcrsvGetBases
+        private TensRcrsvGetAttributes
         private TensRcrsvAddSubtensor
         private TensRcrsvAddSubtensors
         private TensRcrsvHasStructure
@@ -4578,6 +4580,27 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvGetBases
+!---------------------------------------------------------------------------------------
+        subroutine TensRcrsvGetAttributes(this,tens_signature,tens_shape,tens_data,ierr)
+!Returns all major attributes of the tensor for TAL-SH.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this                     !in: tensor
+         type(talsh_tens_signature_t), intent(out):: tens_signature !out: tensor signature for TAL-SH
+         type(talsh_tens_shape_t), intent(out):: tens_shape         !out: tensor shape for TAL-SH
+         type(talsh_tens_data_t), intent(out):: tens_data           !out: tensor data for TAL-SH (only Fortran dimension-led tensors)
+         integer(INTD), intent(out), optional:: ierr                !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           !`Finish?
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvGetAttributes
 !------------------------------------------------------------
         subroutine TensRcrsvAddSubtensor(this,subtensor,ierr)
 !Registers a constituent subtensor by providing its tensor header.

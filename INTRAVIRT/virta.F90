@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/13
+!REVISION: 2018/09/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -185,6 +185,10 @@
         end type tens_status_t
         type(tens_status_t), parameter:: TENS_STATUS_NONE=tens_status_t() !tensor status null
         public TENS_STATUS_NONE
+ !Wrapper type for local external tensor data:
+        type, private:: tens_data_t
+         type(talsh_tens_data_t), private:: tens_data
+        end type tens_data_t
  !Tensor instruction control fields:
   !Tensor transformation (initialization, scaling, etc.) control field:
         type, extends(ds_instr_ctrl_t), public:: ctrl_tens_trans_t
@@ -297,7 +301,7 @@
         end type tens_cache_t
  !External data register:
         type, public:: data_register_t
-         type(dictionary_t), private:: ext_data                           !string --> talsh_tens_data_t
+         type(dictionary_t), private:: ext_data                           !string --> tens_data_t{talsh_tens_data_t}
          contains
           procedure, public:: register_data=>DataRegisterRegisterData     !registers external local data
           procedure, public:: unregister_data=>DataRegisterUnregisterData !unregisters previously registered data
@@ -366,7 +370,7 @@
         procedure(tens_rcrsv_dim_strength_i), pointer, public:: tens_dim_strength_assess=>NULL() !assesses the strength of tensor dimensions
         real(8), public:: tens_dim_strength_thresh=0d0 !tensor dimension strength threshold above which the dimension will split (fine tensor decomposition granularity control)
  !External data register:
-        type(data_register_t), public:: data_register     !string --> talsh_tens_data_t
+        type(data_register_t), public:: data_register     !string --> tens_data_t{talsh_tens_data_t}
  !External method register:
         type(method_register_t), public:: method_register !string --> tens_method_uni_t
 !VISIBILITY:
@@ -2001,12 +2005,14 @@
          type(talsh_tens_data_t), intent(in):: extrn_data !in: external data
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc,ier
+         type(tens_data_t):: tdd
          type(dictionary_iter_t):: dit
 
 !$OMP CRITICAL (TAVP_DATA_REG)
          errc=dit%init(this%ext_data)
          if(errc.eq.GFC_SUCCESS) then
-          errc=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,data_name,extrn_data)
+          tdd%tens_data=extrn_data
+          errc=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,data_name,tdd)
           if(errc.eq.GFC_NOT_FOUND) then
            errc=0
           else
@@ -2056,6 +2062,7 @@
          integer(INTD):: errc,ier
          type(dictionary_iter_t):: dit
          class(*), pointer:: uptr
+         class(tens_data_t), pointer:: tdd
 
          extrn_data=>NULL()
 !$OMP CRITICAL (TAVP_DATA_REG)
@@ -2065,8 +2072,12 @@
           errc=dit%search(GFC_DICT_FETCH_IF_FOUND,cmp_strings,data_name,value_out=uptr)
           if(errc.eq.GFC_FOUND) then
            if(associated(uptr)) then
-            select type(uptr); type is(talsh_tens_data_t); extrn_data=>uptr; end select
-            if(.not.associated(extrn_data)) errc=-6
+            select type(uptr); class is(tens_data_t); tdd=>uptr; end select
+            if(associated(tdd)) then
+             extrn_data=>tdd%tens_data
+            else
+             errc=-6
+            endif
            else
             errc=-5
            endif

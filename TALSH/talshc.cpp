@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2018/08/17
+REVISION: 2018/09/21
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -833,6 +833,7 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
  double *dp;
  talshComplex4 *cfp,cfv;
  talshComplex8 *cdp,cdv;
+ talsh_tens_data_t tdd;
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  errc=TALSH_SUCCESS;
@@ -898,7 +899,8 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
    if(tens_block->ndev > 0){
     if(dev_kind == DEV_HOST){ //`Currently supported only on Host
      if(init_method != NULL){
-      errc=init_method(tens_block->dev_rsc[0].gmem_p,data_kind,tens_block->shape_p,NULL); //NULL = tens_signature pointer
+      tdd.base=tens_block->dev_rsc[0].gmem_p; tdd.volume=tvol; tdd.data_kind=data_kind;
+      errc=init_method(&tdd,tens_block->shape_p,NULL); //NULL = tens_signature pointer
       if(errc) errc=NOT_CLEAN; //initialization failed, tensor block value is undefined, but one may continue
      }else{
       switch(data_kind){
