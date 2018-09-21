@@ -267,6 +267,14 @@
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Contract tensors:
+           write(6,'("Contracting dtens+=ltens*rtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_contract(dtens,ltens,rtens,'D(a,b)+=L(c,a)*R(c,b)')
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+ !Contract tensors:
            write(6,'("Contracting etens+=dtens*dtens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_contract(etens,dtens,dtens,'E()+=D(a,b)*D(a,b)')

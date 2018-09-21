@@ -265,7 +265,8 @@
           procedure, public:: get_rw_counter=>TensCacheEntryGetRwCounter      !returns the current value of the read/write access counter
           procedure, public:: reset_rw_counter=>TensCacheEntryResetRwCounter  !resets the read/write access counter
           procedure, public:: reset_rw_counters=>TensCacheEntryResetRwCounters!resets the read/write access counter by providing both new read and write counters separately
-          procedure, public:: incr_temp_count=>TensCacheEntryIncrTempCount    !increments the temporary count (cannot be decremented)
+          procedure, public:: reset_temp_count=>TensCacheEntryResetTempCount  !resets the temporary count to zero
+          procedure, public:: incr_temp_count=>TensCacheEntryIncrTempCount    !increments the temporary count (cannot be decremented, unless reset to zero)
           procedure, public:: get_temp_count=>TensCacheEntryGetTempCount      !returns the current temporary count
           procedure, public:: set_up_to_date=>TensCacheEntrySetUpToDate       !sets/resets the up-to-date status
           procedure, public:: is_up_to_date=>TensCacheEntryIsUpToDate         !returns whether or not the cache entry data is up-to-date
@@ -426,6 +427,7 @@
         private TensCacheEntryGetRwCounter
         private TensCacheEntryResetRwCounter
         private TensCacheEntryResetRwCounters
+        private TensCacheEntryResetTempCount
         private TensCacheEntryIncrTempCount
         private TensCacheEntryGetTempCount
         private TensCacheEntrySetUpToDate
@@ -1447,6 +1449,16 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntryResetRwCounters
+!---------------------------------------------------
+        subroutine TensCacheEntryResetTempCount(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC WRITE
+         this%temp_count=0
+         return
+        end subroutine TensCacheEntryResetTempCount
 !---------------------------------------------------
         subroutine TensCacheEntryIncrTempCount(this)
          implicit none

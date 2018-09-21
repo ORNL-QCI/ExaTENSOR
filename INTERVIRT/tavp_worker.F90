@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/20
+!REVISION: 2018/09/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -6596,7 +6596,7 @@
          logical:: moved_forward                           !out: TRUE if the iterator has moved forward
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK Resourcer (+this%rls_list current iterator position)
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,i,l,n,nce,nou,opcode
+         integer(INTD):: errc,i,l,n,nce,nou,opcode,id
          integer(INTD), pointer:: out_oprs(:)
          class(tens_instr_t), pointer:: tens_instr
          class(ds_oprnd_t), pointer:: oprnd
@@ -6607,7 +6607,7 @@
          character(TEREC_MAX_TENS_NAME_LEN):: tname
          type(tens_entry_wrk_ref_t):: cache_entries(1:MAX_TENSOR_OPERANDS)
          class(*), pointer:: uptr
-         logical:: evicted
+         logical:: evicted,temporary
 
          moved_forward=.FALSE.
          tens_instr=>NULL(); uptr=>this%rls_list%get_value(errc)
@@ -6622,41 +6622,71 @@
               out_oprs=>tens_instr%get_output_operands(errc,nou)
               if(errc.eq.0.and.lbound(out_oprs,1).eq.0) then
                if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then !previously locally injected accumulate instruction: A+=Tx
+ !Get the persistent tensor in case the accumulator tensor is evicted:
+                oprnd=>tens_instr%get_operand(0,errc) !operand #0 is the accumulator tensor
+                if(errc.eq.DSVP_SUCCESS) then
+                 select type(oprnd); class is(tens_oprnd_t); tensor_pers=oprnd%tmp_get_persistent(errc); end select
+                 if(errc.eq.0) then
  !Destroy a locally injected accumulation instruction together with its operands that are no longer used:
-                call tens_instr%extract_cache_entries(cache_entries,nce,errc)
-                if(errc.eq.0.and.nce.le.MAX_TENSOR_OPERANDS) then
-                 if(this%rls_list%on_first()) moved_forward=.TRUE. !to avoid moving the iterator when exited from this procedure (already on the next element)
-                 errc=this%rls_list%delete() !deletes the local accumulation instruction (moves to the preceding instruction, if any, by default)
-                 if(errc.eq.GFC_SUCCESS) then
+                  call tens_instr%extract_cache_entries(cache_entries,nce,errc)
+                  if(errc.eq.0.and.nce.le.MAX_TENSOR_OPERANDS) then
+                   if(this%rls_list%on_first()) moved_forward=.TRUE. !to avoid moving the iterator when exited from this procedure (already on the next element)
+                   errc=this%rls_list%delete() !deletes the local accumulation instruction (moves to the preceding instruction, if any, by default)
+                   if(errc.eq.GFC_SUCCESS) then
+                    tens_instr=>NULL()
   !Delete the tensor cache entries which are no longer used:
-                  do i=1,nce
-                   tensor=>cache_entries(i)%cache_entry%get_tensor(errc)
-                   if(errc.eq.0) then
-                    if(DEBUG.gt.0) call tensor%get_name(tname,l)
-                    evicted=this%arg_cache%evict(tensor,errc,decr_use=.TRUE.)
-                    if(errc.eq.0) then
-                     if(DEBUG.gt.0) then
-                      write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Evicted temporary tensor")',ADVANCE='NO') impir
-                      write(CONS_OUT,*) tname(1:l)
-                      flush(CONS_OUT)
+                    do i=1,nce
+                     tensor=>cache_entries(i)%cache_entry%get_tensor(errc)
+                     if(errc.eq.0) then
+                      call tensor%get_name(tname,l)
+                      temporary=tensor_name_is_temporary(tname(1:l),errc,id); if(.not.temporary) id=-1
+                      if(errc.eq.0) then
+                       evicted=this%arg_cache%evict(tensor,errc,decr_use=.TRUE.)
+                       if(errc.eq.0) then
+                        if(evicted) then
+                         if(DEBUG.gt.0) then
+                          write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Evicted temporary tensor")',ADVANCE='NO') impir
+                          write(CONS_OUT,*) tname(1:l)
+                          flush(CONS_OUT)
+                         endif
+                         if(id.eq.0) then !accumulator was evicted => reset temporary count to zero
+                          tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_pers,errc) !lookup the persistent output tensor in the cache
+                          if(errc.eq.0.and.associated(tens_entry)) then
+                           call tens_entry%lock()
+                           call tens_entry%reset_temp_count()
+                           call tens_entry%unlock()
+                           call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+                          else
+                           if(errc.ne.0) then; errc=-19; exit; endif
+                          endif
+                         endif
+                        endif
+                        cache_entries(i)%cache_entry=>NULL()
+                       else
+                        if(VERBOSE.and.DEBUG.gt.0) then
+                         write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.restore_output)[",i6,"]: Eviction failed for tensor")',&
+                         &ADVANCE='NO') impir
+                         write(CONS_OUT,*) tname(1:l)
+                         flush(CONS_OUT)
+                        endif
+                        errc=-18; exit
+                       endif
+                      else
+                       errc=-17; exit
+                      endif
+                     else
+                      errc=-16; exit
                      endif
-                    else
-                     if(VERBOSE.and.DEBUG.gt.0) then
-                      write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.restore_output)[",i6,"]: Eviction failed for tensor")',&
-                      &ADVANCE='NO') impir
-                      write(CONS_OUT,*) tname(1:l)
-                      flush(CONS_OUT)
-                     endif
-                     errc=-15; exit
+                    enddo
+                    if(DEBUG.gt.0.and.errc.eq.0) then
+                     write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Locally injected ACCUMULATE deleted")') impir
+                     flush(CONS_OUT)
                     endif
-                    cache_entries(i)%cache_entry=>NULL()
                    else
-                    errc=-14; exit
+                    errc=-15
                    endif
-                  enddo
-                  if(DEBUG.gt.0.and.errc.eq.0) then
-                   write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Locally injected ACCUMULATE deleted")') impir
-                   flush(CONS_OUT)
+                  else
+                   errc=-14
                   endif
                  else
                   errc=-13
@@ -6718,6 +6748,10 @@
           endif
          else
           errc=-1
+         endif
+         if(errc.ne.0.and.VERBOSE) then
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.restore_output): Error ",i11)') errc
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
