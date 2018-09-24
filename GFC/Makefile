@@ -211,8 +211,8 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LIB)
 
 OBJS =  ./OBJ/dil_basic.o ./OBJ/timers.o ./OBJ/stsubs.o ./OBJ/multords.o ./OBJ/combinatoric.o ./OBJ/stack.o ./OBJ/lists.o ./OBJ/dictionary.o \
-	./OBJ/gfc_base.o ./OBJ/gfc_bank.o ./OBJ/gfc_vector.o ./OBJ/gfc_list.o ./OBJ/gfc_tree.o ./OBJ/gfc_stack.o ./OBJ/gfc_vec_tree.o \
-	./OBJ/gfc_queue.o ./OBJ/gfc_pri_queue.o ./OBJ/gfc_dictionary.o ./OBJ/gfc_hash_map.o ./OBJ/gfc_graph.o
+	./OBJ/gfc_base.o ./OBJ/gfc_range.o ./OBJ/gfc_bank.o ./OBJ/gfc_vector.o ./OBJ/gfc_list.o ./OBJ/gfc_tree.o ./OBJ/gfc_stack.o \
+	./OBJ/gfc_vec_tree.o ./OBJ/gfc_queue.o ./OBJ/gfc_pri_queue.o ./OBJ/gfc_dictionary.o ./OBJ/gfc_hash_map.o ./OBJ/gfc_graph.o
 
 $(NAME): lib$(NAME).a ./OBJ/main.o
 	$(FCOMP) ./OBJ/main.o lib$(NAME).a $(LFLAGS) -o test_$(NAME).x
@@ -247,6 +247,9 @@ lib$(NAME).a: $(OBJS)
 
 ./OBJ/gfc_base.o: gfc_base.F90 ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(FFLAGS) gfc_base.F90 -o ./OBJ/gfc_base.o
+
+./OBJ/gfc_range.o: gfc_range.F90 ./OBJ/gfc_base.o ./OBJ/timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(FFLAGS) gfc_range.F90 -o ./OBJ/gfc_range.o
 
 ./OBJ/gfc_bank.o: gfc_bank.F90 ./OBJ/gfc_base.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(FFLAGS) gfc_bank.F90 -o ./OBJ/gfc_bank.o

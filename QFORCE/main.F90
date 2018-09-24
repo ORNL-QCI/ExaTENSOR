@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/21
+!REVISION: 2018/09/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -58,14 +58,6 @@
           procedure, public:: apply=>TensInitTestApply
         end type tens_init_test_t
 
- !Tensor printing functor:
-        type, extends(tens_method_uni_t), public:: tens_print_test_t
-         integer(INTD), private:: dev_id=6
-         contains
-          procedure, public:: tens_print_test_ctor=>TensPrintTestCtor
-          procedure, public:: apply=>TensPrintTestApply
-        end type tens_print_test_t
-
        contains
 
         subroutine TensInitTestCtor(this,val)
@@ -86,35 +78,11 @@
 
          body=>tensor%get_body(ierr)
          if(ierr.eq.EXA_SUCCESS.and.associated(body)) then
-          
+          !`Init tensor
          else
           ierr=-1
          endif
         end function TensInitTestApply
-
-        subroutine TensPrintTestCtor(this,dev_out)
-         implicit none
-         class(tens_print_test_t), intent(out):: this
-         integer(INTD), intent(in), optional:: dev_out
-
-         if(present(dev_out)) this%dev_id=dev_out
-        end subroutine TensPrintTestCtor
-
-        function TensPrintTestApply(this,tensor,scalar) result(ierr)
-         implicit none
-         integer(INTD):: ierr
-         class(tens_print_test_t), intent(in):: this
-         class(tens_rcrsv_t), intent(inout):: tensor
-         complex(8), intent(inout), optional:: scalar
-         class(tens_body_t), pointer:: body
-
-         body=>tensor%get_body(ierr)
-         if(ierr.eq.EXA_SUCCESS.and.associated(body)) then
-          
-         else
-          ierr=-1
-         endif
-        end function TensPrintTestApply
 
        end module qforce_test
 
@@ -131,7 +99,7 @@
         class(h_space_t), pointer:: ao_space
         type(tens_rcrsv_t):: etens,dtens,ltens,rtens
         type(tens_init_test_t):: init1369
-        type(tens_print_test_t):: tens_printer
+        type(tens_printer_t):: tens_printer
         integer(INT_MPI):: mpi_th_provided
         integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role,hsp(1:MAX_TENSOR_RANK)
         integer(INTL):: l,ao_space_root,ssp(1:MAX_TENSOR_RANK)
@@ -165,6 +133,7 @@
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
 !Application registers user-defined methods for tensor initialization and printing:
+ !Tensor initialization method:
          if(my_rank.eq.comm_size-1) then
           write(6,'("Registering a user-defined tensor initialization method ... ")',ADVANCE='NO'); flush(6)
          endif
@@ -172,10 +141,10 @@
          ierr=exatns_method_register('SetTo13.69',init1369)
          if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_method_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+ !Tensor printing method:
          if(my_rank.eq.comm_size-1) then
           write(6,'("Registering a user-defined tensor printing method ... ")',ADVANCE='NO'); flush(6)
          endif
-         call tens_printer%tens_print_test_ctor()
          ierr=exatns_method_register('PrintTensor',tens_printer)
          if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_method_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif

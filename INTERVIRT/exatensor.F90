@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/09/21
+!REVISION: 2018/09/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -63,7 +63,7 @@
        public hspace_reg_t,tens_signature_t,tens_shape_t,tens_header_t,&
              &tens_simple_part_t,tens_layout_t,tens_layout_fdims_t,&
              &tens_body_t,tens_rcrsv_t,permutation_t,contr_ptrn_ext_t,&
-             &tens_status_t,tens_method_uni_t
+             &tens_status_t,tens_method_uni_t,tens_printer_t
        public talsh_tens_signature_t,talsh_tens_shape_t,talsh_tens_data_t
 !TYPES:
  !ExaTENSOR runtime status:

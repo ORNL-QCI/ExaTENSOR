@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/21
+!REVISION: 2018/09/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -49,6 +49,7 @@
         use timers
         use combinatoric
         use gfc_base
+        use gfc_range
         use gfc_list
         use gfc_vector
         use gfc_vec_tree
@@ -244,8 +245,8 @@
           procedure, public:: get_data_descr=>TensLayoutGetDataDescr                !returns a pointer to the DDSS data descriptor
           procedure, private:: update_header=>TensLayoutUpdateHeader                !updates the tensor header the layout is associated with
           procedure(tens_layout_volume_i), deferred, public:: get_volume            !returns the physical volume of the tensor block (number of physically stored elements)
-          procedure(tens_layout_map_i), deferred, public:: map                      !maps a specific element of the tensor block (layout specific)
-          procedure(tens_layout_extract_i), deferred, public:: extract_simple_parts !creates a list of constituent simple (dense) parts of the tensor block
+          procedure(tens_layout_map_i), deferred, public:: map                      !maps a specific element of the tensor body (layout specific)
+          procedure(tens_layout_extract_i), deferred, public:: extract_simple_parts !creates a list of constituent simple (dense) parts of the tensor body
         end type tens_layout_t
  !Concrete storage layout "Fortran-dimension-led" [NO COPY PER SE]:
         type, extends(tens_layout_t), public:: tens_layout_fdims_t
@@ -255,8 +256,8 @@
           generic, public:: tens_layout_fdims_ctor=>TensLayoutFdimsCtor,TensLayoutFdimsCtorUnpack
           procedure, public:: pack=>TensLayoutFdimsPack                     !packs the object into a packet
           procedure, public:: get_volume=>TensLayoutFdimsGetVolume          !returns the physical tensor volume (number of elements stored)
-          procedure, public:: map=>TensLayoutFdimsMap                       !addresses a specific tensor element
-          procedure, public:: extract_simple_parts=>TensLayoutFdimsExtract  !extracts simpe dense tensor parts (bricks) from the tensor block
+          procedure, public:: map=>TensLayoutFdimsMap                       !addresses a specific tensor element within the tensor body
+          procedure, public:: extract_simple_parts=>TensLayoutFdimsExtract  !extracts simpe dense tensor parts (bricks) from the tensor body
           final:: tens_layout_fdims_dtor                                    !dtor
         end type tens_layout_fdims_t
  !Tensor body:
@@ -355,6 +356,16 @@
          contains
           procedure(tens_method_uni_i), public, deferred:: apply !applies the user-defined unary tensor method to a tensor
         end type tens_method_uni_t
+ !Tensor printing functor:
+        type, extends(tens_method_uni_t), public:: tens_printer_t
+         integer(INTD), private:: print_dev=6                      !output device handle (defaults to screen)
+         real(8), private:: print_thresh=1d-14                     !minimal tensor element magnitude to be printed
+         logical, private:: print_formatted=.TRUE.                 !formatted/unformatted printing
+         contains
+          procedure, public:: reset_output=>TensPrinterResetOutput !resets the output device
+          procedure, public:: reset_thresh=>TensPrinterResetThresh !resets the printing threshold
+          procedure, public:: apply=>TensPrinterApply              !executes tensor printing
+        end type tens_printer_t
  !Tensor argument (reference to a recursive tensor):
         type, private:: tens_argument_t
          class(tens_rcrsv_t), pointer, private:: tens_p=>NULL() !pointer to a persistent tensor
@@ -514,12 +525,13 @@
           class(tens_layout_t), intent(in):: this     !in: tensor block storage layout
          end function tens_layout_volume_i
   !tens_layout_t: .map():
-         function tens_layout_map_i(this,mlndx) result(offset)
+         function tens_layout_map_i(this,mlndx,ind_base) result(offset)
           import:: INTL,tens_layout_t
           implicit none
           integer(INTL):: offset                      !out: offset of the requested tensor element
           class(tens_layout_t), intent(in):: this     !in: tensor block storage layout
           integer(INTL), intent(in):: mlndx(1:)       !in: input multi-index specifying the individual tensor element
+          integer(INTL), intent(in):: ind_base        !in: index numeration base
          end function tens_layout_map_i
   !tens_layout_t: .extract_simple_parts():
          subroutine tens_layout_extract_i(this,num_parts,parts,ierr)
@@ -770,6 +782,10 @@
         private TensDescrPrintIt
         private TensDescrCompare
         public tens_descr_dtor
+ !tens_printer_t:
+        private TensPrinterResetOutput
+        private TensPrinterResetThresh
+        private TensPrinterApply
  !tens_argument_t:
         private TensArgumentAssign
         private TensArgumentSetTensor
@@ -3668,15 +3684,16 @@
          endif
          return
         end function TensLayoutFdimsGetVolume
-!-------------------------------------------------------------
-        function TensLayoutFdimsMap(this,mlndx) result(offset)
+!----------------------------------------------------------------------
+        function TensLayoutFdimsMap(this,mlndx,ind_base) result(offset)
 !Given a multi-index position of the tensor element inside tensor body,
-!returns its linear offset in the tensor body. The multi-index position
-!is specified relative to the tensor body and index numeration starts from 1.
+!returns its linear offset in the tensor body. The multi-index position is
+!specified relative to the tensor body and index numeration starts from <ind_base>.
          implicit none
          integer(INTL):: offset                        !out: linear tensor element offset
          class(tens_layout_fdims_t), intent(in):: this !in: tensor layout
          integer(INTL), intent(in):: mlndx(1:)         !in: multi-index position of the tensor element
+         integer(INTL), intent(in):: ind_base          !in: index numeration base
          integer(INTL):: dims(1:MAX_TENSOR_RANK)
          integer(INTD):: i,n,errc
 
@@ -3685,9 +3702,9 @@
           call this%header%get_dims(dims,n,errc)
           if(errc.eq.TEREC_SUCCESS) then
            if(n.gt.0) then
-            offset=(mlndx(n)-1_INTL)
+            offset=(mlndx(n)-ind_base)
             do i=n-1,1,-1
-             offset=offset*dims(i)+(mlndx(i)-1_INTL)
+             offset=offset*dims(i)+(mlndx(i)-ind_base)
             enddo
            else
             offset=0_INTL
@@ -6065,6 +6082,192 @@
          this%rank=-1
          return
         end subroutine tens_descr_dtor
+![tens_printer_t]=======================================
+        subroutine TensPrinterResetOutput(this,dev,ierr)
+!Resets the output device.
+         implicit none
+         class(tens_printer_t), intent(inout):: this !inout: tensor printer (functor)
+         integer(INTD), intent(in):: dev             !in: new output device
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         this%print_dev=dev
+         if(present(ierr)) ierr=TEREC_SUCCESS
+         return
+        end subroutine TensPrinterResetOutput
+!----------------------------------------------------------
+        subroutine TensPrinterResetThresh(this,thresh,ierr)
+!Resets the printing threshold.
+         implicit none
+         class(tens_printer_t), intent(inout):: this !inout:: tensor printer (functor)
+         real(8), intent(in):: thresh                !in: new printing threshold
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         this%print_thresh=thresh
+         if(present(ierr)) ierr=TEREC_SUCCESS
+         return
+        end subroutine TensPrinterResetThresh
+!-----------------------------------------------------------------
+        function TensPrinterApply(this,tensor,scalar) result(ierr)
+!Executes tensor printing.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(tens_printer_t), intent(in):: this     !in: tensor printer (functor)
+         class(tens_rcrsv_t), intent(inout):: tensor  !in: tensor being printed
+         complex(8), intent(inout), optional:: scalar !inout: scalar (not used)
+         integer(INTD):: nd,n
+         integer(INTL):: dims(1:MAX_TENSOR_RANK),vol
+         logical:: laid,locd
+         type(C_PTR):: body_p
+         class(tens_header_t), pointer:: header
+         class(tens_layout_t), pointer:: layout
+         type(gfc_range_t):: body_range
+         type(gfc_range_iter_t):: briter
+
+         if(tensor%is_set(ierr,num_dims=nd,layed=laid,located=locd)) then
+          if(ierr.eq.TEREC_SUCCESS) then
+           if(laid.and.locd) then
+            header=>tensor%get_header(ierr)
+            if(ierr.eq.TEREC_SUCCESS) then
+             call header%get_dims(dims,n,ierr)
+             if(ierr.eq.TEREC_SUCCESS) then
+              call header%print_head(dev_id=this%print_dev)
+              layout=>tensor%get_layout(ierr)
+              if(ierr.eq.TEREC_SUCCESS) then
+               body_p=layout%get_body_ptr(ierr)
+               if(ierr.eq.TEREC_SUCCESS) then
+                vol=layout%get_volume()
+                call body_range%gfc_range_ctor(dims(1:n),ierr)
+                if(ierr.eq.GFC_SUCCESS) then
+                 call briter%init(body_range,ierr)
+                 if(ierr.eq.GFC_SUCCESS) then
+                  select case(layout%get_layout_kind())
+                  case(R4)
+                   call print_body_r4(ierr)
+                  case(R8)
+                   call print_body_r8(ierr)
+                  case(C4)
+                   call print_body_c4(ierr)
+                  case(C8)
+                   call print_body_c8(ierr)
+                  case default
+                   ierr=TEREC_INVALID_ARGS
+                  end select
+                  call briter%release()
+                 else
+                  ierr=TEREC_UNABLE_COMPLETE
+                 endif
+                else
+                 ierr=TEREC_UNABLE_COMPLETE
+                endif
+               endif
+              endif
+              flush(this%print_dev)
+             endif
+            endif
+           else
+            ierr=TEREC_INVALID_ARGS
+           endif
+          endif
+         else
+          if(ierr.eq.TEREC_SUCCESS) ierr=TEREC_INVALID_ARGS
+         endif
+         return
+
+         contains
+
+          subroutine print_body_r4(jerr)
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: jn
+           integer(INTL):: offset(1:MAX_TENSOR_RANK),addr
+           real(4), pointer:: body(:)
+
+           jerr=GFC_SUCCESS
+           call c_f_pointer(body_p,body,(/vol/)) !body(1:vol)
+           do while(jerr.eq.GFC_SUCCESS)
+            call briter%get_offsets(offset,jn,jerr); if(jerr.ne.GFC_SUCCESS) exit
+            addr=1_INTL+layout%map(offset(1:jn),ind_base=0_INTL)
+            if(real(abs(body(addr)),8).gt.this%print_thresh)&
+            &write(this%print_dev,'(1x,D16.7,1x,64(1x,i6))') body(addr),offset(1:jn)
+            jerr=briter%next()
+           enddo
+           if(jerr.eq.GFC_NO_MOVE) then
+            jerr=TEREC_SUCCESS
+           else
+            jerr=TEREC_UNABLE_COMPLETE
+           endif
+           return
+          end subroutine print_body_r4
+
+          subroutine print_body_r8(jerr)
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: jn
+           integer(INTL):: offset(1:MAX_TENSOR_RANK),addr
+           real(8), pointer:: body(:)
+
+           jerr=GFC_SUCCESS
+           call c_f_pointer(body_p,body,(/vol/)) !body(1:vol)
+           do while(jerr.eq.GFC_SUCCESS)
+            call briter%get_offsets(offset,jn,jerr); if(jerr.ne.GFC_SUCCESS) exit
+            addr=1_INTL+layout%map(offset(1:jn),ind_base=0_INTL)
+            if(abs(body(addr)).gt.this%print_thresh)&
+            &write(this%print_dev,'(1x,D23.14,1x,64(1x,i6))') body(addr),offset(1:jn)
+            jerr=briter%next()
+           enddo
+           if(jerr.eq.GFC_NO_MOVE) then
+            jerr=TEREC_SUCCESS
+           else
+            jerr=TEREC_UNABLE_COMPLETE
+           endif
+           return
+          end subroutine print_body_r8
+
+          subroutine print_body_c4(jerr)
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: jn
+           integer(INTL):: offset(1:MAX_TENSOR_RANK),addr
+           complex(4), pointer:: body(:)
+
+           jerr=GFC_SUCCESS
+           call c_f_pointer(body_p,body,(/vol/)) !body(1:vol)
+           do while(jerr.eq.GFC_SUCCESS)
+            call briter%get_offsets(offset,jn,jerr); if(jerr.ne.GFC_SUCCESS) exit
+            addr=1_INTL+layout%map(offset(1:jn),ind_base=0_INTL)
+            if(real(abs(body(addr)),8).gt.this%print_thresh)&
+            &write(this%print_dev,'(1x,(D16.7,1x,D16.7),1x,64(1x,i6))') body(addr),offset(1:jn)
+            jerr=briter%next()
+           enddo
+           if(jerr.eq.GFC_NO_MOVE) then
+            jerr=TEREC_SUCCESS
+           else
+            jerr=TEREC_UNABLE_COMPLETE
+           endif
+           return
+          end subroutine print_body_c4
+
+          subroutine print_body_c8(jerr)
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: jn
+           integer(INTL):: offset(1:MAX_TENSOR_RANK),addr
+           complex(8), pointer:: body(:)
+
+           jerr=GFC_SUCCESS
+           call c_f_pointer(body_p,body,(/vol/)) !body(1:vol)
+           do while(jerr.eq.GFC_SUCCESS)
+            call briter%get_offsets(offset,jn,jerr); if(jerr.ne.GFC_SUCCESS) exit
+            addr=1_INTL+layout%map(offset(1:jn),ind_base=0_INTL)
+            if(abs(body(addr)).gt.this%print_thresh)&
+            &write(this%print_dev,'(1x,(D23.14,1x,D23.14),1x,64(1x,i6))') body(addr),offset(1:jn)
+            jerr=briter%next()
+           enddo
+           if(jerr.eq.GFC_NO_MOVE) then
+            jerr=TEREC_SUCCESS
+           else
+            jerr=TEREC_UNABLE_COMPLETE
+           endif
+           return
+          end subroutine print_body_c8
+
+        end function TensPrinterApply
 ![tens_argument_t]=============================
         subroutine TensArgumentAssign(this,src)
 !Copy assignment.
