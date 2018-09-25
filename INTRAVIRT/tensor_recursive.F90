@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/24
+!REVISION: 2018/09/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -6136,28 +6136,45 @@
                body_p=layout%get_body_ptr(ierr)
                if(ierr.eq.TEREC_SUCCESS) then
                 vol=layout%get_volume()
-                call body_range%gfc_range_ctor(dims(1:n),ierr)
-                if(ierr.eq.GFC_SUCCESS) then
-                 call briter%init(body_range,ierr)
+                if(vol.gt.1) then
+                 call body_range%gfc_range_ctor(dims(1:n),ierr)
                  if(ierr.eq.GFC_SUCCESS) then
-                  select case(layout%get_layout_kind())
-                  case(R4)
-                   call print_body_r4(ierr)
-                  case(R8)
-                   call print_body_r8(ierr)
-                  case(C4)
-                   call print_body_c4(ierr)
-                  case(C8)
-                   call print_body_c8(ierr)
-                  case default
-                   ierr=TEREC_INVALID_ARGS
-                  end select
-                  call briter%release()
+                  call briter%init(body_range,ierr)
+                  if(ierr.eq.GFC_SUCCESS) then
+                   select case(layout%get_layout_kind())
+                   case(R4)
+                    call print_body_r4(ierr)
+                   case(R8)
+                    call print_body_r8(ierr)
+                   case(C4)
+                    call print_body_c4(ierr)
+                   case(C8)
+                    call print_body_c8(ierr)
+                   case default
+                    ierr=TEREC_INVALID_ARGS
+                   end select
+                   call briter%release()
+                  else
+                   ierr=TEREC_UNABLE_COMPLETE
+                  endif
                  else
                   ierr=TEREC_UNABLE_COMPLETE
                  endif
+                elseif(vol.eq.1) then
+                 select case(layout%get_layout_kind())
+                 case(R4)
+                  call print_scalar_r4(ierr)
+                 case(R8)
+                  call print_scalar_r8(ierr)
+                 case(C4)
+                  call print_scalar_c4(ierr)
+                 case(C8)
+                  call print_scalar_c8(ierr)
+                 case default
+                  ierr=TEREC_INVALID_ARGS
+                 end select
                 else
-                 ierr=TEREC_UNABLE_COMPLETE
+                 ierr=TEREC_INVALID_ARGS
                 endif
                endif
               endif
@@ -6266,6 +6283,46 @@
            endif
            return
           end subroutine print_body_c8
+
+          subroutine print_scalar_r4(jerr)
+           integer(INTD), intent(out):: jerr
+           real(4), pointer:: body(:)
+
+           jerr=TEREC_SUCCESS
+           call c_f_pointer(body_p,body,(/1/))
+           if(real(abs(body(1)),8).gt.this%print_thresh) write(this%print_dev,'(1x,D16.7)') body(1)
+           return
+          end subroutine print_scalar_r4
+
+          subroutine print_scalar_r8(jerr)
+           integer(INTD), intent(out):: jerr
+           real(8), pointer:: body(:)
+
+           jerr=TEREC_SUCCESS
+           call c_f_pointer(body_p,body,(/1/))
+           if(abs(body(1)).gt.this%print_thresh) write(this%print_dev,'(1x,D23.14)') body(1)
+           return
+          end subroutine print_scalar_r8
+
+          subroutine print_scalar_c4(jerr)
+           integer(INTD), intent(out):: jerr
+           complex(4), pointer:: body(:)
+
+           jerr=TEREC_SUCCESS
+           call c_f_pointer(body_p,body,(/1/))
+           if(real(abs(body(1)),8).gt.this%print_thresh) write(this%print_dev,'(1x,(D16.7,1x,D16.7))') body(1)
+           return
+          end subroutine print_scalar_c4
+
+          subroutine print_scalar_c8(jerr)
+           integer(INTD), intent(out):: jerr
+           complex(8), pointer:: body(:)
+
+           jerr=TEREC_SUCCESS
+           call c_f_pointer(body_p,body,(/1/))
+           if(abs(body(1)).gt.this%print_thresh) write(this%print_dev,'(1x,(D23.14,1x,D23.14))') body(1)
+           return
+          end subroutine print_scalar_c8
 
         end function TensPrinterApply
 ![tens_argument_t]=============================

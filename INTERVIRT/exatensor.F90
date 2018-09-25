@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/09/24
+!REVISION: 2018/09/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -81,16 +81,20 @@
        end type exatns_space_status_t
 !INTERFACES:
  !Overloads:
-  !Create tensor:
+  !Create a tensor:
        interface exatns_tensor_create
         module procedure exatns_tensor_create_scalar
         module procedure exatns_tensor_create_tensor
        end interface exatns_tensor_create
-  !Initialize tensor:
+  !Initialize a tensor:
        interface exatns_tensor_init
         module procedure exatns_tensor_init_scalar
         module procedure exatns_tensor_init_method
        end interface exatns_tensor_init
+  !Traverse a tensor:
+       interface exatns_tensor_traverse
+        module procedure exatns_tensor_transform
+       end interface exatns_tensor_traverse
 !GLOBAL DATA:
  !ExaTENSOR runtime status:
        type(exatns_rt_status_t), private:: exatns_rt_status
@@ -146,7 +150,9 @@
        private exatns_tensor_create_scalar!creates an empty scalar (order-0 tensor)
        private exatns_tensor_create_tensor!creates an empty tensor (order-1 and higher tensors)
  !Tensor operations (Driver only):
-       public exatns_tensor_init          !initializes a tensor to a real/complex value or invokes an external initialization method
+       public exatns_tensor_init          !initializes a tensor to a real/complex value or invokes a user-defined initialization method
+       public exatns_tensor_transform     !executes a user-defined transformation (or action) on a tensor in-place
+       public exatns_tensor_traverse      !traverses a tensor with a user-defined action (for example, printing)
        public exatns_tensor_copy          !copies the content of one tensor into another tensor, allowing for permutation, slicing, or insertion
        public exatns_tensor_fold          !produces a new tensor by folding multiple tensor dimensions into a single one
        public exatns_tensor_unfold        !produces a new tensor by unfolding a tensor dimension into multiple dimensions
@@ -1207,6 +1213,58 @@
         endif
         return
        end function exatns_tensor_init_method
+!------------------------------------------------------------------
+       function exatns_tensor_transform(tensor,method) result(ierr)
+!Transforms the tensor in-place via a user-defined (registered) method.
+        implicit none
+        integer(INTD):: ierr                       !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
+        character(*), intent(in):: method          !in: registered method name
+        class(tens_instr_mng_t), pointer:: tens_instr
+        type(tens_transformation_t):: tens_trans
+        integer(INTL):: ip
+
+        ierr=EXA_SUCCESS
+        write(jo,'("#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP = ")',ADVANCE='NO'); flush(jo)
+        if(tensor%is_set(ierr)) then
+         if(ierr.eq.TEREC_SUCCESS) then
+!Construct the tensor transformation object:
+          call tens_trans%set_argument(tensor,ierr)
+          if(ierr.eq.TEREC_SUCCESS) then
+#if !(defined(__GNUC__) && __GNUC__ < 8)
+           call tens_trans%set_method(ierr,defined=.TRUE.,method_name=method,method_map=method_map_f)
+#endif
+           if(ierr.eq.TEREC_SUCCESS) then
+!Construct the tensor instruction:
+            tens_instr=>add_new_instruction(ip,ierr)
+            if(ierr.eq.0) then
+             write(jo,'(i11)') ip; flush(jo) !new instruction id number
+             call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_trans,iid=ip)
+             if(ierr.eq.0) then
+!Issue the tensor instruction to TAVP:
+              call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-7
+             else
+              ierr=-6
+             endif
+            else
+             ierr=-5
+            endif
+            tens_instr=>NULL()
+           else
+            ierr=-4
+           endif
+          else
+           ierr=-3
+          endif
+          call tens_transformation_dtor(tens_trans)
+         else
+          ierr=-2
+         endif
+        else
+         ierr=-1
+        endif
+        return
+       end function exatns_tensor_transform
 !----------------------------------------------------------------------------
        function exatns_tensor_copy(tensor_out,tensor_in,pattern) result(ierr)
 !Copies the content of one tensor into another tensor with an option of permutation,

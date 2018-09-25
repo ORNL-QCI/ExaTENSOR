@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/24
+!REVISION: 2018/09/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -50,6 +50,8 @@
         implicit none
         private
 
+!Client (application) provides user-defined function objects:
+
  !Tensor initialization functor:
         type, extends(tens_method_uni_t), public:: tens_init_test_t
          real(8), private:: init_val=0d0
@@ -58,8 +60,19 @@
           procedure, public:: apply=>TensInitTestApply
         end type tens_init_test_t
 
+ !Tensor transformation functor:
+        type, extends(tens_method_uni_t), public:: tens_trans_test_t
+         real(8), private:: div_val=1d0
+         contains
+          procedure, public:: tens_trans_test_ctor=>TensTransTestCtor
+          procedure, public:: apply=>TensTransTestApply
+        end type tens_trans_test_t
+
        contains
 
+!Client (application) provides implementation for user-defined function objects:
+
+ !tens_init_test_t methods:
         subroutine TensInitTestCtor(this,val)
          implicit none
          class(tens_init_test_t), intent(out):: this
@@ -74,19 +87,32 @@
          class(tens_init_test_t), intent(in):: this
          class(tens_rcrsv_t), intent(inout):: tensor
          complex(8), intent(inout), optional:: scalar
-         class(tens_body_t), pointer:: body
 
-         body=>tensor%get_body(ierr)
-         if(ierr.eq.EXA_SUCCESS.and.associated(body)) then
-          !`Init tensor
-         else
-          ierr=-1
-         endif
+         ierr=0
         end function TensInitTestApply
+
+ !tens_trans_test_t methods:
+        subroutine TensTransTestCtor(this,val)
+         implicit none
+         class(tens_trans_test_t), intent(out):: this
+         real(8), intent(in), optional:: val
+
+         if(present(val)) this%div_val=val
+        end subroutine TensTransTestCtor
+
+        function TensTransTestApply(this,tensor,scalar) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         class(tens_trans_test_t), intent(in):: this
+         class(tens_rcrsv_t), intent(inout):: tensor
+         complex(8), intent(inout), optional:: scalar
+
+         ierr=0
+        end function TensTransTestApply
 
        end module qforce_test
 
-
+!Main client's workload:
        program main
         use exatensor
         use service_mpi
@@ -99,6 +125,7 @@
         class(h_space_t), pointer:: ao_space
         type(tens_rcrsv_t):: etens,dtens,ltens,rtens
         type(tens_init_test_t):: init1369
+        type(tens_trans_test_t):: div761
         type(tens_printer_t):: tens_printer
         integer(INT_MPI):: mpi_th_provided
         integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role,hsp(1:MAX_TENSOR_RANK)
@@ -141,7 +168,15 @@
          ierr=exatns_method_register('SetTo13.69',init1369)
          if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_method_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
- !Tensor printing method:
+ !Tensor transformation method:
+         if(my_rank.eq.comm_size-1) then
+          write(6,'("Registering a user-defined tensor transformation method ... ")',ADVANCE='NO'); flush(6)
+         endif
+         call div761%tens_trans_test_ctor(7.61d2)
+         ierr=exatns_method_register('DivideBy761',div761)
+         if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_method_register() failed!')
+         if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+ !Tensor printing method (defaults to screen):
          if(my_rank.eq.comm_size-1) then
           write(6,'("Registering a user-defined tensor printing method ... ")',ADVANCE='NO'); flush(6)
          endif
@@ -217,16 +252,27 @@
            ierr=exatns_dump_cache()
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
            write(6,'("Tensor cache dumped")')
-#if 0
- !Contract tensors:
-           write(6,'("Contracting etens+=ltens*rtens ... ")',ADVANCE='NO'); flush(6)
+ !Transform input tensors:
+  !ltens:
+           write(6,'("Transforming tensor ltens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_contract(etens,ltens,rtens,'E()+=L(a,b)*R(a,b)')
-           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           ierr=exatns_tensor_transform(ltens,'DivideBy761')
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_transform() failed!')
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
-#endif
+  !rtens:
+           write(6,'("Transforming tensor rtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_transform(rtens,'DivideBy761')
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_transform() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+ !Dump cache (debug):
+           ierr=exatns_dump_cache()
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
+           write(6,'("Tensor cache dumped")')
  !Contract tensors:
            write(6,'("Contracting dtens+=ltens*rtens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
@@ -255,6 +301,14 @@
            ierr=exatns_dump_cache()
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
            write(6,'("Tensor cache dumped")')
+ !Print scalar etens:
+           write(6,'("Printing scalar etens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_traverse(etens,'PrintTensor')
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_traverse() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Destroy tensors:
   !rtens:
            write(6,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)
