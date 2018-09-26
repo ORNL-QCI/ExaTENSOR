@@ -82,30 +82,32 @@ endif
 	rm -f ./include/*
 	rm -f ./lib/*
 	rm -f ./bin/*
-ifeq ($(TOOLKIT),CRAY)
-	cp ./INTERVIRT/OBJ/EXATENSOR.mod ./
-	cp ./INTERVIRT/OBJ/EXATENSOR.mod ./include/
-	cp ./INTRAVIRT/OBJ/TENSOR_RECURSIVE.mod ./include/
-	cp ./INTRAVIRT/OBJ/SUBSPACES.mod ./include/
-	cp ./TALSH/OBJ/TALSH.mod ./include/
-	cp ./TALSH/OBJ/TENSOR_ALGEBRA.mod ./include/
-	cp ./TALSH/OBJ/DIL_BASIC.mod ./include/
-	cp ./TALSH/OBJ/TALSH.mod ./
-else
-	cp ./INTERVIRT/exatensor.mod ./
-	cp ./INTERVIRT/exatensor.mod ./include/
-	cp ./INTRAVIRT/tensor_recursive.mod ./include/
-	cp ./INTRAVIRT/subspaces.mod ./include/
-	cp ./TALSH/talsh.mod ./include/
-	cp ./TALSH/tensor_algebra.mod ./include/
-	cp ./TALSH/dil_basic.mod ./include/
-	cp ./TALSH/talsh.mod ./
-endif
+#ifeq ($(TOOLKIT),CRAY)
+#	cp ./INTERVIRT/OBJ/EXATENSOR.mod ./
+#	cp ./INTERVIRT/OBJ/EXATENSOR.mod ./include/
+#	cp ./INTRAVIRT/OBJ/TENSOR_RECURSIVE.mod ./include/
+#	cp ./INTRAVIRT/OBJ/SUBSPACES.mod ./include/
+#	cp ./TALSH/OBJ/TALSH.mod ./include/
+#	cp ./TALSH/OBJ/TENSOR_ALGEBRA.mod ./include/
+#	cp ./TALSH/OBJ/DIL_BASIC.mod ./include/
+#	cp ./TALSH/OBJ/TALSH.mod ./
+#else
+#	cp ./INTERVIRT/exatensor.mod ./
+#	cp ./INTERVIRT/exatensor.mod ./include/
+#	cp ./INTRAVIRT/tensor_recursive.mod ./include/
+#	cp ./INTRAVIRT/subspaces.mod ./include/
+#	cp ./TALSH/talsh.mod ./include/
+#	cp ./TALSH/tensor_algebra.mod ./include/
+#	cp ./TALSH/dil_basic.mod ./include/
+#	cp ./TALSH/talsh.mod ./
+#endif
 ifeq ($(EXA_OS),LINUX)
+	cp -u ./[A-Z]*/*.mod ./include/
 	cp -u ./[A-Z]*/*.h ./include/
 	cp -u ./[A-Z]*/*.hpp ./include/
 	cp -u ./TN/*.cpp ./include/
 else
+	cp ./[A-Z]*/*.mod ./include/
 	cp ./[A-Z]*/*.h ./include/
 	cp ./[A-Z]*/*.hpp ./include/
 	cp ./TN/*.cpp ./include/
