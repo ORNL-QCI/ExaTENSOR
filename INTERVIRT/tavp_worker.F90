@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/21
+!REVISION: 2018/09/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1707,7 +1707,7 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id
          integer(INTD), intent(in), optional:: nspaces !in: left alignment
-         integer(INTD):: errc,devo,nsp,j,refc,usec,rwc,drwc
+         integer(INTD):: errc,devo,nsp,j,refc,usec,rwc,drwc,tmp
          class(tens_rcrsv_t), pointer:: tensor
          logical:: pers,blkd
 !$OMP FLUSH
@@ -1721,11 +1721,11 @@
          tensor=>this%get_tensor(errc)
          if(errc.eq.0) call tensor%print_it(errc,devo,nsp+1)
  !Counters:
-         pers=this%is_persistent(); refc=this%get_ref_count(); usec=this%get_use_count()
+         pers=this%is_persistent(); refc=this%get_ref_count(); usec=this%get_use_count(); tmp=this%get_temp_count()
          rwc=this%get_rw_counter(); drwc=this%get_rw_counter(defer=.TRUE.); blkd=this%is_blocked()
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("Persist = ",l1,". Counters: Ref = ",i5,"; Use = ",i2,"; RW/DRW = ",i3,1x,i3,"; Block = ",l1)')&
-         &pers,refc,usec,rwc,drwc,blkd
+         write(devo,'("Persist = ",l1,". Counters: Ref = ",i5,"; Use = ",i2,"; RW/DRW = ",i3,1x,i3,"; Block = ",l1,"; Tmp = ",i6)')&
+         &pers,refc,usec,rwc,drwc,blkd,tmp
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
          call this%unlock()
@@ -5714,7 +5714,7 @@
                        if(errc.eq.0) then
                         cache_entry=>this%arg_cache%lookup(acc,errc)
                         if(errc.eq.0) then
-                         if(associated(cache_entry)) then !accumulator tensor is still alive
+                         if(associated(cache_entry)) then !accumulator tensor is still alive, check last upload time
                           call cache_entry%lock()
                           select type(cache_entry)
                           class is(tens_entry_wrk_t)
@@ -5771,7 +5771,13 @@
          else
           errc=-1
          endif
-         if(errc.ne.0) completed=.FALSE.
+         if(errc.ne.0) then
+          completed=.FALSE.
+          if(VERBOSE) then
+           write(CONS_OUT,'("#ERROR(TAVP-WRK:Retirer.test_completion): Error ",i11)') errc
+           flush(CONS_OUT)
+          endif
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TAVPWRKRetirerTestCompletion
@@ -6469,6 +6475,12 @@
            else
             jerr=-1
            endif
+           if(jerr.ne.0.and.VERBOSE) then
+            write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.substitute_output.lookup_acc_tensor): Error ",i11," for cache entry:")')&
+            &jerr
+            call cache_entry%print_it(dev_id=CONS_OUT)
+            flush(CONS_OUT)
+           endif
            !call temptens%tens_rcrsv_dtor()
            return
           end subroutine lookup_acc_tensor
@@ -6631,9 +6643,9 @@
                   call tens_instr%extract_cache_entries(cache_entries,nce,errc)
                   if(errc.eq.0.and.nce.le.MAX_TENSOR_OPERANDS) then
                    if(this%rls_list%on_first()) moved_forward=.TRUE. !to avoid moving the iterator when exited from this procedure (already on the next element)
+                   tens_instr=>NULL(); uptr=>NULL()
                    errc=this%rls_list%delete() !deletes the local accumulation instruction (moves to the preceding instruction, if any, by default)
                    if(errc.eq.GFC_SUCCESS) then
-                    tens_instr=>NULL()
   !Delete the tensor cache entries which are no longer used:
                     do i=1,nce
                      tensor=>cache_entries(i)%cache_entry%get_tensor(errc)
@@ -6641,6 +6653,7 @@
                       call tensor%get_name(tname,l)
                       temporary=tensor_name_is_temporary(tname(1:l),errc,id); if(.not.temporary) id=-1
                       if(errc.eq.0) then
+                       do while(cache_entries(i)%cache_entry%get_use_count().gt.1); enddo !`Bad workaround
                        evicted=this%arg_cache%evict(tensor,errc,decr_use=.TRUE.)
                        if(errc.eq.0) then
                         if(evicted) then
@@ -6649,16 +6662,24 @@
                           write(CONS_OUT,*) tname(1:l)
                           flush(CONS_OUT)
                          endif
-                         if(id.eq.0) then !accumulator was evicted => reset temporary count to zero
+                         if(id.eq.0) then !accumulator was evicted => reset temporary count of the corresponding persistent tensor to zero
                           tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_pers,errc) !lookup the persistent output tensor in the cache
-                          if(errc.eq.0.and.associated(tens_entry)) then
-                           call tens_entry%lock()
-                           call tens_entry%reset_temp_count()
-                           call tens_entry%unlock()
-                           call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+                          if(errc.eq.0) then
+                           if(associated(tens_entry)) then
+                            call tens_entry%lock()
+                            call tens_entry%reset_temp_count()
+                            call tens_entry%unlock()
+                            call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+                           endif
                           else
-                           if(errc.ne.0) then; errc=-19; exit; endif
+                           errc=-19; exit
                           endif
+                         endif
+                        else !not evicted
+                         if(DEBUG.gt.0) then
+                          write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Cannot evict temporary tensor")',ADVANCE='NO') impir
+                          write(CONS_OUT,*) tname(1:l)
+                          flush(CONS_OUT)
                          endif
                         endif
                         cache_entries(i)%cache_entry=>NULL()

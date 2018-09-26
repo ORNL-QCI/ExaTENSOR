@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/21
+!REVISION: 2018/09/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1901,7 +1901,16 @@
           endif
           call this%unlock()
          else
+          if(VERBOSE) then
+           write(jo,'("#ERROR(TAVP:tens_cache_t.evict): Unable to compute descriptor: Error ",i11,"; Tensor:")') errc
+           call tensor%print_it(dev_id=jo)
+           flush(jo)
+          endif
           errc=-1
+         endif
+         if(errc.ne.0.and.VERBOSE) then
+          write(jo,'("#ERROR(TAVP:tens_cache_t.evict): Error ",i11)') errc
+          flush(jo)
          endif
          if(present(ierr)) ierr=errc
          return
