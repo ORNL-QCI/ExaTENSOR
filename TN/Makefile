@@ -320,9 +320,8 @@ LFLAGS = $(MPI_LINK) $(LA_LINK) $(LTHREAD) $(CUDA_LINK) $(LIB)
 
 OBJS = ./OBJ/tensor_leg.o ./OBJ/tensornet.o
 
-$(NAME): $(OBJS) *.hpp $(MY_LIB)
+$(NAME): $(OBJS) ./OBJ/main.o *.hpp $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
 	$(CPPCOMP) ./OBJ/main.o $(OBJS) $(MY_LIB) $(LFLAGS) -o test_$(NAME).x
 
 ./OBJ/tensor_leg.o: tensor_leg.hpp tensor_leg.cpp
@@ -331,6 +330,9 @@ $(NAME): $(OBJS) *.hpp $(MY_LIB)
 
 ./OBJ/tensornet.o: tensor_solver.hpp tensornet.hpp tensornet.cpp
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensornet.cpp -o ./OBJ/tensornet.o
+
+./OBJ/main.o: main.cpp
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
 
 
 .PHONY: clean
