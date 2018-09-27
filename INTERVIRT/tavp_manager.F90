@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/20
+!REVISION: 2018/09/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -195,6 +195,7 @@
         type, extends(ds_instr_t), public:: tens_instr_t
          integer(INTD), private:: num_out_oprnds=0                    !number of the output tensor instruction operands
          integer(INTD), private:: out_oprnds(0:MAX_TENSOR_OPERANDS-1) !positions of the tensor instruction operands which are considered output
+         integer(INTD), private:: out_fetch(0:MAX_TENSOR_OPERANDS-1)  !for each output tensor operand above whether or not to fetch it before modifying (inout semantics)
          contains
           procedure, private:: TensInstrCtor                              !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
@@ -1458,6 +1459,7 @@
                if(jerr.eq.DSVP_SUCCESS) then
                 if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
                  this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand 0 is output
+                 this%out_fetch(0:this%num_out_oprnds-1)=0 !no fetch for output tensor operands
                 elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
                  this%num_out_oprnds=0 !no output operands
                 endif
@@ -1508,9 +1510,9 @@
              allocate(tens_trans_ctrl,STAT=jerr)
              if(jerr.eq.0) then
               if(allocated(method_name)) then
-               call tens_trans_ctrl%ctrl_tens_trans_ctor(jerr,scalar,method_name)
+               call tens_trans_ctrl%ctrl_tens_trans_ctor(jerr,scalar,defined,method_name)
               else
-               call tens_trans_ctrl%ctrl_tens_trans_ctor(jerr,scalar)
+               call tens_trans_ctrl%ctrl_tens_trans_ctor(jerr,scalar,defined)
               endif
               if(jerr.eq.0) then
                instr_ctrl=>tens_trans_ctrl; call this%set_control(instr_ctrl,jerr) !ownership transfer for instr_ctrl=tens_trans_ctrl
@@ -1526,6 +1528,11 @@
                     oprnd=>tens_oprnd; call this%set_operand(0,oprnd,jerr) !ownership transfer for oprnd=tens_oprnd
                     if(jerr.eq.DSVP_SUCCESS) then
                      this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand #0 is output
+                     if(defined) then
+                      this%out_fetch(0:this%num_out_oprnds-1)=1 !fetch output tensor operands before modifying them locally
+                     else
+                      this%out_fetch(0:this%num_out_oprnds-1)=0 !no fetch for output tensor operands
+                     endif
                     else
                      deallocate(tens_oprnd); jerr=-11
                     endif
@@ -1604,6 +1611,7 @@
                   oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
                  enddo
                  this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/) !operand 0 is output
+                 this%out_fetch(0:this%num_out_oprnds-1)=0 !no fetch for output tensor operands
                 else
                  jerr=-7
                 endif
@@ -1924,14 +1932,15 @@
          if(present(ierr)) ierr=errc
          return
         end function TensInstrFullyLocated
-!-------------------------------------------------------------------------------
-        function TensInstrGetOutputOperands(this,ierr,num_oprs) result(out_oprs)
+!-----------------------------------------------------------------------------------------
+        function TensInstrGetOutputOperands(this,ierr,num_oprs,out_fetch) result(out_oprs)
 !Returns the list of the output tensor operands by their positions.
          implicit none
          integer(INTD), pointer:: out_oprs(:)            !out: positions of the output tensor instruction operands
          class(tens_instr_t), intent(in), target:: this  !in: tensor instruction
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD), intent(out), optional:: num_oprs !out: number of the output tensor instruction operands
+         integer(INTD), intent(out), pointer, optional:: out_fetch(:) !out: fetch flags for the output tensor operands
          integer(INTD):: errc,n
 
          out_oprs=>NULL(); n=0
@@ -1946,6 +1955,9 @@
           errc=-1
          endif
          if(present(num_oprs)) num_oprs=n
+         if(present(out_fetch)) then
+          out_fetch=>NULL(); if(n.gt.0) out_fetch(0:)=>this%out_fetch(0:n-1)
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TensInstrGetOutputOperands
@@ -2065,6 +2077,7 @@
            integer(INTD):: sl
            character(EXA_MAX_METHOD_NAME_LEN):: method_name
            complex(8):: alpha
+           logical:: defined
            class(tens_rcrsv_t), pointer:: tensor
            class(ds_oprnd_t), pointer:: oprnd
            class(ds_instr_ctrl_t), pointer:: instr_ctrl
@@ -2094,12 +2107,12 @@
               if(jerr.eq.DSVP_SUCCESS) then
                select type(instr_ctrl)
                class is(ctrl_tens_trans_t)
-                call instr_ctrl%get_method(method_name,sl,jerr,scalar=alpha)
+                call instr_ctrl%get_method(method_name,sl,jerr,scalar=alpha,defined=defined)
                 if(jerr.eq.0) then
 #if !(defined(__GNUC__) && __GNUC__ < 8)
-                 call tens_operation%set_method(jerr,alpha,.FALSE.,method_name(1:sl),method_map_f)
+                 call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl),method_map_f)
 #else
-                 call tens_operation%set_method(jerr,alpha,.FALSE.,method_name(1:sl))
+                 call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl))
 #endif
                  if(jerr.ne.TEREC_SUCCESS) jerr=-6
                 else
@@ -2336,6 +2349,7 @@
 
          opcode=this%get_code(); sts=this%get_status(errc)
          if((sts.eq.DS_INSTR_EMPTY.or.sts.eq.DS_INSTR_RETIRED).and.errc.eq.DSVP_SUCCESS) then
+          this%num_out_oprnds=0
           call this%clean(errc)
           if(errc.ne.DSVP_SUCCESS) call quit(errc,'#ERROR(TAVP-MNG:tens_instr_dtor): Tensor instruction destruction failed!')
          else

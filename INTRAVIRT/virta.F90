@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/26
+!REVISION: 2018/09/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -195,6 +195,7 @@
          class(tens_method_uni_t), pointer, private:: definer=>NULL() !non-owning pointer to the defining unary tensor method (initialization/transformation)
          character(EXA_MAX_METHOD_NAME_LEN), private:: method_name    !name of the defining method
          complex(8), private:: alpha=(0d0,0d0)                        !either an initialization scalar or an alpha prefactor
+         logical, private:: undefined=.TRUE.                          !whether or not the tensor is considered undefined at the beginning
          contains
           procedure, private:: CtrlTensTransCtor                    !ctor
           generic, public:: ctrl_tens_trans_ctor=>CtrlTensTransCtor
@@ -720,16 +721,18 @@
          if(present(ierr)) ierr=errc
          return
         end function opcode_tensor
-![ctrl_tens_trans_t]=============================================
-        subroutine CtrlTensTransCtor(this,ierr,alpha,method_name)
-!CTOR: If neither <alpha> nor <method_name> is present, initialization
-!to zero is assumed. If either <alpha> or <method_name> is present,
-!then the initialization to a scalar or a user-defined transformation
-!is assumed, resepectively.
+![ctrl_tens_trans_t]============================================================
+        subroutine CtrlTensTransCtor(this,ierr,scalar_value,defined,method_name)
+!CTOR:
+! a) Simple initialization to a value: <scalar_value>, <defined>=FALSE;
+! b) Simple scaling by a value: <scalar_value>, <defined>=TRUE;
+! c) User-defined initialization by an external method: <defined>=FALSE, <method_name>;
+! d) User-defined in-place transformation by an external method: <defined>=TRUE, <method_name>.
          implicit none
          class(ctrl_tens_trans_t), intent(out):: this     !out: tensor transformation/initialization control field
          integer(INTD), intent(out), optional:: ierr      !out: error code
-         complex(8), intent(in), optional:: alpha         !in: scalar
+         complex(8), intent(in), optional:: scalar_value  !in: scalar
+         logical, intent(in), optional:: defined          !in: whether or not the tensor is considered defined at the beginning
          character(*), intent(in), optional:: method_name !in: external (registered) method name
          integer(INTD):: errc,l
 
@@ -745,7 +748,8 @@
            errc=-1
           endif
          endif
-         if(errc.eq.0.and.present(alpha)) this%alpha=alpha
+         if(errc.eq.0.and.present(scalar_value)) this%alpha=scalar_value
+         if(errc.eq.0.and.present(defined)) this%undefined=(.not.defined)
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransCtor
@@ -766,9 +770,9 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransMapMethod
-!--------------------------------------------------------------------------------
-        subroutine CtrlTensTransGetMethod(this,method_name,sl,ierr,method,scalar)
-!Returns the method name and alpha.
+!----------------------------------------------------------------------------------------
+        subroutine CtrlTensTransGetMethod(this,method_name,sl,ierr,method,scalar,defined)
+!Returns the method name, scalar and defined status.
          implicit none
          class(ctrl_tens_trans_t), intent(in):: this   !in: tensor transformation/initialization control field
          character(*), intent(inout):: method_name     !out: method name
@@ -776,6 +780,7 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          class(tens_method_uni_t), pointer, intent(out), optional:: method !out: method functor
          complex(8), intent(out), optional:: scalar    !out: scalar
+         logical, intent(out), optional:: defined      !out: whether or not the tensor is considered defined at the beginning
          integer(INTD):: errc
          class(tens_method_uni_t), pointer:: meth
 
@@ -787,6 +792,7 @@
          endif
          if(present(method)) method=>meth
          if(present(scalar)) scalar=this%alpha
+         if(present(defined)) defined=(.not.this%undefined)
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransGetMethod
@@ -801,7 +807,12 @@
 
          call pack_builtin(packet,this%method_name(1:len_trim(this%method_name)),errc)
          if(errc.eq.PACK_SUCCESS) then
-          call pack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-2
+          call pack_builtin(packet,this%alpha,errc)
+          if(errc.eq.PACK_SUCCESS) then
+           call pack_builtin(packet,this%undefined,errc); if(errc.ne.PACK_SUCCESS) errc=-3
+          else
+           errc=-2
+          endif
          else
           errc=-1
          endif
@@ -824,8 +835,13 @@
           if(sl.le.EXA_MAX_METHOD_NAME_LEN) then
            call unpack_builtin(packet,this%alpha,errc)
            if(errc.eq.PACK_SUCCESS) then
-            if(sl.gt.0) then
-             call this%map_method(errc); if(errc.ne.0) then; this%method_name=' '; errc=-4; endif
+            call unpack_builtin(packet,this%undefined,errc)
+            if(errc.eq.PACK_SUCCESS) then
+             if(sl.gt.0) then
+              call this%map_method(errc); if(errc.ne.0) then; this%method_name=' '; errc=-5; endif
+             endif
+            else
+             errc=-4
             endif
            else
             errc=-3
@@ -854,11 +870,12 @@
          do l=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          l=len_trim(this%method_name)
          if(l.gt.0) then
-          call printl(devo,'Method: '//this%method_name(1:l)//';')
+          call printl(devo,'Method: '//this%method_name(1:l)//';',.FALSE.)
          else
-          call printl(devo,'No method;')
+          call printl(devo,'No method;',.FALSE.)
          endif
-         write(devo,'(" Scalar: ",D24.14,1x,D24.14)') this%alpha
+         write(devo,'(" Scalar: ",D23.14,1x,D23.14,";")',ADVANCE='NO') this%alpha
+         write(devo,'(" Defined: ",l1)') (.not.this%undefined)
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -872,6 +889,7 @@
          this%definer=>NULL()
          this%method_name=' '
          this%alpha=(0d0,0d0)
+         this%undefined=.TRUE.
          return
         end subroutine ctrl_tens_trans_dtor
 ![ctrl_tens_add_t]============================================
@@ -959,7 +977,7 @@
          call this%permutation%print_it(errc,devo,0)
          if(errc.eq.TEREC_SUCCESS) then
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
-          write(devo,'("Scalar: ",(D24.14,1x,D24.14))') this%alpha
+          write(devo,'("Scalar: ",(D23.14,1x,D23.14))') this%alpha
          else
           errc=-1
          endif
@@ -1087,7 +1105,7 @@
          call this%contr_ptrn%print_it(errc,devo,0)
          if(errc.eq.TEREC_SUCCESS) then
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
-          write(devo,'("Scalar: ",D24.14,1x,D24.14)') this%alpha
+          write(devo,'("Scalar: ",D23.14,1x,D23.14)') this%alpha
          else
           errc=-1
          endif
