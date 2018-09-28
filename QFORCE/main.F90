@@ -301,16 +301,14 @@
            ierr=exatns_dump_cache()
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
            write(6,'("Tensor cache dumped")')
-#if 0
  !Print scalar etens:
-           write(6,'("Printing scalar etens ... ")',ADVANCE='NO'); flush(6)
+           write(6,'("Printing scalar etens ... ")'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_traverse(etens,'PrintTensor')
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_traverse() failed!')
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
-#endif
  !Destroy tensors:
   !rtens:
            write(6,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)

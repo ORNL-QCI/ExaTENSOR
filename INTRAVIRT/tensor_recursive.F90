@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/25
+!REVISION: 2018/09/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -359,7 +359,7 @@
  !Tensor printing functor:
         type, extends(tens_method_uni_t), public:: tens_printer_t
          integer(INTD), private:: print_dev=6                      !output device handle (defaults to screen)
-         real(8), private:: print_thresh=1d-14                     !minimal tensor element magnitude to be printed
+         real(8), private:: print_thresh=0d0                       !minimal tensor element magnitude to be printed
          logical, private:: print_formatted=.TRUE.                 !formatted/unformatted printing
          contains
           procedure, public:: reset_output=>TensPrinterResetOutput !resets the output device
@@ -6134,14 +6134,14 @@
               layout=>tensor%get_layout(ierr)
               if(ierr.eq.TEREC_SUCCESS) then
                body_p=layout%get_body_ptr(ierr)
-               if(ierr.eq.TEREC_SUCCESS) then
+               if(ierr.eq.TEREC_SUCCESS.and.c_associated(body_p)) then
                 vol=layout%get_volume()
                 if(vol.gt.1) then
                  call body_range%gfc_range_ctor(dims(1:n),ierr)
                  if(ierr.eq.GFC_SUCCESS) then
                   call briter%init(body_range,ierr)
                   if(ierr.eq.GFC_SUCCESS) then
-                   select case(layout%get_layout_kind())
+                   select case(layout%get_data_type())
                    case(R4)
                     call print_body_r4(ierr)
                    case(R8)
@@ -6161,7 +6161,7 @@
                   ierr=TEREC_UNABLE_COMPLETE
                  endif
                 elseif(vol.eq.1) then
-                 select case(layout%get_layout_kind())
+                 select case(layout%get_data_type())
                  case(R4)
                   call print_scalar_r4(ierr)
                  case(R8)
@@ -6176,6 +6176,8 @@
                 else
                  ierr=TEREC_INVALID_ARGS
                 endif
+               else
+                if(ierr.eq.TEREC_SUCCESS) ierr=TEREC_UNABLE_COMPLETE
                endif
               endif
               flush(this%print_dev)
@@ -6203,7 +6205,7 @@
            do while(jerr.eq.GFC_SUCCESS)
             call briter%get_offsets(offset,jn,jerr); if(jerr.ne.GFC_SUCCESS) exit
             addr=1_INTL+layout%map(offset(1:jn),ind_base=0_INTL)
-            if(real(abs(body(addr)),8).gt.this%print_thresh)&
+            if(real(abs(body(addr)),8).ge.this%print_thresh)&
             &write(this%print_dev,'(1x,D16.7,1x,64(1x,i6))') body(addr),offset(1:jn)
             jerr=briter%next()
            enddo
@@ -6226,7 +6228,7 @@
            do while(jerr.eq.GFC_SUCCESS)
             call briter%get_offsets(offset,jn,jerr); if(jerr.ne.GFC_SUCCESS) exit
             addr=1_INTL+layout%map(offset(1:jn),ind_base=0_INTL)
-            if(abs(body(addr)).gt.this%print_thresh)&
+            if(abs(body(addr)).ge.this%print_thresh)&
             &write(this%print_dev,'(1x,D23.14,1x,64(1x,i6))') body(addr),offset(1:jn)
             jerr=briter%next()
            enddo
@@ -6249,7 +6251,7 @@
            do while(jerr.eq.GFC_SUCCESS)
             call briter%get_offsets(offset,jn,jerr); if(jerr.ne.GFC_SUCCESS) exit
             addr=1_INTL+layout%map(offset(1:jn),ind_base=0_INTL)
-            if(real(abs(body(addr)),8).gt.this%print_thresh)&
+            if(real(abs(body(addr)),8).ge.this%print_thresh)&
             &write(this%print_dev,'(1x,(D16.7,1x,D16.7),1x,64(1x,i6))') body(addr),offset(1:jn)
             jerr=briter%next()
            enddo
@@ -6272,7 +6274,7 @@
            do while(jerr.eq.GFC_SUCCESS)
             call briter%get_offsets(offset,jn,jerr); if(jerr.ne.GFC_SUCCESS) exit
             addr=1_INTL+layout%map(offset(1:jn),ind_base=0_INTL)
-            if(abs(body(addr)).gt.this%print_thresh)&
+            if(abs(body(addr)).ge.this%print_thresh)&
             &write(this%print_dev,'(1x,(D23.14,1x,D23.14),1x,64(1x,i6))') body(addr),offset(1:jn)
             jerr=briter%next()
            enddo
@@ -6290,7 +6292,7 @@
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
-           if(real(abs(body(1)),8).gt.this%print_thresh) write(this%print_dev,'(1x,D16.7)') body(1)
+           if(real(abs(body(1)),8).ge.this%print_thresh) write(this%print_dev,'(1x,D16.7)') body(1)
            return
           end subroutine print_scalar_r4
 
@@ -6300,7 +6302,7 @@
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
-           if(abs(body(1)).gt.this%print_thresh) write(this%print_dev,'(1x,D23.14)') body(1)
+           if(abs(body(1)).ge.this%print_thresh) write(this%print_dev,'(1x,D23.14)') body(1)
            return
           end subroutine print_scalar_r8
 
@@ -6310,7 +6312,7 @@
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
-           if(real(abs(body(1)),8).gt.this%print_thresh) write(this%print_dev,'(1x,(D16.7,1x,D16.7))') body(1)
+           if(real(abs(body(1)),8).ge.this%print_thresh) write(this%print_dev,'(1x,(D16.7,1x,D16.7))') body(1)
            return
           end subroutine print_scalar_c4
 
@@ -6320,7 +6322,7 @@
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
-           if(abs(body(1)).gt.this%print_thresh) write(this%print_dev,'(1x,(D23.14,1x,D23.14))') body(1)
+           if(abs(body(1)).ge.this%print_thresh) write(this%print_dev,'(1x,(D23.14,1x,D23.14))') body(1)
            return
           end subroutine print_scalar_c8
 

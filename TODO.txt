@@ -22,4 +22,5 @@
 2018-08-20: Temporary (output) tensors must be reused, especially if they are already on GPU.
 2018-09-12: Tensor transformation requires MPI_PUT and MPI_GET for output tensor arguments:
             Get output tensor argument --> Transform it locally --> Put output tensor argument.
-            Tensor initialization requires MPI_PUT.
+            Tensor initialization requires MPI_PUT. Tensor operations with INOUT operands also
+            require MPI_GET + MPI_PUT mechanism on output operands.

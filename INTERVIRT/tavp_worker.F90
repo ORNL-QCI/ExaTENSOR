@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/27
+!REVISION: 2018/09/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2788,9 +2788,9 @@
                 endif
                 if(res) then
                  if(sts.eq.DS_OPRND_FETCHING) then
-                  call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
+                  if(associated(this%cache_entry)) call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
                  elseif(sts.eq.DS_OPRND_UPLOADING) then
-                  call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                  if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
                   call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-8 !local buffer has been accumulated, thus must be reset to zero
                  else
                   errc=-7 !trap
@@ -4541,6 +4541,7 @@
             if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
              if(this%num_out_oprnds.gt.0) then !output operand(s) exist: Automatically excludes TENS_DESTROY
               if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.&           !TENS_CREATE does not require output upload since it creates its output locally
+                &opcode.ne.TAVP_INSTR_TENS_INIT.and.&             !TENS_INIT does not need output substitution as it is a unary operation which acts on a tensor directly
                 &opcode.ne.TAVP_INSTR_TENS_ACCUMULATE) res=.TRUE. !TENS_ACCUMULATE is normally expected to perform a local accumulation (special TAVP-WRK tensor instruction)
              endif
             endif
@@ -4561,7 +4562,8 @@
 !Returns TRUE if the (persistent) output tensor operand(s) is(are)
 !substituted with a temporary tensor(s). If there are multiple
 !output tensor operands, they must be either all substituted or all not.
-!Local TENS_ACCUMULATE instructions are considered substituted.
+!Local TENS_ACCUMULATE instructions are considered substituted
+!although there was no real substitution done on them.
          implicit none
          logical:: res                               !out: result
          class(tens_instr_t), intent(in):: this      !in: active tensor instruction
@@ -5711,11 +5713,11 @@
            n=tens_instr%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
             if(n.gt.0) then
-             if(tens_instr%is_substitutable(errc)) then
+             if(tens_instr%is_substitutable(errc)) then !cannot check whether is was substituted because it is already renamed back
               if(errc.eq.0) then
-               if(tens_instr%fully_accumulated(errc)) then
+               if(tens_instr%fully_accumulated(errc)) then !all accompanying ACCUMULATEs have completed (as instructions)
                 if(errc.eq.0) then
-                 instr_compl_time=tens_instr%get_completion_time() !time the last local accumulate has completed
+                 instr_compl_time=tens_instr%get_completion_time() !time the last local ACCUMULATE has completed (as instruction)
                  if(instr_compl_time.ge.0d0) then
                   oloop: do i=0,n-1
                    if(tens_instr%operand_is_output(i,errc)) then
@@ -6326,7 +6328,7 @@
                       tmp_entry=>NULL()
                       select type(tmp_cache_entry); class is(tens_entry_wrk_t); tmp_entry=>tmp_cache_entry; end select
                       if(associated(tmp_entry)) then
-                       call oprnd%tmp_reset_tensor(tmp_entry,.TRUE.,errc) !(persistent --> temporary) rename
+                       call oprnd%tmp_reset_tensor(tmp_entry,.TRUE.,errc) !(persistent --> temporary) output operand rename
                        if(errc.eq.0) then
  !Inject an accumulation tensor instruction into the main queue:
                         acc_entry=>NULL()
@@ -7276,11 +7278,14 @@
          integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTD):: errc,ier,n
          class(ds_oprnd_t), pointer:: oprnd
+         logical:: op_output,fetch
 
          n=tens_instr%get_num_operands(errc)
          if(errc.eq.DSVP_SUCCESS.and.n.gt.0) then
           do while(n.gt.0)
-           n=n-1; if(tens_instr%operand_is_output(n)) cycle
+           n=n-1
+           op_output=tens_instr%operand_is_output(n,fetch=fetch)
+           if(op_output.and.(.not.fetch)) cycle
            oprnd=>tens_instr%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
             call oprnd%prefetch(ier); if(ier.ne.0.and.errc.eq.0) errc=-3
@@ -7305,7 +7310,7 @@
          logical, intent(in), optional:: wait                 !in: WAIT or TEST (defaults to WAIT)
          integer(INTD):: errc,ier,n
          class(ds_oprnd_t), pointer:: oprnd
-         logical:: wt
+         logical:: wt,op_output,fetch
 
          errc=0; res=.FALSE.
          wt=.TRUE.; if(present(wait)) wt=wait
@@ -7313,7 +7318,9 @@
          if(errc.eq.DSVP_SUCCESS.and.n.gt.0) then
           res=.TRUE.
           do while(n.gt.0)
-           n=n-1; if(tens_instr%operand_is_output(n)) cycle
+           n=n-1
+           op_output=tens_instr%operand_is_output(n,fetch=fetch)
+           if(op_output.and.(.not.fetch)) cycle
            oprnd=>tens_instr%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
             res=res.and.oprnd%sync(ier,wt)
@@ -7744,7 +7751,7 @@
 
          errc=0; res=.FALSE.
          if(talsh_task_status(tens_instr%talsh_task).eq.TALSH_TASK_EMPTY) then
-          res=.TRUE.
+          res=.TRUE.; sts=TALSH_TASK_COMPLETED
          else
           wt=.TRUE.; if(present(wait)) wt=wait
           if(wt) then !WAIT
@@ -7754,26 +7761,26 @@
            ans=talsh_task_complete(tens_instr%talsh_task,sts,errc)
            res=(ans.eq.YEP.and.errc.eq.TALSH_SUCCESS)
           endif
-          if(res) then
-           if(sts.eq.TALSH_TASK_COMPLETED) then
-            call tens_instr%set_status(DS_INSTR_COMPLETED,ier,DSVP_SUCCESS)
-            out_oprs(0:)=>tens_instr%get_output_operands(errc,n)
-            if(errc.eq.0) then
-             do i=0,n-1
-              oprnd=>tens_instr%get_operand(out_oprs(i),errc); if(errc.ne.0) exit
-              select type(oprnd); class is(tens_oprnd_t); call oprnd%set_up_to_date(.TRUE.); end select
-             enddo
-             if(errc.ne.0) errc=-4
-            else
-             errc=-3
-            endif
+         endif
+         if(res) then
+          if(sts.eq.TALSH_TASK_COMPLETED) then
+           call tens_instr%set_status(DS_INSTR_COMPLETED,ier,DSVP_SUCCESS)
+           out_oprs(0:)=>tens_instr%get_output_operands(errc,n)
+           if(errc.eq.0) then
+            do i=0,n-1
+             oprnd=>tens_instr%get_operand(out_oprs(i),errc); if(errc.ne.0) exit
+             select type(oprnd); class is(tens_oprnd_t); call oprnd%set_up_to_date(.TRUE.); end select
+            enddo
+            if(errc.ne.0) errc=-4
            else
-            call tens_instr%set_status(DS_INSTR_COMPLETED,ier,TAVP_ERR_EXC_FAILURE)
+            errc=-3
            endif
-           if(ier.ne.0.and.errc.eq.0) errc=-2
           else
-           if(errc.ne.TALSH_SUCCESS) errc=-1
+           call tens_instr%set_status(DS_INSTR_COMPLETED,ier,TAVP_ERR_EXC_FAILURE)
           endif
+          if(ier.ne.0.and.errc.eq.0) errc=-2
+         else
+          if(errc.ne.TALSH_SUCCESS) errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
