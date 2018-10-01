@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/25
+!REVISION: 2018/10/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -47,6 +47,7 @@
        module qforce_test
         use exatensor
         use stsubs, only: crash
+        use, intrinsic:: ISO_C_BINDING
         implicit none
         private
 
@@ -54,9 +55,11 @@
 
  !Tensor initialization functor:
         type, extends(tens_method_uni_t), public:: tens_init_test_t
-         real(8), private:: init_val=0d0
+         complex(8), private:: init_val=(0d0,0d0)
          contains
-          procedure, public:: tens_init_test_ctor=>TensInitTestCtor
+          procedure, private:: TensInitTestCtorReal
+          procedure, private:: TensInitTestCtorComplex
+          generic, public:: tens_init_test_ctor=>TensInitTestCtorReal,TensInitTestCtorComplex
           procedure, public:: apply=>TensInitTestApply
         end type tens_init_test_t
 
@@ -73,13 +76,21 @@
 !Client (application) provides implementation for user-defined function objects:
 
  !tens_init_test_t methods:
-        subroutine TensInitTestCtor(this,val)
+        subroutine TensInitTestCtorReal(this,val)
          implicit none
          class(tens_init_test_t), intent(out):: this
-         real(8), intent(in), optional:: val
+         real(8), intent(in):: val
 
-         if(present(val)) this%init_val=val
-        end subroutine TensInitTestCtor
+         this%init_val=cmplx(val,0d0)
+        end subroutine TensInitTestCtorReal
+
+        subroutine TensInitTestCtorComplex(this,val)
+         implicit none
+         class(tens_init_test_t), intent(out):: this
+         complex(8), intent(in):: val
+
+         this%init_val=val
+        end subroutine TensInitTestCtorComplex
 
         function TensInitTestApply(this,tensor,scalar) result(ierr)
          implicit none
@@ -87,8 +98,37 @@
          class(tens_init_test_t), intent(in):: this
          class(tens_rcrsv_t), intent(inout):: tensor
          complex(8), intent(inout), optional:: scalar
+         integer(INTL):: vol
+         type(tens_dense_t):: tens
+         real(4), pointer:: arr_r4(:)
+         real(8), pointer:: arr_r8(:)
+         complex(4), pointer:: arr_c4(:)
+         complex(8), pointer:: arr_c8(:)
 
-         ierr=0
+         tens=tensor%get_dense_adapter(ierr)
+         if(ierr.eq.EXA_SUCCESS) then
+          vol=tens_dense_volume(tens)
+          if(vol.gt.0) then
+           select case(tens%data_kind)
+           case(EXA_DATA_KIND_R4)
+            call c_f_pointer(tens%body_ptr,arr_r4,(/vol/))
+            arr_r4(:)=real(this%init_val,4)
+           case(EXA_DATA_KIND_R8)
+            call c_f_pointer(tens%body_ptr,arr_r8,(/vol/))
+            arr_r8(:)=real(this%init_val,8)
+           case(EXA_DATA_KIND_C4)
+            call c_f_pointer(tens%body_ptr,arr_c4,(/vol/))
+            arr_c4(:)=cmplx(real(this%init_val,4),real(imag(this%init_val),4),4)
+           case(EXA_DATA_KIND_C8)
+            call c_f_pointer(tens%body_ptr,arr_c8,(/vol/))
+            arr_c8(:)=this%init_val
+           case default
+            ierr=2
+           end select
+          else
+           ierr=1
+          endif
+         endif
         end function TensInitTestApply
 
  !tens_trans_test_t methods:
@@ -106,8 +146,10 @@
          class(tens_trans_test_t), intent(in):: this
          class(tens_rcrsv_t), intent(inout):: tensor
          complex(8), intent(inout), optional:: scalar
+         type(tens_dense_t):: tens
 
-         ierr=0
+         tens=tensor%get_dense_adapter(ierr)
+         !`Finish
         end function TensTransTestApply
 
        end module qforce_test

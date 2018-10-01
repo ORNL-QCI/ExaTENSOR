@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/28
+!REVISION: 2018/10/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -98,6 +98,14 @@
         integer(INTD), parameter, public:: TEREC_IND_RESTR_GE=4   !indices within the group are >= ordered i1 >= i2 >= i3
         integer(INTD), parameter, public:: TEREC_NUM_IND_RESTR=5  !total number of index restrictions (0..max)
 !TYPES:
+ !Locally stored dense tensor block (for compatibility):
+        type, public:: tens_dense_t
+         integer(INTD), public:: num_dims=-1              !number of dimensions (tensor order)
+         integer(INTD), public:: data_kind=NO_TYPE        !data kind {R4,R8,C4,C8}
+         type(C_PTR), public:: body_ptr=C_NULL_PTR        !C pointer to the tensor body
+         integer(INTL), public:: bases(1:MAX_TENSOR_RANK) !base offset for each tensor dimension
+         integer(INTL), public:: dims(1:MAX_TENSOR_RANK)  !extent of each tensor dimension
+        end type tens_dense_t
  !Register of hierarchical vector spaces:
         type, private:: hspace_register_t
          logical, private:: initialized=.FALSE.        !initialization status
@@ -307,7 +315,6 @@
           procedure, public:: get_spec=>TensRcrsvGetSpec             !returns the tensor subspace multi-index (specification)
           procedure, public:: get_dims=>TensRcrsvGetDims             !returns tensor dimension extents
           procedure, public:: get_bases=>TensRcrsvGetBases           !returns the base offset for each tensor dimension
-          procedure, public:: get_attributes=>TensRcrsvGetAttributes !returns all major attributes of the tensor for TAL-SH
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
           procedure, public:: has_structure=>TensRcrsvHasStructure   !returns TRUE if the tensor structure (list of one or more constituent subtensors) is defined
@@ -326,6 +333,7 @@
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
           procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
           procedure, public:: get_descriptor=>TensRcrsvGetDescriptor !returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location
+          procedure, public:: get_dense_adapter=>TensRcrsvGetDenseAdapter !returns tens_dense_t for locally stored tensors (for compatibility)
           procedure, public:: conforms_to=>TensRcrsvConformsTo       !returns TRUE if the tensor space/subspace multi-indices are equal to those from another tensor
           procedure, private:: TensRcrsvSplitList                    !splits the tensor into subtensors (a list of either subtensors or just their headers)
           procedure, private:: TensRcrsvSplitVector                  !splits the tensor into subtensors (a vector of either subtensors or just their headers)
@@ -599,6 +607,7 @@
         end interface
 !VISIBILITY:
  !generic non-member:
+        public tens_dense_volume               !returns the volume of a tens_dense_t
         public valid_tensor_layout             !checks validity of the tensor layout
         public cmp_integers                    !generic integer comparator
         public cmp_real                        !generic real number comparator
@@ -746,7 +755,6 @@
         private TensRcrsvGetSpec
         private TensRcrsvGetDims
         private TensRcrsvGetBases
-        private TensRcrsvGetAttributes
         private TensRcrsvAddSubtensor
         private TensRcrsvAddSubtensors
         private TensRcrsvHasStructure
@@ -765,6 +773,7 @@
         private TensRcrsvGetHeader
         private TensRcrsvGetBody
         private TensRcrsvGetDescriptor
+        private TensRcrsvGetDenseAdapter
         private TensRcrsvConformsTo
         private TensRcrsvSplitList
         private TensRcrsvSplitVector
@@ -889,7 +898,28 @@
 
        contains
 !IMPLEMENTATION:
-![Non-member]===========================================
+![Non-member]============================================
+        function tens_dense_volume(this,ierr) result(vol)
+!Returns the volume of a tens_dense_t.
+         implicit none
+         integer(INTL):: vol                         !out: volume
+         class(tens_dense_t), intent(in):: this      !in: locally stored dense tensor
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+
+         vol=0_INTL
+         if(this%num_dims.ge.0) then
+          vol=1_INTL
+          do i=1,this%num_dims
+           vol=vol*this%dims(i)
+          enddo
+         else
+          errc=TEREC_OBJ_UNDEFINED
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function tens_dense_volume
+!-------------------------------------------------------
         function valid_tensor_layout(layout) result(res)
 !Returns TRUE if the tensor layout is valid.
          implicit none
@@ -4597,27 +4627,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvGetBases
-!---------------------------------------------------------------------------------------
-        subroutine TensRcrsvGetAttributes(this,tens_signature,tens_shape,tens_data,ierr)
-!Returns all major attributes of the tensor for TAL-SH.
-         implicit none
-         class(tens_rcrsv_t), intent(in):: this                     !in: tensor
-         type(talsh_tens_signature_t), intent(out):: tens_signature !out: tensor signature for TAL-SH
-         type(talsh_tens_shape_t), intent(out):: tens_shape         !out: tensor shape for TAL-SH
-         type(talsh_tens_data_t), intent(out):: tens_data           !out: tensor data for TAL-SH (only Fortran dimension-led tensors)
-         integer(INTD), intent(out), optional:: ierr                !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.TEREC_SUCCESS) then
-           !`Finish?
-          endif
-         else
-          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensRcrsvGetAttributes
 !------------------------------------------------------------
         subroutine TensRcrsvAddSubtensor(this,subtensor,ierr)
 !Registers a constituent subtensor by providing its tensor header.
@@ -5165,6 +5174,41 @@
          !write(CONS_OUT,'("#MSG(tens_rcrsv_t.get_descriptor): Time = ",F9.6)') thread_wtime(tm); flush(CONS_OUT) !timing
          return
         end function TensRcrsvGetDescriptor
+!----------------------------------------------------------------------
+        function TensRcrsvGetDenseAdapter(this,ierr) result(tens_dense)
+!Returns tens_dense_t for locally stored dense tensors, which is
+!a simpler format for locally stored dense tensors.
+         implicit none
+         type(tens_dense_t):: tens_dense             !out: locally stored dense tensor block
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,n,unres
+         logical:: shpd,locd,symd
+
+         if(this%is_set(errc,num_dims=n,shaped=shpd,unresolved=unres,located=locd,symmetric=symd)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(shpd.and.(unres.eq.0).and.locd.and.(.not.symd)) then
+            tens_dense%body_ptr=this%get_body_ptr(errc)
+            if(errc.eq.TEREC_SUCCESS) then
+             tens_dense%data_kind=this%get_data_type(errc)
+             if(errc.eq.TEREC_SUCCESS) then
+              if(n.gt.0) then
+               call this%get_bases(tens_dense%bases,n,errc)
+               if(errc.eq.TEREC_SUCCESS) call this%get_dims(tens_dense%dims,n,errc)
+              endif
+              if(errc.eq.TEREC_SUCCESS) tens_dense%num_dims=n
+             endif
+            endif
+           else
+            errc=TEREC_INVALID_REQUEST
+           endif
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvGetDenseAdapter
 !------------------------------------------------------------------
         function TensRcrsvConformsTo(this,another,ierr) result(res)
 !Returns TRUE if the tensor space/subspace multi-indices are equal to those from another tensor.
