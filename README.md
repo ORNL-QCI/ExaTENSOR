@@ -9,33 +9,65 @@ Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
 
 LICENSE: GNU Lesser General Public License v.3
 
-PROGRAMMING MODEL: OOP FORTRAN 2003+, C/C++, OpenMP 3+, MPI 3+, CUDA.
+PROGRAMMING MODEL: OOP FORTRAN 2003+, C/C++11, OpenMP 3+, MPI 3+, CUDA.
 
-DESCRIPTION: The project is still UNDER ACTIVE DEVELOPMENT although
-             multiple components are already in production. The ExaTENSOR
-             framework further elaborates on the idea of domain-specific
-             virtual processing, that is, it introduces an intermediate
-             virtual processing layer which can interpret domain-specific
-             code that expresses numerical TENSOR ALGEBRA workloads.
+LIBRARY DEPENDENCIES: MPI, CPU BLAS (optional), cuBLAS (optional), cuTT (optional).
+
+DESCRIPTION: The ExaTENSOR framework further elaborates on the idea of
+             domain-specific virtual processing, that is, it introduces an
+             intermediate virtual processing layer which can interpret
+             domain-specific code expressing numerical TENSOR ALGEBRA workloads.
              ExaTENSOR is not tied to any specific scientific domain and
              can be used for arbitrary numerical tensor computations. So far
              the ExaTENSOR framework has been aiming at adaptive hierarchical
-             tensor algebra (includes dense and block-sparse tensor algebra).
-
-             The distinguishing key design elements:
-             a) Fully formalized domain-specific virtualization of heterogeneous
-                compute nodes and HPC systems;
-             b) Support of new accelerators via the device-unified API layer;
-             c) Recursive (hierarchical) virtualization of the HPC system;
-             d) Support of multiple kinds of domain-specific virtual processors
-                cooperating with each other;
-             e) Recursive (hierarchical) data decomposition and task scheduling;
+             tensor algebra (includes dense and block-sparse tensor algebra
+             as special cases). The distinguishing key elements of ExaTENSOR:
+             a) Fully formalized design of domain-specific virtualization for
+                heterogeneous compute nodes and full HPC systems;
+             b) Hierarchical virtualization of the full HPC system;
+             c) Hierarchical data/work decomposition and task scheduling;
+             d) Support of new hardware accelerators via the device-unified API layer;
+             e) Support of multiple kinds of domain-specific virtual processors
+                with their own roles cooperating with each other;
              f) Adaptive hierarchical tensor representation.
 
-BUILD: Choose the options right for your system in the Makefile header and make.
+BUILD: Choose the right options for your platform in the Makefile header and make it.
        Supported compilers: gcc 8+, Intel 18+, IBM XL 16.1.1 beta5+. Other compilers
        are still buggy in their support of modern Fortran 2003+, unfortunately.
+       Configuration of the Makefile header via environment variables (you may
+       export these variables in advance and Makefile will pick them up):
+       a) WRAP: Change to WRAP if you use Cray compiler wrappers (ftn, cc, CC).
+       b) TOOLKIT: Choose you compiler (prefer GNU).
+       c) BUILD_TYPE: Choose OPT for optimized binary, DEV for debugging.
+       d) MPILIB: Choose MPICH if you use MPICH or its derivative (e.g. Cray-MPICH)
+          or choose OPENMPI if you use OpenMPI or its derivative (e.g. Spectrum-MPI).
+          For either, you will also need to set the path to your chosen MPI library below.
+       e) BLASLIB: Choose an optimized BLAS implementation if you have one. If you set it,
+          you will also need to provide the path to your BLAS library files below.
+       f) GPU_CUDA: Set to CUDA if you have CUDA and want to use it.
+       g) GPU_SM_ARCH: Set the two digits of your GPU compute capability if you use CUDA.
+       h) EXA_OS: Change to NO_LINUX if you have not yet had a pleasure to work in Linux.
+       i) WITH_CUTT: Choose YES if you have cuTT library and want to use it. cuTT fork:
+          https://github.com/DmitryLyakh/cutt.
+          You will also need to provide the path to the cuTT library below.
+       j) PATH_MPICH or PATH_OPENMPI: Set the corresponding path to your chosen MPI library.
+       k) PATH_BLAS_XXX: For you chosen optimized BLAS implementation XXX, provide the path
+          or multiple paths to your BLAS library files following the examples in Makefile.
+          If you chose IBM ESSL, you are also expected to provide paths to the IBM XL
+          C/C++/Fortran runtime libraries via PATH_IBM_XL_XXX, XXX={CPP,FOR,SMP}.
+       l) PATH_CUDA: If you chose to use CUDA, provide the path to it.
+       m) PATH_CUTT: If you chose to use cuTT, provide the path to it.
 
-RUN: An example script run.sh shows how to run ExaTENSOR for a test case (Qforce.x).
-     At least 3 MPI processes are required to run ExaTENSOR. The test configuration
-     utilizes 8 MPI processes, each process running at least 5 OpenMP threads.
+RUN: An example script run.sh shows how to run ExaTENSOR for a test case (Qforce.x)
+     implemented in QFORCE/main.F90. In general, at least 3 MPI processes are needed
+     in order to run ExaTENSOR. The test configuration actually utilizes 8 MPI processes,
+     each process running at least 5 OpenMP threads. This MPI test can still be run on a
+     single node via oversubscription of CPU cores. Environment variables to set:
+     a) QF_PATH: Path to the ExaTENSOR root directory.
+     b) QF_NUM_PROCS: Number of MPI processes, must be 8 for this test.
+     c) QF_PROCS_PER_NODE: Number of MPI processes per node.
+     d) QF_CORES_PER_PROC: Number of CPU cores per MPI process. In case you have less
+        CPU cores than the number of MPI processes, specify the minimum of 1.
+     e) QF_NUM_THREADS: Number of threads per MPI process. Must be at least 8.
+     f) QF_GPUS_PER_PROCESS: Number of exclusive NVIDIA GPUs per MPI process.
+     At the bottom of run.sh, pick or specify your MPI execution command for Qforce.x.
