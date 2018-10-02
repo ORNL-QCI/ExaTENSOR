@@ -21,6 +21,8 @@ export EXA_OS ?= LINUX
 #ADJUST EXTRAS (optional):
 #Fast GPU tensor transpose (cuTT library): [YES|NO]:
 export WITH_CUTT ?= NO
+#Disable actual build: [YES|NO]:
+export EXA_NO_BUILD ?= NO
 
 #SET YOUR LOCAL PATHS (for unwrapped non-Cray builds):
 #MPI library (whichever you have, set one):
@@ -67,6 +69,7 @@ export PATH_CUTT ?= /home/dima/src/cutt
 
 
 $(NAME):
+ifeq ($(EXA_NO_BUILD),NO)
 	$(MAKE) -C ./UTILITY
 	$(MAKE) -C ./GFC
 	$(MAKE) -C ./DDSS
@@ -78,7 +81,7 @@ ifeq ($(EXA_OS),LINUX)
 	$(MAKE) -C ./TN
 endif
 	$(MAKE) -C ./QFORCE
-#Gather headers and module static libraries:
+#Gather headers, modules and libraries:
 	rm -f ./include/*
 	rm -f ./lib/*
 	rm -f ./bin/*
@@ -137,6 +140,7 @@ endif
 endif
 	cp ./libexatensor.a ./lib/
 	rm -rf ./lib/*.o
+endif
 	echo "Finished successfully!"
 
 .PHONY: clean
