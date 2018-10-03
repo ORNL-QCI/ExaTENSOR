@@ -50,6 +50,8 @@ BUILD: Choose the right options for your platform in the Makefile header and mak
        i) WITH_CUTT: Choose YES if you have cuTT library and want to use it. cuTT fork:
           https://github.com/DmitryLyakh/cutt.
           You will also need to provide the path to the cuTT library below.
+       If you do not use Cray compiler wrappers and associated modules, you need to set these
+       as well:
        j) PATH_MPICH or PATH_OPENMPI: Set the corresponding path to your chosen MPI library.
        k) PATH_BLAS_XXX: For you chosen optimized BLAS implementation XXX, provide the path
           or multiple paths to your BLAS library files following the examples in Makefile.

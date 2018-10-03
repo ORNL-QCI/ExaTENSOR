@@ -1,7 +1,7 @@
 !ExaTENSOR: Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/20
+!REVISION: 2018/10/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2098,7 +2098,7 @@
          integer(INTD), intent(in), optional:: branch_fac         !in: aggregation tree branching factor (defaults to 2)
          complex(8), intent(in), optional, target:: metric(:,:)   !in: metric tensor: g_ij=<Psi_i|Psi_j>: Hermitian complex matrix
          logical:: split
-         integer(INTD):: i,l,m,brf,errc
+         integer(INTD):: i,l,m,brf,tlevel,errc
          integer(INTL):: nbnd
          integer(INTL), allocatable:: bndr(:)
          type(vec_tree_iter_t):: vt_it
@@ -2157,9 +2157,10 @@
                 endif
  !Recursively split the full space into subspaces while respecting symmetry boundaries, if any:
                 if(errc.eq.0) then
-                 split=.TRUE.
+                 tlevel=-1; split=.TRUE.
                  tloop: do while(split)
-                  split=.FALSE.
+                  split=.FALSE.; tlevel=tlevel+1
+                  !write(*,'("Splitting Tree Level ",i4)') tlevel !debug
                   do while(errc.eq.GFC_SUCCESS)
   !Process the current tree vertex:
                    up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
@@ -2175,7 +2176,7 @@
                      errc=4; exit tloop
                     endif
                     !write(*,'("Range ")',ADVANCE='NO'); call seg%print_range() !debug
-                    !print *,'to be split into ',m,' segments' !debug
+                    !write(*,'(" to be split into ",i6," segments")') m !debug
                     !print *,'with boundaries ',bndr(1:nbnd) !debug
                     if(nbnd.gt.0) then
                      call seg%split(m,segs,errc,bndr(1:nbnd))

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/28
+!REVISION: 2018/10/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -8026,7 +8026,7 @@
                 errc=method%apply(tensor0,alpha)
                 if(errc.ne.0) then
                  if(VERBOSE) then
-                  write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorInit): Used-defined method failed with error ",i11)') errc
+                  write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorInit): User-defined method failed with error ",i11)') errc
                   flush(CONS_OUT)
                  endif
                  errc=-8
