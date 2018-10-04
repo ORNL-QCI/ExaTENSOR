@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/01
+!REVISION: 2018/10/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -151,6 +151,7 @@
           procedure, public:: get_name=>TensSignatureGetName        !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensSignatureGetRank        !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensSignatureGetSpec        !returns the tensor subspace multi-index (specification)
+          procedure, public:: get_space_ids=>TensSignatureGetSpaceIds !returns space/subspace id for all tensor dimensions
           procedure, public:: get_bases=>TensSignatureGetBases      !returns the base offset for each tensor dimension
           procedure, public:: relate=>TensSignatureRelate           !relates the tensor signature to another tensor signature: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
           procedure, public:: compare=>TensSignatureCompare         !compares the tensor signature with another tensor signature: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
@@ -202,6 +203,7 @@
           procedure, public:: get_name=>TensHeaderGetName           !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensHeaderGetRank           !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensHeaderGetSpec           !returns the tensor subspace multi-index (specification)
+          procedure, public:: get_space_ids=>TensHeaderGetSpaceIds  !returns space/subspace id for all tensor dimensions
           procedure, public:: get_dims=>TensHeaderGetDims           !returns tensor dimension extents
           procedure, public:: get_bases=>TensHeaderGetBases         !returns the base offset for each tensor dimension
           procedure, public:: num_groups=>TensHeaderNumGroups       !returns the total number of non-trivial index groups defined in the tensor shape
@@ -313,6 +315,7 @@
           procedure, public:: get_name=>TensRcrsvGetName             !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensRcrsvGetRank             !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensRcrsvGetSpec             !returns the tensor subspace multi-index (specification)
+          procedure, public:: get_space_ids=>TensRcrsvGetSpaceIds    !returns space/subspace id for all tensor dimensions
           procedure, public:: get_dims=>TensRcrsvGetDims             !returns tensor dimension extents
           procedure, public:: get_bases=>TensRcrsvGetBases           !returns the base offset for each tensor dimension
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
@@ -646,6 +649,7 @@
         private TensSignatureGetName
         private TensSignatureGetRank
         private TensSignatureGetSpec
+        private TensSignatureGetSpaceIds
         private TensSignatureGetBases
         private TensSignatureRelate
         private TensSignatureCompare
@@ -681,6 +685,7 @@
         private TensHeaderGetName
         private TensHeaderGetRank
         private TensHeaderGetSpec
+        private TensHeaderGetSpaceIds
         private TensHeaderGetDims
         private TensHeaderGetBases
         private TensHeaderNumGroups
@@ -753,6 +758,7 @@
         private TensRcrsvGetName
         private TensRcrsvGetRank
         private TensRcrsvGetSpec
+        private TensRcrsvGetSpaceIds
         private TensRcrsvGetDims
         private TensRcrsvGetBases
         private TensRcrsvAddSubtensor
@@ -1807,6 +1813,30 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignatureGetSpec
+!--------------------------------------------------------------------------
+        subroutine TensSignatureGetSpaceIds(this,space_id,subspace_id,ierr)
+!Returns space/subspace id for all tensor dimensions.
+         implicit none
+         class(tens_signature_t), intent(in):: this     !in: tensor signature
+         integer(INTD), intent(inout):: space_id(1:)    !out: space ids
+         integer(INTL), intent(inout):: subspace_id(1:) !out: subspace ids
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(this%num_dims.gt.0) then
+          subspace_id(1:this%num_dims)=this%space_idx(1:this%num_dims)
+          if(allocated(this%hspace)) then
+           space_id(1:this%num_dims)=this%hspace(1:this%num_dims)%space_id
+          else
+           space_id(1:this%num_dims)=-1
+          endif
+         else
+          if(this%num_dims.ne.0) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensSignatureGetSpaceIds
 !-----------------------------------------------------------------
         subroutine TensSignatureGetBases(this,bases,num_dims,ierr)
 !Returns base offset for each tensor dimension. Basis function numeration
@@ -3004,6 +3034,20 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensHeaderGetSpec
+!-----------------------------------------------------------------------
+        subroutine TensHeaderGetSpaceIds(this,space_id,subspace_id,ierr)
+!Returns space/subspace id for all tensor dimensions.
+         implicit none
+         class(tens_header_t), intent(in):: this        !in: tensor header
+         integer(INTD), intent(inout):: space_id(1:)    !out: space ids
+         integer(INTL), intent(inout):: subspace_id(1:) !out: subspace ids
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         call this%signature%get_space_ids(space_id,subspace_id,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderGetSpaceIds
 !------------------------------------------------------------
         subroutine TensHeaderGetDims(this,dims,num_dims,ierr)
 !Returns tensor dimension extents together with the tensor rank.
@@ -4598,6 +4642,20 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvGetSpec
+!----------------------------------------------------------------------
+        subroutine TensRcrsvGetSpaceIds(this,space_id,subspace_id,ierr)
+!Returns space/subspace id for all tensor dimensions.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this         !in: tensor
+         integer(INTD), intent(inout):: space_id(1:)    !out: space ids
+         integer(INTL), intent(inout):: subspace_id(1:) !out: subspace ids
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         call this%header%get_space_ids(space_id,subspace_id,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvGetSpaceIds
 !-----------------------------------------------------------
         subroutine TensRcrsvGetDims(this,dims,num_dims,ierr)
 !Returns tensor dimension extents together with the tensor rank.

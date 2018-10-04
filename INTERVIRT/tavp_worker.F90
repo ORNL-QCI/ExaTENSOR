@@ -3785,7 +3785,7 @@
          class(tens_instr_t), intent(in), target:: this  !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD), intent(out), optional:: num_oprs !out: number of the output tensor instruction operands
-         integer(INTD), intent(out), pointer, optional:: out_fetch(:) !out: fetch flags for the output tensor operands
+         integer(INTD), intent(inout), optional:: out_fetch(0:) !out: fetch flags for the output tensor operands
          integer(INTD):: errc,n
 
          out_oprs=>NULL(); n=0
@@ -3801,7 +3801,7 @@
          endif
          if(present(num_oprs)) num_oprs=n
          if(present(out_fetch)) then
-          out_fetch=>NULL(); if(errc.eq.0.and.n.gt.0) out_fetch(0:)=>this%out_fetch(0:n-1)
+          if(errc.eq.0.and.n.gt.0) out_fetch(0:n-1)=this%out_fetch(0:n-1)
          endif
          if(present(ierr)) ierr=errc
          return
