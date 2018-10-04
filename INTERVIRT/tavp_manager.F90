@@ -1956,7 +1956,7 @@
          endif
          if(present(num_oprs)) num_oprs=n
          if(present(out_fetch)) then
-          out_fetch=>NULL(); if(n.gt.0) out_fetch(0:)=>this%out_fetch(0:n-1)
+          out_fetch=>NULL(); if(errc.eq.0.and.n.gt.0) out_fetch(0:)=>this%out_fetch(0:n-1)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -5085,7 +5085,7 @@
          if(errc.eq.DSVP_SUCCESS) then
           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
            if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
-            out_oprs=>tens_instr%get_output_operands(errc,num_oprs=n)
+            out_oprs(0:)=>tens_instr%get_output_operands(errc,n)
             if(errc.eq.0) then
              if(n.gt.0) then
               if(this%tavp_is_bottom) then

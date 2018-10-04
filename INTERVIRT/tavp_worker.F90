@@ -3801,7 +3801,7 @@
          endif
          if(present(num_oprs)) num_oprs=n
          if(present(out_fetch)) then
-          out_fetch=>NULL(); if(n.gt.0) out_fetch(0:)=>this%out_fetch(0:n-1)
+          out_fetch=>NULL(); if(errc.eq.0.and.n.gt.0) out_fetch(0:)=>this%out_fetch(0:n-1)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -6314,7 +6314,7 @@
            if(errc.eq.DSVP_SUCCESS) then
             n=tens_instr%get_num_operands(errc)
             if(errc.eq.DSVP_SUCCESS.and.n.gt.0) then
-             out_oprs=>tens_instr%get_output_operands(errc,nou)
+             out_oprs(0:)=>tens_instr%get_output_operands(errc,nou)
              if(errc.eq.0.and.lbound(out_oprs,1).eq.0) then
               do i=0,nou-1
                oprnd=>tens_instr%get_operand(out_oprs(i),errc) !output tensor operand
@@ -6668,7 +6668,7 @@
             if(errc.eq.DSVP_SUCCESS.and.(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST)) then
              n=tens_instr%get_num_operands(errc)
              if(errc.eq.DSVP_SUCCESS.and.n.gt.0) then
-              out_oprs=>tens_instr%get_output_operands(errc,nou)
+              out_oprs(0:)=>tens_instr%get_output_operands(errc,nou)
               if(errc.eq.0.and.lbound(out_oprs,1).eq.0) then
                if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then !previously locally injected accumulate instruction: A+=Tx
  !Get the persistent tensor in case the accumulator tensor is evicted:
