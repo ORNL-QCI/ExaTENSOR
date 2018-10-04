@@ -606,7 +606,10 @@
 !-------------------------------------------------------------------
         function TreeIterMoveToCousin(this,to_previous) result(ierr)
 !Moves the iterator either to the next or to the previous cousin.
-!A cousin is a tree vertex at the same tree level.
+!A cousin is a tree vertex at the same tree level. In case the
+!current iterator position has no next/previous cousin, it will
+!not change and the error code GFC_NO_MOVE will be returned.
+!In case of real errors, the iterator will become undefined.
          implicit none
          integer(INTD):: ierr                        !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this    !inout: iterator
@@ -635,12 +638,14 @@
              n=n+1
             endif
            enddo mloop
-           if(ierr.eq.GFC_SUCCESS.and.n.ne.0) ierr=GFC_ERROR
+           if(ierr.eq.GFC_NO_MOVE) ierr=GFC_ERROR
            if(associated(this%current,this%container%root)) then
             call this%current%decr_ref_()
             this%current=>tvp
             call this%current%incr_ref_()
-            if(ierr.eq.GFC_SUCCESS) ierr=GFC_NO_MOVE
+            if(ierr.eq.GFC_SUCCESS) ierr=GFC_NO_MOVE !no next/previous sibling (not an error)
+           else
+            if(ierr.eq.GFC_SUCCESS.and.n.ne.0) ierr=GFC_ERROR
            endif
           else
            ierr=GFC_CORRUPTED_CONT
