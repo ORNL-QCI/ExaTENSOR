@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/27
+!REVISION: 2018/10/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2863,6 +2863,7 @@
              class is(tens_instr_t)
               if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
                ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/) !the single tensor operand of TENSOR_CREATE is an output operand
+               ds_instr%out_fetch(0:ds_instr%num_out_oprnds-1)=0
               elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
                ds_instr%num_out_oprnds=0 !TENSOR_DESTROY does not have output operands
               endif
@@ -2884,29 +2885,43 @@
           subroutine decode_instr_tens_transform(jerr)
            !TRANSFORMS a tensor, either from a defined or undefined state
            integer(INTD), intent(out):: jerr
+           integer(INTD):: jl
            class(ds_instr_ctrl_t), pointer:: instr_ctrl
            class(ctrl_tens_trans_t), pointer:: tens_trans_ctrl
+           character(EXA_MAX_METHOD_NAME_LEN):: method_name
+           logical:: defined
 
            allocate(tens_trans_ctrl,STAT=jerr) !tensor transformation control will be owned by the tensor instruction
            if(jerr.eq.0) then
             call tens_trans_ctrl%unpack(instr_packet,jerr)
             if(jerr.eq.0) then
-             instr_ctrl=>tens_trans_ctrl; call ds_instr%set_control(instr_ctrl,jerr) !tensor transformation control ownership is moved to the tensor instruction
-             if(jerr.eq.DSVP_SUCCESS) then
-              tens_trans_ctrl=>NULL()
-              call ds_instr%alloc_operands(1,jerr)
+             call tens_trans_ctrl%get_method(method_name,jl,jerr,defined=defined)
+             if(jerr.eq.0) then
+              instr_ctrl=>tens_trans_ctrl; call ds_instr%set_control(instr_ctrl,jerr) !tensor transformation control ownership is moved to the tensor instruction
               if(jerr.eq.DSVP_SUCCESS) then
-               call decode_instr_operands(jerr)
-               if(jerr.eq.0) then !mark output operands
-                select type(ds_instr)
-                class is(tens_instr_t)
-                 ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/) !tensor operand 0 is the output operand
-                end select
+               tens_trans_ctrl=>NULL()
+               call ds_instr%alloc_operands(1,jerr)
+               if(jerr.eq.DSVP_SUCCESS) then
+                call decode_instr_operands(jerr)
+                if(jerr.eq.0) then !mark output operands
+                 select type(ds_instr)
+                 class is(tens_instr_t)
+                  ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/) !tensor operand 0 is the output operand
+                  if(defined) then
+                   ds_instr%out_fetch(0:ds_instr%num_out_oprnds-1)=1 !transform requires prefetch of output
+                  else
+                   ds_instr%out_fetch(0:ds_instr%num_out_oprnds-1)=0 !initialization does not require prefetch of output
+                  endif
+                 end select
+                else
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-6
+                endif
                else
-                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-5
+                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-5
                endif
               else
-               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-4
+               deallocate(tens_trans_ctrl)
+               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-4
               endif
              else
               deallocate(tens_trans_ctrl)
@@ -2947,6 +2962,7 @@
                 select type(ds_instr)
                 class is(tens_instr_t)
                  ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/) !tensor operand 0 is the output operand
+                 ds_instr%out_fetch(0:ds_instr%num_out_oprnds-1)=0
                 end select
                else
                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-5
