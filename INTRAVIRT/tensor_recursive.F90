@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/04
+!REVISION: 2018/10/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -7617,7 +7617,7 @@
           this%tens_arg(i)=src%tens_arg(i)
          enddo
          this%definer=>src%definer
-         this%definer_name=src%definer_name
+         if(allocated(src%definer_name)) this%definer_name=src%definer_name
          this%alpha=src%alpha
          this%undefined=src%undefined
          return
@@ -7701,11 +7701,13 @@
            this%undefined=.TRUE.; if(present(defined)) this%undefined=(.not.defined)
            if(present(method_name)) then
             if(allocated(this%definer_name)) deallocate(this%definer_name)
-            allocate(this%definer_name,SOURCE=method_name)
-            this%definer=>NULL()
+            if(len_trim(method_name).gt.0) then
+             allocate(this%definer_name,SOURCE=method_name)
+             this%definer=>NULL()
 #if !(defined(__GNUC__) && __GNUC__ < 8)
-            if(present(method_map)) this%definer=>method_map(method_name,errc)
+             if(present(method_map)) this%definer=>method_map(method_name,errc)
 #endif
+            endif
             if(present(scalar_value)) this%alpha=scalar_value
            else
 #if !(defined(__GNUC__) && __GNUC__ < 8)

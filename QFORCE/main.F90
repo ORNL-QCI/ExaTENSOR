@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/03
+!REVISION: 2018/10/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -281,7 +281,15 @@
            ierr=exatns_dump_cache()
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
            write(6,'("Tensor cache dumped")')
- !Initialize input tensors:
+ !Initialize tensors:
+  !dtens:
+           write(6,'("Initializing tensor dtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_init(dtens,(0d0,0d0))
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
   !ltens:
            write(6,'("Initializing tensor ltens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()

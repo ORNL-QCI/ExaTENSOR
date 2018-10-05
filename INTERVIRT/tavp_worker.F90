@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/04
+!REVISION: 2018/10/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4046,11 +4046,15 @@
                class is(ctrl_tens_trans_t)
                 call instr_ctrl%get_method(method_name,sl,jerr,scalar=alpha,defined=defined)
                 if(jerr.eq.0) then
+                 if(sl.gt.0) then
 #if !(defined(__GNUC__) && __GNUC__ < 8)
-                 call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl),method_map_f)
+                  call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl),method_map_f)
 #else
-                 call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl))
+                  call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl))
 #endif
+                 else
+                  call tens_operation%set_method(jerr,alpha,defined)
+                 endif
                  if(jerr.ne.TEREC_SUCCESS) jerr=-6
                 else
                  jerr=-5

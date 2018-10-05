@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/04
+!REVISION: 2018/10/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2109,11 +2109,15 @@
                class is(ctrl_tens_trans_t)
                 call instr_ctrl%get_method(method_name,sl,jerr,scalar=alpha,defined=defined)
                 if(jerr.eq.0) then
+                 if(sl.gt.0) then
 #if !(defined(__GNUC__) && __GNUC__ < 8)
-                 call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl),method_map_f)
+                  call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl),method_map_f)
 #else
-                 call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl))
+                  call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl))
 #endif
+                 else
+                  call tens_operation%set_method(jerr,alpha,defined)
+                 endif
                  if(jerr.ne.TEREC_SUCCESS) jerr=-6
                 else
                  jerr=-5
@@ -2132,6 +2136,10 @@
            class default
             jerr=-1
            end select
+           if(VERBOSE.and.jerr.ne.0) then
+            write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_instr_t.get_operation:get_tens_transformation): Error ",i11)') jerr
+            flush(CONS_OUT)
+           endif
            return
           end subroutine get_tens_transformation
 
