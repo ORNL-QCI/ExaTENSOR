@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/10/01
+!REVISION: 2018/10/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -96,6 +96,31 @@
        interface exatns_tensor_traverse
         module procedure exatns_tensor_transform
        end interface exatns_tensor_traverse
+  !Copy a tensor:
+       interface exatns_tensor_copy
+        module procedure exatns_tensor_copy_us
+        module procedure exatns_tensor_copy_eu
+       end interface exatns_tensor_copy
+  !Fold a tensor:
+       interface exatns_tensor_fold
+        module procedure exatns_tensor_fold_us
+        module procedure exatns_tensor_fold_eu
+       end interface exatns_tensor_fold
+  !Unfold a tensor:
+       interface exatns_tensor_unfold
+        module procedure exatns_tensor_unfold_us
+        module procedure exatns_tensor_unfold_eu
+       end interface exatns_tensor_unfold
+  !Add a tensor:
+       interface exatns_tensor_add
+        module procedure exatns_tensor_add_us
+        module procedure exatns_tensor_add_eu
+       end interface exatns_tensor_add
+  !Contract tensors:
+       interface exatns_tensor_contract
+        module procedure exatns_tensor_contract_us
+        module procedure exatns_tensor_contract_eu
+       end interface exatns_tensor_contract
 !GLOBAL DATA:
  !ExaTENSOR runtime status:
        type(exatns_rt_status_t), private:: exatns_rt_status
@@ -165,6 +190,16 @@
        public exatns_tensor_ternary_op    !custom ternary tensor operation via a user-defined (external) method: tensor0 = Func(tensor0,tensor1,tensor2,scalar)
        private exatns_tensor_init_scalar  !tensor initialization by a scalar
        private exatns_tensor_init_method  !tensor initialization by a user-defined method
+       private exatns_tensor_copy_us
+       private exatns_tensor_copy_eu
+       private exatns_tensor_fold_us
+       private exatns_tensor_fold_eu
+       private exatns_tensor_unfold_us
+       private exatns_tensor_unfold_eu
+       private exatns_tensor_add_us
+       private exatns_tensor_add_eu
+       private exatns_tensor_contract_us
+       private exatns_tensor_contract_eu
  !Internal:
        private tavp_role_rank
        private add_new_instruction
@@ -893,22 +928,25 @@
         call quit(-1,'FATAL(exatensor:index_unregister): Not implemented yet!') !`Implement
         return
        end function exatns_index_unregister
-![ExaTENSOR Tensor API]-------------------------------------------------------------
-       function exatns_tensor_create_scalar(tensor,tens_name,data_kind) result(ierr)
+![ExaTENSOR Tensor API]------------------------------------------------------------------
+       function exatns_tensor_create_scalar(tensor,tens_name,data_kind,sync) result(ierr)
 !Creates a scalar (order-0 tensor).
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !out: tensor (must be empty on entrance)
         character(*), intent(in):: tens_name       !in: symbolic tensor name
         integer(INTD), intent(in):: data_kind      !in: data kind of tensor elements: {EXA_DATA_KIND_XX: XX = R4,R8,C4,C8}
+        logical, intent(in), optional:: sync       !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
         integer(INTD):: hspaces(1)
         integer(INTL):: subspaces(1)
+        logical:: synch
 
-        ierr=exatns_tensor_create_tensor(tensor,tens_name,hspaces(1:0),subspaces(1:0),data_kind)
+        synch=.TRUE.; if(present(sync)) synch=sync
+        ierr=exatns_tensor_create_tensor(tensor,tens_name,hspaces(1:0),subspaces(1:0),data_kind,sync=synch)
         return
        end function exatns_tensor_create_scalar
-!-------------------------------------------------------------------------------------------------------------------------
-       function exatns_tensor_create_tensor(tensor,tens_name,hspaces,subspaces,data_kind,dim_extent,dim_group,group_spec)&
+!-----------------------------------------------------------------------------------------------------------------------------
+       function exatns_tensor_create_tensor(tensor,tens_name,hspaces,subspaces,data_kind,dim_extent,dim_group,group_spec,sync)&
                                            &result(ierr)
 !Creates a tensor.
         implicit none
@@ -921,6 +959,7 @@
         integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extent for each tensor dimension (0 means deferred, to be set later)
         integer(INTD), intent(in), optional:: dim_group(1:)  !in: symmetric group (>=0) for each tensor dimension (0 means default)
         integer(INTD), intent(in), optional:: group_spec(1:) !in: symmetric group specification for non-trivial symmetric groups (see tensor_recursive.F90)
+        logical, intent(in), optional:: sync                 !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
         class(tens_instr_mng_t), pointer:: tens_instr
         integer(INTD):: trank
         integer(INTL):: ip
@@ -1007,14 +1046,22 @@
         else
          ierr=-1
         endif
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
        end function exatns_tensor_create_tensor
-!---------------------------------------------------------
-       function exatns_tensor_destroy(tensor) result(ierr)
+!--------------------------------------------------------------
+       function exatns_tensor_destroy(tensor,sync) result(ierr)
 !Destroys a tensor.
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
+        logical, intent(in), optional:: sync       !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
         class(tens_instr_mng_t), pointer:: tens_instr
         integer(INTL):: ip
 
@@ -1048,6 +1095,13 @@
         else
          ierr=-1
         endif
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
        end function exatns_tensor_destroy
 !---------------------------------------------------------------------------------
@@ -1073,28 +1127,44 @@
         endif
         return
        end function exatns_tensor_get
-!---------------------------------------------------------------
-       function exatns_tensor_load(tensor,filename) result(ierr)
+!--------------------------------------------------------------------
+       function exatns_tensor_load(tensor,filename,sync) result(ierr)
 !Loads a tensor from an external storage.
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
         character(*), intent(in):: filename        !in: file name
+        logical, intent(in), optional:: sync       !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
 
         ierr=EXA_SUCCESS
         call quit(-1,'FATAL(exatensor:tensor_load): Not implemented yet!') !`Implement
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
        end function exatns_tensor_load
-!---------------------------------------------------------------
-       function exatns_tensor_save(tensor,filename) result(ierr)
+!--------------------------------------------------------------------
+       function exatns_tensor_save(tensor,filename,sync) result(ierr)
 !Saves a tensor in an external storage.
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !in: tensor
         character(*), intent(in):: filename        !in: file name
+        logical, intent(in), optional:: sync       !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
 
         ierr=EXA_SUCCESS
         call quit(-1,'FATAL(exatensor:tensor_save): Not implemented yet!') !`Implement
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
        end function exatns_tensor_save
 !------------------------------------------------------------
@@ -1109,14 +1179,15 @@
         call quit(-1,'FATAL(exatensor:tensor_status): Not implemented yet!') !`Implement
         return
        end function exatns_tensor_status
-![ExaTENSOR Tensor Operation API]------------------------------------
-       function exatns_tensor_init_scalar(tensor,scalar) result(ierr)
+![ExaTENSOR Tensor Operation API]-----------------------------------------
+       function exatns_tensor_init_scalar(tensor,scalar,sync) result(ierr)
 !Initializes all tensor elements to a given scalar value. If <scalar> is
 !absent, tensor elements will be initialized to random values.
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
         complex(8), intent(in), optional:: scalar  !in: scalar
+        logical, intent(in), optional:: sync       !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
         class(tens_instr_mng_t), pointer:: tens_instr
         type(tens_transformation_t):: tens_init
         integer(INTL):: ip
@@ -1160,15 +1231,23 @@
         else
          ierr=-1
         endif
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
        end function exatns_tensor_init_scalar
-!--------------------------------------------------------------------
-       function exatns_tensor_init_method(tensor,method) result(ierr)
+!-------------------------------------------------------------------------
+       function exatns_tensor_init_method(tensor,method,sync) result(ierr)
 !Initializes the tensor via a user-defined (registered) method.
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
         character(*), intent(in):: method          !in: registered method name
+        logical, intent(in), optional:: sync       !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
         class(tens_instr_mng_t), pointer:: tens_instr
         type(tens_transformation_t):: tens_init
         integer(INTL):: ip
@@ -1212,15 +1291,23 @@
         else
          ierr=-1
         endif
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
        end function exatns_tensor_init_method
-!------------------------------------------------------------------
-       function exatns_tensor_transform(tensor,method) result(ierr)
+!-----------------------------------------------------------------------
+       function exatns_tensor_transform(tensor,method,sync) result(ierr)
 !Transforms the tensor in-place via a user-defined (registered) method.
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
         character(*), intent(in):: method          !in: registered method name
+        logical, intent(in), optional:: sync       !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
         class(tens_instr_mng_t), pointer:: tens_instr
         type(tens_transformation_t):: tens_trans
         integer(INTL):: ip
@@ -1264,10 +1351,17 @@
         else
          ierr=-1
         endif
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
        end function exatns_tensor_transform
-!----------------------------------------------------------------------------
-       function exatns_tensor_copy(tensor_out,tensor_in,pattern) result(ierr)
+!------------------------------------------------------------------------------------
+       function exatns_tensor_copy_us(tensor_out,tensor_in,pattern,sync) result(ierr)
 !Copies the content of one tensor into another tensor with an option of permutation,
 !and/or slicing or insertion.
         implicit none
@@ -1275,13 +1369,37 @@
         type(tens_rcrsv_t), intent(inout):: tensor_out !inout: output tensor
         type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
         character(*), intent(in), optional:: pattern   !in: symbolic permutation pattern
+        logical, intent(in), optional:: sync           !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
 
         ierr=EXA_SUCCESS
         call quit(-1,'FATAL(exatensor:tensor_copy): Not implemented yet!') !`Implement
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
-       end function exatns_tensor_copy
-!----------------------------------------------------------------------------
-       function exatns_tensor_fold(tensor_out,tensor_in,pattern) result(ierr)
+       end function exatns_tensor_copy_us
+!----------------------------------------------------------------------------------------
+       function exatns_tensor_copy_eu(sym_pattern,tensor_out,tensor_in,sync) result(ierr)
+!Copies the content of one tensor into another tensor with an option of permutation,
+!and/or slicing or insertion.
+        implicit none
+        integer(INTD):: ierr                           !out: error code
+        character(*), intent(in):: sym_pattern         !in: symbolic permutation pattern
+        type(tens_rcrsv_t), intent(inout):: tensor_out !inout: output tensor
+        type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
+        logical, intent(in), optional:: sync           !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
+        logical:: synch
+
+        synch=.TRUE.; if(present(sync)) synch=sync
+        ierr=exatns_tensor_copy_us(tensor_out,tensor_in,sym_pattern,sync=synch)
+        return
+       end function exatns_tensor_copy_eu
+!------------------------------------------------------------------------------------
+       function exatns_tensor_fold_us(tensor_out,tensor_in,pattern,sync) result(ierr)
 !Folds two or more dimensions of the input tensor, producing an output tensor
 !of a lower rank (lower order). In other words, flattening.
         implicit none
@@ -1289,13 +1407,37 @@
         type(tens_rcrsv_t), intent(inout):: tensor_out !inout: output tensor
         type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
         character(*), intent(in):: pattern             !in: symbolic folding pattern
+        logical, intent(in), optional:: sync           !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
 
         ierr=EXA_SUCCESS
         call quit(-1,'FATAL(exatensor:tensor_fold): Not implemented yet!') !`Implement
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
-       end function exatns_tensor_fold
-!------------------------------------------------------------------------------
-       function exatns_tensor_unfold(tensor_out,tensor_in,pattern) result(ierr)
+       end function exatns_tensor_fold_us
+!----------------------------------------------------------------------------------------
+       function exatns_tensor_fold_eu(sym_pattern,tensor_out,tensor_in,sync) result(ierr)
+!Folds two or more dimensions of the input tensor, producing an output tensor
+!of a lower rank (lower order). In other words, flattening.
+        implicit none
+        integer(INTD):: ierr                           !out: error code
+        character(*), intent(in):: sym_pattern         !in: symbolic folding pattern
+        type(tens_rcrsv_t), intent(inout):: tensor_out !inout: output tensor
+        type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
+        logical, intent(in), optional:: sync           !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
+        logical:: synch
+
+        synch=.TRUE.; if(present(sync)) synch=sync
+        ierr=exatns_tensor_fold_us(tensor_out,tensor_in,sym_pattern,sync=synch)
+        return
+       end function exatns_tensor_fold_eu
+!--------------------------------------------------------------------------------------
+       function exatns_tensor_unfold_us(tensor_out,tensor_in,pattern,sync) result(ierr)
 !Unfolds dimensions of the input tensor, producing an output tensor
 !of a higher rank (higher order).
         implicit none
@@ -1303,38 +1445,99 @@
         type(tens_rcrsv_t), intent(inout):: tensor_out !inout: output tensor
         type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
         character(*), intent(in):: pattern             !in: symbolic unfolding pattern
+        logical, intent(in), optional:: sync           !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
 
         ierr=EXA_SUCCESS
         call quit(-1,'FATAL(exatensor:tensor_unfold): Not implemented yet!') !`Implement
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
-       end function exatns_tensor_unfold
-!--------------------------------------------------------------
-       function exatns_tensor_scale(tensor,factor) result(ierr)
+       end function exatns_tensor_unfold_us
+!------------------------------------------------------------------------------------------
+       function exatns_tensor_unfold_eu(sym_pattern,tensor_out,tensor_in,sync) result(ierr)
+!Unfolds dimensions of the input tensor, producing an output tensor
+!of a higher rank (higher order).
+        implicit none
+        integer(INTD):: ierr                           !out: error code
+        character(*), intent(in):: sym_pattern         !in: symbolic unfolding pattern
+        type(tens_rcrsv_t), intent(inout):: tensor_out !inout: output tensor
+        type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
+        logical, intent(in), optional:: sync           !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
+        logical:: synch
+
+        synch=.TRUE.; if(present(sync)) synch=sync
+        ierr=exatns_tensor_unfold_us(tensor_out,tensor_in,sym_pattern,sync=synch)
+        return
+       end function exatns_tensor_unfold_eu
+!-------------------------------------------------------------------
+       function exatns_tensor_scale(tensor,factor,sync) result(ierr)
 !Operation: tensor *= factor
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
         complex(8), intent(in):: factor            !in: multiplication factor
+        logical, intent(in), optional:: sync       !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
 
         ierr=EXA_SUCCESS
+        call quit(-1,'FATAL(exatensor:tensor_scale): Not implemented yet!') !`Implement
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
        end function exatns_tensor_scale
-!-----------------------------------------------------------------------------
-       function exatns_tensor_add(tensor0,tensor1,pattern,factor) result(ierr)
-!Operation: tensor0 += tensor1 * factor
+!----------------------------------------------------------------------------------------
+       function exatns_tensor_add_us(tensor0,tensor1,pattern,prefactor,sync) result(ierr)
+!Operation: tensor0 += tensor1 * prefactor
         implicit none
         integer(INTD):: ierr                         !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor0  !inout: tensor
         type(tens_rcrsv_t), intent(inout):: tensor1  !in: tensor
         character(*), intent(in), optional:: pattern !in: symbolic permutation pattern
-        complex(8), intent(in), optional:: factor    !in: scalar factor
+        complex(8), intent(in), optional:: prefactor !in: scalar factor
+        logical, intent(in), optional:: sync         !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
 
         ierr=EXA_SUCCESS
         call quit(-1,'FATAL(exatensor:tensor_add): Not implemented yet!') !`Implement
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
-       end function exatns_tensor_add
-!----------------------------------------------------------------------------------------------------------
-       function exatns_tensor_contract(tensor0,tensor1,tensor2,pattern,prefactor,restrictions) result(ierr)
+       end function exatns_tensor_add_us
+!--------------------------------------------------------------------------------------------
+       function exatns_tensor_add_eu(sym_pattern,tensor0,tensor1,prefactor,sync) result(ierr)
+!Operation: tensor0 += tensor1 * prefactor
+        implicit none
+        integer(INTD):: ierr                         !out: error code
+        character(*), intent(in):: sym_pattern       !in: symbolic permutation pattern
+        type(tens_rcrsv_t), intent(inout):: tensor0  !inout: tensor
+        type(tens_rcrsv_t), intent(inout):: tensor1  !in: tensor
+        complex(8), intent(in), optional:: prefactor !in: scalar factor
+        logical, intent(in), optional:: sync         !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
+        logical:: synch
+
+        synch=.TRUE.; if(present(sync)) synch=sync
+        if(present(prefactor)) then
+         ierr=exatns_tensor_add_us(tensor0,tensor1,sym_pattern,prefactor,sync=synch)
+        else
+         ierr=exatns_tensor_add_us(tensor0,tensor1,sym_pattern,sync=synch)
+        endif
+        return
+       end function exatns_tensor_add_eu
+!------------------------------------------------------------------------------------------------------------------
+       function exatns_tensor_contract_us(tensor0,tensor1,tensor2,pattern,prefactor,restrictions,sync) result(ierr)
 !Operation: Tensor contraction: tensor0 += tensor1 * tensor2 * prefactor
         implicit none
         integer(INTD):: ierr
@@ -1344,6 +1547,7 @@
         character(*), intent(in):: pattern                !in: symbolic tensor contraction pattern
         complex(8), intent(in), optional:: prefactor      !in: scalar prefactor
         character(*), intent(in), optional:: restrictions !in: symbolic specification of operational index restrictions
+        logical, intent(in), optional:: sync              !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
         class(tens_instr_mng_t), pointer:: tens_instr
         type(tens_contraction_t):: tens_contr
         integer(INTD):: errc,cpl,conj_bits,contr_ptrn(1:MAX_TENSOR_RANK*2)
@@ -1414,8 +1618,45 @@
         else
          if(ierr.eq.EXA_SUCCESS) ierr=-1
         endif
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
         return
-       end function exatns_tensor_contract
+       end function exatns_tensor_contract_us
+!----------------------------------------------------------------------------------------------------------------------
+       function exatns_tensor_contract_eu(sym_pattern,tensor0,tensor1,tensor2,prefactor,restrictions,sync) result(ierr)
+!Operation: Tensor contraction: tensor0 += tensor1 * tensor2 * prefactor
+        implicit none
+        integer(INTD):: ierr
+        character(*), intent(in):: sym_pattern            !in: symbolic tensor contraction pattern
+        type(tens_rcrsv_t), intent(inout):: tensor0       !inout: tensor
+        type(tens_rcrsv_t), intent(inout):: tensor1       !in: tensor
+        type(tens_rcrsv_t), intent(inout):: tensor2       !in: tensor
+        complex(8), intent(in), optional:: prefactor      !in: scalar prefactor
+        character(*), intent(in), optional:: restrictions !in: symbolic specification of operational index restrictions
+        logical, intent(in), optional:: sync              !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
+        logical:: synch
+
+        synch=.TRUE.; if(present(sync)) synch=sync
+        if(present(restrictions)) then
+         if(present(prefactor)) then
+          ierr=exatns_tensor_contract_us(tensor0,tensor1,tensor2,sym_pattern,prefactor,restrictions,sync=synch)
+         else
+          ierr=exatns_tensor_contract_us(tensor0,tensor1,tensor2,sym_pattern,restrictions=restrictions,sync=synch)
+         endif
+        else
+         if(present(prefactor)) then
+          ierr=exatns_tensor_contract_us(tensor0,tensor1,tensor2,sym_pattern,prefactor,sync=synch)
+         else
+          ierr=exatns_tensor_contract_us(tensor0,tensor1,tensor2,sym_pattern,sync=synch)
+         endif
+        endif
+        return
+       end function exatns_tensor_contract_eu
 !---------------------------------------------------------------------------------
        function exatns_tensor_unary_op(tensor0,method,scalar,control) result(ierr)
 !Custom operation: tensor0 = Func(tensor0,scalar)
