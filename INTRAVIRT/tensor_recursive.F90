@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/08
+!REVISION: 2018/10/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -790,6 +790,7 @@
         private TensRcrsvPrintHead
         private TensRcrsvRename
         public tens_rcrsv_dtor
+        public tens_rcrsv_destruct
         public tens_rcrsv_dim_resolve_i
         public tens_rcrsv_dim_strength_i
         public tens_rcrsv_dim_split_i
@@ -6107,6 +6108,13 @@
 
          return
         end subroutine tens_rcrsv_dtor
+!-------------------------------------------
+        subroutine tens_rcrsv_destruct(this)
+!Generic destructor for class(tens_rcrsv_t).
+         implicit none
+         class(tens_rcrsv_t), intent(out):: this !inout: this tensor will be destroyed here
+         return
+        end subroutine tens_rcrsv_destruct
 ![tens_descr_t]======================================
         subroutine TensDescrPrintIt(this,ierr,dev_id)
          implicit none
