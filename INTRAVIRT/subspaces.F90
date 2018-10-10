@@ -1,7 +1,7 @@
 !ExaTENSOR: Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/03
+!REVISION: 2018/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -283,6 +283,7 @@
           procedure, public:: relate_subspaces=>HSpaceRelateSubspaces   !relates two subspaces from the hierarchical vector space: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
           procedure, public:: compare_subranges=>HSpaceCompareSubranges !compares basis subranges of two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_OV,CMP_ER}
           procedure, public:: get_common_subspace=>HSpaceGetCommonSubspace !returns the minimal (registered) subspace containing two given subspaces
+          procedure, public:: print_level=>HSpacePrintLevel             !prints the given level of the subspace aggregation tree
           procedure, public:: print_it=>HSpacePrintIt                   !prints the hierarchical vector space
           final:: h_space_dtor                                          !destructs the hierarchical representation of a vector space
         end type h_space_t
@@ -411,6 +412,7 @@
         private HSpaceRelateSubspaces
         private HSpaceCompareSubranges
         private HSpaceGetCommonSubspace
+        private HSpacePrintLevel
         private HSpacePrintIt
         public h_space_dtor
 
@@ -2247,7 +2249,7 @@
          else
           errc=13
          endif
-         if(errc.ne.0) call h_space_dtor(this)
+         !if(errc.ne.0) call h_space_dtor(this)
          if(present(ierr)) ierr=errc
          return
 
@@ -2523,19 +2525,21 @@
 !Returns an ordered list of subspaces (their ids) forming a given level of the subspace
 !aggregation tree (direct sum decomposition of the complete space at the given level).
 !If the <subspaces> array is already allocated, its length must be large enough.
+!If the requested tree level does not exist, returns <num_subspaces>=0 with no error.
          implicit none
          class(h_space_t), intent(in):: this                      !in: hierarchical vector space
          integer(INTD), intent(in):: level                        !in: subspace aggregation tree level (0 = root)
          integer(INTL), intent(inout), allocatable:: subspaces(:) !out: an ordered list of subspaces (their ids) forming the given tree level
-         integer(INTL), intent(out):: num_subspaces               !out: number of subspaces in the list
+         integer(INTL), intent(out):: num_subspaces               !out: number of subspaces in the list (0 if no such tree level exists)
          integer(INTD), intent(out), optional:: ierr              !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc,ier,lb
          integer(INTL):: ln
+         logical:: no_level
          class(vec_tree_t), pointer:: aggr_tree
          type(vec_tree_iter_t):: tree
          class(*), pointer:: subspace
 
-         errc=0; num_subspaces=0
+         errc=0; num_subspaces=0; no_level=.FALSE.
          if(level.ge.0) then
  !Get the subspace aggregation tree:
           aggr_tree=>this%get_aggr_tree(errc)
@@ -2555,21 +2559,23 @@
               else
                errc=-11
               endif
+             elseif(errc.eq.GFC_NO_MOVE) then
+              no_level=.TRUE.
              else
               errc=-10
              endif
             endif
  !Form the list of subspaces (their ids):
-            if(errc.eq.0) then
+            if(errc.eq.0.and.(.not.no_level)) then
+             lb=lbound(subspaces,1)
              errc=tree%find_first_of_level(level)
              if(errc.eq.GFC_SUCCESS) then
               do while(errc.eq.GFC_SUCCESS)
                subspace=>tree%get_value(errc); if(errc.ne.GFC_SUCCESS) then; errc=-9; exit; endif
                select type(subspace)
                class is(subspace_t)
+                subspaces(lb+num_subspaces)=subspace%get_id(errc); if(errc.ne.0) then; errc=-8; exit; endif
                 num_subspaces=num_subspaces+1
-                subspaces(num_subspaces)=subspace%get_id(errc)
-                if(errc.ne.0) then; errc=-8; exit; endif
                class default
                 errc=-7; exit
                end select
@@ -2783,6 +2789,40 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetCommonSubspace
+!-------------------------------------------------------------------------
+        subroutine HSpacePrintLevel(this,level,ierr,dev_out,num_subspaces)
+!Prints the given level of the subspace aggregation tree.
+         implicit none
+         class(h_space_t), intent(in):: this           !in: hierarchical vector space
+         integer(INTD), intent(in):: level             !in: requested level of the subspace aggregation tree: [0..max], 0 = root
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_out !in: output device (defaults to screen)
+         integer(INTL), intent(out), optional:: num_subspaces !out: number of subspaces found at the requested tree level
+         integer(INTD):: errc,devo
+         integer(INTL):: ns,i
+         integer(INTL), allocatable:: subspaces(:)
+         class(subspace_t), pointer:: subspace
+
+         errc=0; ns=0
+         devo=6; if(present(dev_out)) devo=dev_out
+         write(devo,'("Printing subspace aggregation level ",i5,": ")',ADVANCE='NO') level
+         call this%get_level_composition(level,subspaces,ns,errc)
+         if(errc.eq.0) then
+          write(devo,'("Number of subspaces found = ",i9,":")') ns
+          if(ns.gt.0) then
+           do i=lbound(subspaces,1),ubound(subspaces,1)
+            subspace=>this%get_subspace(subspaces(i),errc); if(errc.ne.0) then; errc=3; exit; endif
+            if(associated(subspace)) then; call subspace%print_it(devo); else; errc=2; exit; endif
+           enddo
+          endif
+         else
+          errc=1
+         endif
+         flush(devo)
+         if(present(num_subspaces)) num_subspaces=ns
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine HSpacePrintLevel
 !--------------------------------------------------
         subroutine HSpacePrintIt(this,ierr,dev_out)
 !Prints the hierarchical vector space representation.
@@ -2796,6 +2836,7 @@
          type(vec_tree_iter_t):: vt_it
 
          devo=6; if(present(dev_out)) devo=dev_out
+         write(devo,'("Printing full hierarchical space:")')
          errc=vt_it%init(this%subspaces)
          if(errc.eq.GFC_SUCCESS) then
           errc=GFC_IT_ACTIVE; ssp=>NULL()
@@ -2814,6 +2855,7 @@
          else
           errc=1
          endif
+         flush(devo)
          if(present(ierr)) ierr=errc
          return
         end subroutine HSpacePrintIt

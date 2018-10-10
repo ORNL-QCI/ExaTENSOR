@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018-10-03 (started 2016-02-17)
+!REVISION: 2018-10-10 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -656,7 +656,7 @@
 !-----------------------------------------------------------------
         function TreeIterFindFirstOfLevel(this,level) result(ierr)
 !Moves the iterator to the first element at a given tree level.
-!If no such element exists, returns GFC_NO_MOVE and reset the
+!If no such element exists, returns GFC_NO_MOVE and resets the
 !iterator status to GFC_IT_DONE.
          implicit none
          integer(INTD):: ierr                     !out: error code

@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/09
+!REVISION: 2018/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -161,7 +161,7 @@
         use stsubs, only: wait_delay
         use qforce_test
         implicit none
-        integer(INTL), parameter:: TEST_SPACE_DIM=166_INTL !number of orbitals, must not exceed 166 here!
+        integer(INTL), parameter:: TEST_SPACE_DIM=10_INTL !number of orbitals, must not exceed 166 here!
         integer(INTD), parameter:: color(1:166)=(/1,2,3,4,5,6,7,8,9,10,10,10,11,11,11,12,12,12,&
                                    &13,13,13,14,14,14,14,14,14,15,16,17,18,19,20,21,22,23,24,24,24,25,25,25,&
                                    &26,26,26,27,27,27,28,28,28,28,28,28,29,30,31,32,33,34,35,36,37,38,39,40,&
@@ -170,7 +170,7 @@
                                    &64,64,64,65,65,65,66,66,66,67,67,67,68,68,68,69,69,69,70,70,70,70,70,70,&
                                    &71,72,73,74,75,75,75,76,77,78,79,80,80,80,81,82,83,84,85,85,85,86,87,88,&
                                    &89,90,90,90/) !166 total
-        type(spher_symmetry_t):: basis_symmetry(1:TEST_SPACE_DIM)
+        type(color_symmetry_t):: basis_symmetry(1:TEST_SPACE_DIM)
         type(subspace_basis_t):: basis
         class(h_space_t), pointer:: ao_space
         type(tens_rcrsv_t):: etens,dtens,ltens,rtens
@@ -194,7 +194,7 @@
          call basis%subspace_basis_ctor(TEST_SPACE_DIM,ierr)
          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.subspace_basis_ctor() failed!')
          do l=1_INTL,TEST_SPACE_DIM !set basis functions
-          call basis_symmetry(l)%spher_symmetry_ctor(color(l),0,ierr)
+          call basis_symmetry(l)%color_symmetry_ctor(color(l),ierr)
           if(ierr.ne.0) call quit(ierr,'spher_symmetry_t.spher_symmetry_ctor() failed!')
           call basis%set_basis_func(l,BASIS_ABSTRACT,ierr,symm=basis_symmetry(l))
           if(ierr.ne.0) call quit(ierr,'subspace_basis_t.set_basis_func() failed!')
@@ -209,6 +209,10 @@
          ierr=exatns_space_register('AO_space',basis,ao_space_id,ao_space)
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+!Print the registered space by levels:
+         if(my_rank.eq.comm_size-1) then
+          i=-1; do; i=i+1; call ao_space%print_level(i,num_subspaces=l); if(l.le.0) exit; enddo
+         endif
 !Application registers user-defined methods for tensor initialization and printing:
  !Tensor initialization method:
          if(my_rank.eq.comm_size-1) then
