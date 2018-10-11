@@ -1,7 +1,7 @@
 !ExaTENSOR: Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/10
+!REVISION: 2018/10/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -695,14 +695,13 @@
          real(8):: rl,incr,lb,ub,rb
          logical:: next
 
-         errc=0
+         errc=0; rl=this%length()
          if(num_segs.gt.0.and.num_segs.le.size(segs)) then
-          rl=this%length()
           if(rl.gt.0d0) then
            if(present(align)) then; nbnd=size(align); else; nbnd=0; endif
            if(nbnd.gt.0) then !aligned splitting
             if(num_segs.le.nbnd) then
-             ub=this%upper_bound()
+             ub=this%upper_bound()-this%lower_bound()
              nchnk=nbnd+1 !number of alignment chunks
              do while(nchnk.gt.num_segs)
  !Find the smallest alignment chunk:

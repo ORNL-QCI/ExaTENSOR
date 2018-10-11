@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/10/09
+!REVISION: 2018/10/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -154,11 +154,11 @@
        public exatns_sync                 !synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions will be completed (Driver only)
        public exatns_process_role         !returns the role of the current MPI process (called by Any)
        public exatns_status               !returns the status of the ExaTENSOR runtime plus statistics, if needed (Driver only)
-       public exatns_dump_cache           !dumps the tensor cache content for each TAVP into its log file (debug only)
+       public exatns_dump_cache           !dumps the tensor cache content for each TAVP into its log file (Driver only, debug)
  !Parser/interpreter (Driver only):
        public exatns_interpret            !interprets TAProL code (string of TAProL statements)
        public exatns_symbol_exists        !checks whether a specific identifier is registered (if yes, returns its attributes)
- !Hierarchical vector space (either called by All before start or then by Driver only):
+ !Hierarchical vector space (either called by All before exatns_start() or then by Driver only):
        public exatns_space_register       !registers a vector space
        public exatns_space_unregister     !unregisters a vector space
        public exatns_space_status         !returns the status of the vector space
@@ -624,6 +624,8 @@
            end select
            if(jerr.eq.0) write(jo,'("Done")')
           endif
+ !Print the Node Aggregation Tree (NAT) and TAVP configuration:
+          if(jerr.eq.0.and.DEBUG.gt.0) call comp_system%print_it(dev_out=jo) !debug
           !write(*,*) 'Process ',my_rank,': ',exa_num_drivers,exa_num_managers,exa_num_workers !debug
           return
          end subroutine determine_process_role

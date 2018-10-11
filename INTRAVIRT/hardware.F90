@@ -1,6 +1,6 @@
 !ExaTENSOR hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/06
+!REVISION: 2018/10/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -21,17 +21,21 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
        module hardware
-!This module provides an HPC platform abstraction.
+!This module provides the HPC platform abstraction layer.
 !An HPC platform is considered comprised of the so-called
-!physical nodes which are either full hardware nodes or
+!physical nodes which are either full hardware nodes or isolated
 !parts of a full hardware node, depending on the number of
-!MPI processes per hardware node. Physical nodes are numerated
-!from 1: [1:N]. Physical nodes are subsequently aggregated into
-!the Node Aggregation Tree (NAT). Each node of the NAT is a
-!virtual node, that is, a virtual node is either a single physical
-!node or an aggregate of those. Virtual nodes are numerated from 0.
-!The first N virtual nodes are associated with the original physical
-!nodes in order, the subsequent virtual nodes are aggregates (inner tree nodes).
+!MPI processes per hardware node, such that each physical node is
+!occupied by a single MPI process. Physical nodes are numerated
+!from 1: [1:N]. Physical nodes are subsequently aggregated into the
+!Node Aggregation Tree (NAT). Each node of the NAT is a virtual node,
+!that is, a virtual node is either a single physical node or an aggregate
+!of those. Virtual nodes are numerated from 0. The first N virtual nodes [0:N-1]
+!are associated with the original physical nodes [1:N] in order,
+!the subsequent virtual nodes are their aggregates (inner tree nodes).
+!The root of the NAT (full platform) is the virtual node N. Virtual nodes
+!with numbers larger than N are the inner NAT nodes representing smaller
+!aggregates of physical nodes.
         use dil_basic
         use stsubs
         use parse_prim
@@ -563,17 +567,44 @@
          if(present(ierr)) ierr=errc
          return
         end function CompSystemGetNodeRange
-!-----------------------------------------
-        subroutine CompSystemPrintIt(this)
+!------------------------------------------------------
+        subroutine CompSystemPrintIt(this,ierr,dev_out)
 !Prints the node aggregation tree imposed on the computing system.
          implicit none
          class(comp_system_t), intent(in):: this       !in: hierarchical computing system representation
-         integer(INTD):: errc
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_out !in: output device id (defaults to 6)
+         integer(INTD):: errc,devo,i,level,range(1:2)
+         integer(INTL):: node_id
          type(vec_tree_iter_t):: vt_it
 
+         errc=0
+         devo=6; if(present(dev_out)) devo=dev_out
+         write(devo,'("Printing the HPC platform Node Aggregation Tree (NAT): Phys/Virt nodes = ",i6,1x,i8)')&
+         &this%num_phys_nodes,this%num_virt_nodes
          errc=vt_it%init(this%virt_nodes)
-         if(errc.eq.GFC_SUCCESS) errc=vt_it%scanp(action_f=seg_int_print_range)
-         errc=vt_it%release()
+         if(errc.eq.GFC_SUCCESS) then
+          level=-1
+          tloop: do
+           level=level+1
+           errc=vt_it%find_first_of_level(level); if(errc.ne.GFC_SUCCESS) exit tloop
+           write(devo,'(" NAT level ",i4,":")') level
+           do while(errc.eq.GFC_SUCCESS)
+            node_id=vt_it%get_offset(errc); if(errc.ne.GFC_SUCCESS) exit tloop
+            range(1:2)=this%get_node_range(node_id,errc); if(errc.ne.0) then; errc=-3; exit tloop; endif
+            write(devo,'("  Virt Node ",i8,": Phys node range [",i6,":",i6,"]")') node_id,range(1:2)
+            errc=vt_it%move_to_cousin()
+           enddo
+           if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+          enddo tloop
+          if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+          i=vt_it%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=-2
+         else
+          errc=-1
+         endif
+         write(devo,'("Done: Error ",i9)') errc
+         flush(devo)
+         if(present(ierr)) ierr=errc
          return
         end subroutine CompSystemPrintIt
 !----------------------------------------
