@@ -110,8 +110,8 @@
  !External methods:
         integer(INTD), parameter, public:: EXA_MAX_METHOD_NAME_LEN=64 !max length of an external method name
  !TAVP hierarchy configuration:
-        integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=2 !maximal size of a work group (max number of workers per manager)
-        integer(INTD), public:: EXA_MANAGER_BRANCH_FACT=2 !branching factor for the managing hierarchy
+        integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=32 !maximal size of a work group (max number of workers per manager)
+        integer(INTD), public:: EXA_MANAGER_BRANCH_FACT=2  !branching factor for the managing hierarchy
  !TAVP identification:
         integer(INTD), parameter, public:: TAVP_ANY_ID=-1         !any TAVP
  !TAVP MPI message tags:

@@ -578,55 +578,60 @@
 
           jerr=0
           write(jo,'("#MSG(exatensor): Building the Node Aggregation Tree (NAT) ... ")',ADVANCE='NO')
+          if(num_procs.ge.4) then !4 MPI processes is the minimally possible configuration (Driver + Manager + 2 Workers)
  !Set the initial composition:
-          exa_num_drivers=1 !the Driver process is the last MPI process
-          exa_num_helpers=0
-          exa_num_managers=1 !initial number of managers
-          exa_num_workers=num_procs-(exa_num_drivers+exa_num_managers+exa_num_helpers)
-          num_wrk_hlp=num_procs-(exa_num_drivers+exa_num_managers) !workers + helpers
- !Build NAT:
-          jc=MAX_NAT_CONF_CYCLES
-          hloop: do
-           if(jc.le.0) then
-            if(VERBOSE) then
-             write(jo,'("#ERROR(exatns_start)[",i5,"]: Unable to build a proper Node Aggregation Tree!")') my_rank
-             write(jo,'("#ADVICE: Try changing the number of MPI processes.")')
-            endif
-            jerr=-3; exit hloop
-           endif
-           !write(jo,'("#DEBUG(exatns_start:determine_process_role)[",i5,"]: Trial conf:",3(1x,i6))')&
-                !&my_rank,exa_num_drivers,exa_num_managers,exa_num_workers !debug
-  !Build the process hierarchy:
-           call comp_system%comp_system_ctor('hardware.exaconf',num_wrk_hlp,jerr,&
-                                            &EXA_MANAGER_BRANCH_FACT,EXA_MAX_WORK_GROUP_SIZE)
-           if(jerr.ne.0) then; jerr=-2; exit hloop; endif
-  !Check the total number of managers:
-           if(comp_system%get_num_aggr_nodes().eq.exa_num_managers) exit hloop !match
-           exa_num_managers=exa_num_managers+1
+           exa_num_drivers=1 !the Driver process is the last MPI process
+           exa_num_helpers=0
+           exa_num_managers=1 !initial number of managers
            exa_num_workers=num_procs-(exa_num_drivers+exa_num_managers+exa_num_helpers)
            num_wrk_hlp=num_procs-(exa_num_drivers+exa_num_managers) !workers + helpers
-           jc=jc-1
-          enddo hloop
-          if(jerr.eq.0) then
-           role_rank=tavp_role_rank(int(my_rank,INTD),process_role)
-           driver_gl_rank=num_procs-1
-           top_manager_gl_rank=exa_num_workers
-           select case(process_role)
-           case(EXA_DRIVER)
-            role_size=exa_num_drivers
-           case(EXA_MANAGER)
-            role_size=exa_num_managers
-           case(EXA_WORKER)
-            role_size=exa_num_workers
-            !`Some Workers can now be converted into Helpers
-           case default
-            jerr=-1
-           end select
-           if(jerr.eq.0) write(jo,'("Done")')
-          endif
+ !Build NAT:
+           jc=MAX_NAT_CONF_CYCLES
+           hloop: do
+            if(jc.le.0) then
+             if(VERBOSE) then
+              write(jo,'("#ERROR(exatns_start)[",i5,"]: Unable to build a proper Node Aggregation Tree!")') my_rank
+              write(jo,'("#ADVICE: Try changing the number of MPI processes.")')
+             endif
+             jerr=-4; exit hloop
+            endif
+            !write(jo,'("#DEBUG(exatns_start:determine_process_role)[",i5,"]: Trial conf:",3(1x,i6))')&
+                 !&my_rank,exa_num_drivers,exa_num_managers,exa_num_workers !debug
+  !Build the process hierarchy:
+            call comp_system%comp_system_ctor('hardware.exaconf',num_wrk_hlp,jerr,&
+                                            &EXA_MANAGER_BRANCH_FACT,EXA_MAX_WORK_GROUP_SIZE)
+            if(jerr.ne.0) then; jerr=-3; exit hloop; endif
+  !Check the total number of managers:
+            if(comp_system%get_num_aggr_nodes().eq.exa_num_managers) exit hloop !match
+            exa_num_managers=exa_num_managers+1
+            exa_num_workers=num_procs-(exa_num_drivers+exa_num_managers+exa_num_helpers)
+            num_wrk_hlp=num_procs-(exa_num_drivers+exa_num_managers) !workers + helpers
+            jc=jc-1
+           enddo hloop
+           if(jerr.eq.0) then
+            role_rank=tavp_role_rank(int(my_rank,INTD),process_role)
+            driver_gl_rank=num_procs-1
+            top_manager_gl_rank=exa_num_workers
+            select case(process_role)
+            case(EXA_DRIVER)
+             role_size=exa_num_drivers
+            case(EXA_MANAGER)
+             role_size=exa_num_managers
+            case(EXA_WORKER)
+             role_size=exa_num_workers
+             !`Some Workers can now be converted into Helpers
+            case default
+             jerr=-2
+            end select
+            if(jerr.eq.0) write(jo,'("Done")')
+           endif
  !Print the Node Aggregation Tree (NAT) and TAVP configuration:
-          if(jerr.eq.0.and.DEBUG.gt.0) call comp_system%print_it(dev_out=jo) !debug
-          !write(*,*) 'Process ',my_rank,': ',exa_num_drivers,exa_num_managers,exa_num_workers !debug
+           if(jerr.eq.0.and.DEBUG.gt.0) call comp_system%print_it(dev_out=jo) !debug
+           !write(*,*) 'Process ',my_rank,': ',exa_num_drivers,exa_num_managers,exa_num_workers !debug
+          else
+           write(*,'("#FATAL(exatns_start:determine_process_role): At least 4 MPI processes are required!")')
+           jerr=-1
+          endif
           return
          end subroutine determine_process_role
 
