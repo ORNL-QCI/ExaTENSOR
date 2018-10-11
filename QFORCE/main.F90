@@ -161,7 +161,7 @@
         use stsubs, only: wait_delay
         use qforce_test
         implicit none
-        integer(INTL), parameter:: TEST_SPACE_DIM=10_INTL !number of orbitals, must not exceed 166 here!
+        integer(INTL), parameter:: TEST_SPACE_DIM=166_INTL !number of orbitals, must not exceed 166 here!
         integer(INTD), parameter:: color(1:166)=(/1,2,3,4,5,6,7,8,9,10,10,10,11,11,11,12,12,12,&
                                    &13,13,13,14,14,14,14,14,14,15,16,17,18,19,20,21,22,23,24,24,24,25,25,25,&
                                    &26,26,26,27,27,27,28,28,28,28,28,28,29,30,31,32,33,34,35,36,37,38,39,40,&
@@ -209,9 +209,9 @@
          ierr=exatns_space_register('AO_space',basis,ao_space_id,ao_space)
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
-!Print the registered space by levels:
+!Print the registered space by levels (debug):
          if(my_rank.eq.comm_size-1) then
-          i=-1; do; i=i+1; call ao_space%print_level(i,num_subspaces=l); if(l.le.0) exit; enddo
+          !i=-1; do; i=i+1; call ao_space%print_level(i,num_subspaces=l); if(l.le.0) exit; enddo !debug
          endif
 !Application registers user-defined methods for tensor initialization and printing:
  !Tensor initialization method:

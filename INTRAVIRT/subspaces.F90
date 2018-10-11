@@ -415,6 +415,7 @@
         private HSpacePrintLevel
         private HSpacePrintIt
         public h_space_dtor
+        public h_space_destruct
 
        contains
 !IMPLEMENTATION:
@@ -891,7 +892,7 @@
            !write(CONS_OUT,'("#DEBUG(seg_int_t:split): align(:) array size = ",i11)') nbnd !debug
            if(nbnd.gt.0) then !aligned splitting
             if(num_segs.le.nbnd) then
-             ub=this%upper_bound()
+             ub=this%upper_bound()-this%lower_bound()
              nchnk=nbnd+1 !number of alignment chunks
              do while(nchnk.gt.num_segs)
  !Find the smallest alignment chunk:
@@ -2179,7 +2180,7 @@
                     endif
                     !write(*,'("Range ")',ADVANCE='NO'); call seg%print_range() !debug
                     !write(*,'(" to be split into ",i6," segments")') m !debug
-                    !print *,'with boundaries ',bndr(1:nbnd) !debug
+                    !write(*,*) 'with boundaries ',bndr(1:nbnd) !debug
                     if(nbnd.gt.0) then
                      call seg%split(m,segs,errc,bndr(1:nbnd))
                     else
@@ -2249,7 +2250,7 @@
          else
           errc=13
          endif
-         !if(errc.ne.0) call h_space_dtor(this)
+         if(errc.ne.0) call h_space_destruct(this)
          if(present(ierr)) ierr=errc
          return
 
@@ -2263,18 +2264,17 @@
           class(basis_func_t), pointer:: bfp
           class(basis_func_supp_t), pointer:: bfsp
           class(symmetry_t), pointer:: curr_symm,next_symm
-          integer(INTL):: jdim,ji
+          integer(INTL):: jdim,ji,jj
           integer(INTD):: curr_bfk,next_bfk
 
           jdim=bas%dimsn(); jnbnd=0_INTL !will be the number of boundaries
           if(jdim.gt.0) then
            do ji=1,jdim-1
+            jj=ji+1_INTL !next element
             bfp=>bas%get_basis_func(ji,jerr); if(jerr.ne.0) exit
             curr_bfk=bfp%get_basis_func(jerr,bfsp,curr_symm); if(jerr.ne.0) exit
-            bfp=>bas%get_basis_func(ji+1_INTL,jerr); if(jerr.ne.0) exit
+            bfp=>bas%get_basis_func(jj,jerr); if(jerr.ne.0) exit
             next_bfk=bfp%get_basis_func(jerr,bfsp,next_symm); if(jerr.ne.0) exit
-            !select type(curr_symm); class is(spher_symmetry_t); call curr_symm%print_it(); end select !debug
-            !select type(next_symm); class is(spher_symmetry_t); call next_symm%print_it(); end select !debug
             if(curr_bfk.eq.next_bfk) then
              if(associated(curr_symm)) then
               if(associated(next_symm)) then
@@ -2560,7 +2560,7 @@
                errc=-11
               endif
              elseif(errc.eq.GFC_NO_MOVE) then
-              no_level=.TRUE.
+              errc=0; no_level=.TRUE.
              else
               errc=-10
              endif
@@ -2876,6 +2876,12 @@
          this%num_subspaces=0; this%space_dim=0
          return
         end subroutine h_space_dtor
+!----------------------------------------
+        subroutine h_space_destruct(this)
+         implicit none
+         class(h_space_t), intent(out):: this !this class(h_space_t) object will be destructed here
+         return
+        end subroutine h_space_destruct
 !-----------------------------------------------------------------------------
         subroutine build_basis_hierarchy_abstract(basis,order,boundaries,ierr)
 !Sorts and recursively aggregates bases into a hierarchical representatation.
