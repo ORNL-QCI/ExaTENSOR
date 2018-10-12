@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/24
+!REVISION: 2018/10/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -138,6 +138,8 @@
 #ifndef NO_OMP
         public lock_file
         public unlock_file
+        public get_omp_place_info
+        public print_omp_place_info
 #endif
         public quit
         private gpu_nvidia_probe
@@ -667,6 +669,41 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine unlock_file
+!---------------------------------------------------------------------
+        function get_omp_place_info(num_procs,procs) result(place_num)
+!Returns the information on the OpenMP place the current thread belongs to.
+         integer:: place_num                 !out: OpenMP place the current thread belongs to
+         integer, intent(out):: num_procs    !out: number of processing elements in the place
+         integer, intent(inout):: procs(1:*) !out: processing element id in the place
+
+#if defined(_OPENMP)
+#if _OPENMP >= 201307
+         place_num=omp_get_place_num()
+         num_procs=omp_get_place_num_procs(place_num)
+         call omp_get_place_proc_ids(place_num,procs)
+#else
+         place_num=-1; num_procs=0 !not defined
+#endif
+#else
+         place_num=-1; num_procs=0 !not defined
+#endif
+         return
+        end function get_omp_place_info
+!-----------------------------------------------
+        subroutine print_omp_place_info(dev_out)
+!Prints the information on the OpenMP place the current thread belongs to.
+         integer, intent(in), optional:: dev_out !in: output device (defaults to 6)
+         integer:: devo,place_num,num_procs,procs(1:16384)
+
+         devo=6; if(present(dev_out)) devo=dev_out
+         place_num=get_omp_place_info(num_procs,procs)
+         if(place_num.ge.0) then
+          write(devo,'("#MSG(OpenMP): Host place ",i4," consists of ",i4," hardware units:",1024(1x,i4))')&
+          &place_num,num_procs,procs(1:num_procs)
+          flush(devo)
+         endif
+         return
+        end subroutine print_omp_place_info
 !-----------------------------------------------------
         subroutine quit(error_code,error_msg,no_final)
 !This subroutine prints the error message and safely terminates the parallel code execution.

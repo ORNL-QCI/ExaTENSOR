@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/05
+!REVISION: 2018/10/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4975,6 +4975,7 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder started as DSVU # ",i2," (thread ",i2,"): Listening to ",i11,1x,i6)')&
           &impir,uid,thid,this%source_comm,this%source_rank
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -5520,6 +5521,7 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer started as DSVU # ",i2," (thread ",i2,"): Reporting to ",i11,1x,i6)')&
           &impir,uid,thid,this%retire_comm,this%retire_rank
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -5865,6 +5867,7 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer started as DSVU # ",i2," (thread ",i2,"): Max memory (B) = ",i15)')&
           &impir,uid,thid,this%host_ram_size
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
@@ -6970,6 +6973,7 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator started as DSVU # ",i2," (thread ",i2,'//&
           &'"): Number of dynamic MPI windows = ",i6)') impir,uid,thid,this%num_mpi_windows
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
@@ -7501,6 +7505,7 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher started as DSVU # ",i2,'//&
           &'" (thread ",i2,"): Host buffer size (B) = ",i15)') impir,uid,thid,this%host_buf_size
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:

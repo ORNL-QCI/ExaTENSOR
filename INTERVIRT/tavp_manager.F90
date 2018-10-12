@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/05
+!REVISION: 2018/10/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2461,6 +2461,7 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder started as DSVU # ",i2," (thread ",i2,"): Listening to ",i11,1x,i6)')&
           &impir,uid,thid,this%source_comm,this%source_rank
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -3043,6 +3044,7 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer started as DSVU # ",i2," (thread ",i2,"): Reporting to ",i11,1x,i6)')&
           &impir,uid,thid,this%retire_comm,this%retire_rank
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -3246,6 +3248,7 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2," (thread ",i2,"): Recv/Send = ",i6,"/",i6)')&
           &impir,uid,thid,this%ring_recv,this%ring_send
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -3741,6 +3744,7 @@
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Initialize queues:
@@ -4755,6 +4759,7 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,'//&
           &'") with ",i4," channels over communicator ",i11)') impir,uid,thid,this%num_ranks,this%dispatch_comm
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Reserve bytecode buffers and clean communication handles:
@@ -5343,6 +5348,7 @@
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -5488,6 +5494,7 @@
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
 !Initialize queues:

@@ -2,14 +2,14 @@
 #if multiple MPI processes reside on the same node. In this case
 #the environment variable QF_PROCS_PER_NODE must be set appropriately!
 
-export QF_PATH=/home/div/src/ExaTensor #full path to ExaTensor
-export QF_NUM_PROCS=8                  #number of MPI processes
-export QF_PROCS_PER_NODE=8             #number of MPI processes per node
-export QF_CORES_PER_PROC=1             #number of cores per MPI process
-export QF_NUM_THREADS=8                #number of threads per MPI process (at least 8)
-export QF_GPUS_PER_PROCESS=0           #number of discrete NVIDIA GPU's per process (optional)
-export QF_MICS_PER_PROCESS=0           #number of discrete Intel Xeon Phi's per process (optional)
-export QF_AMDS_PER_PROCESS=0           #number of dsicrete AMD GPU's per process (optional)
+export QF_PATH=/home/dima/src/ExaTensor #full path to ExaTensor
+export QF_NUM_PROCS=4                   #number of MPI processes
+export QF_PROCS_PER_NODE=4              #number of MPI processes per node
+export QF_CORES_PER_PROC=1              #number of cores per MPI process
+export QF_NUM_THREADS=8                 #number of threads per MPI process (at least 8)
+export QF_GPUS_PER_PROCESS=0            #number of discrete NVIDIA GPU's per process (optional)
+export QF_MICS_PER_PROCESS=0            #number of discrete Intel Xeon Phi's per process (optional)
+export QF_AMDS_PER_PROCESS=0            #number of dsicrete AMD GPU's per process (optional)
 
 #OpenMP:
 export OMP_NUM_THREADS=$QF_NUM_THREADS #initial number of OpenMP threads per MPI process
