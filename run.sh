@@ -13,11 +13,13 @@ export QF_AMDS_PER_PROCESS=0           #number of dsicrete AMD GPU's per process
 
 #OpenMP:
 export OMP_NUM_THREADS=$QF_NUM_THREADS #initial number of OpenMP threads per MPI process
-export OMP_MAX_ACTIVE_LEVELS=3         #max number of OpenMP nesting levels (at least 3)
-export OMP_THREAD_LIMIT=256            #max total number of OpenMP threads per process
 export OMP_DYNAMIC=FALSE               #no OpenMP dynamic threading
 export OMP_NESTED=TRUE                 #OpenMP nested parallelism is mandatory
+export OMP_MAX_ACTIVE_LEVELS=3         #max number of OpenMP nesting levels (at least 3)
+export OMP_THREAD_LIMIT=256            #max total number of OpenMP threads per process
 export OMP_WAIT_POLICY=PASSIVE         #idle thread behavior
+export OMP_PROC_BIND=close,spread,spread
+export OMP_PLACES=threads
 
 #Intel specific:
 export KMP_AFFINITY="verbose,granularity=core,compact" #Intel CPU thread affinity

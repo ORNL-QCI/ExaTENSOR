@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/21
+!REVISION: 2018/10/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1633,17 +1633,18 @@
          implicit none
          class(dsvp_t), intent(inout):: this         !inout: configured DSVP becomes active
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: ier,errc,nthreads,mthreads,tid
+         integer(INTD):: ier,errc,nthreads,mthreads,actlev,tid
 
          errc=DSVP_SUCCESS
          if(this%get_status().eq.DSVP_STAT_OFF.and.this%num_units.gt.0) then
           nthreads=this%num_units !number of threads needed = number of units
+          call omp_set_dynamic(.FALSE.)
+          call omp_set_nested(.TRUE.)
+          actlev=omp_get_max_active_levels()
+          if(actlev.lt.3) call omp_set_max_active_levels(3)
+          call omp_set_num_threads(nthreads)
           mthreads=omp_get_max_threads()
-          if(mthreads.lt.nthreads) then
-           call omp_set_num_threads(nthreads)
-           mthreads=omp_get_max_threads()
-          endif
-          if(mthreads.ge.nthreads) then
+          if(mthreads.eq.nthreads) then
            this%decode_paused=.FALSE.
            this%sync_count=this%num_units
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(tid,ier) NUM_THREADS(nthreads)

@@ -1,6 +1,6 @@
 !ExaTENSOR hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/11
+!REVISION: 2018/10/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -602,7 +602,7 @@
          else
           errc=-1
          endif
-         write(devo,'("Done: Error ",i9)') errc
+         write(devo,'("Done: Status ",i9)') errc
          flush(devo)
          if(present(ierr)) ierr=errc
          return
