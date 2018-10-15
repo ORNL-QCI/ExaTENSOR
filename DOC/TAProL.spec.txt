@@ -1,6 +1,6 @@
 Tensor Algebra Programming Language (TAProL) Specification
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2017-04-03
+REVISION: 2018-10-15
 
 Copyright (C) 2016 Dmitry I. Liakh.
 Copyright (C) 2016 Oak Ridge National Laboratory, UT-Battelle, LLC.
@@ -27,7 +27,8 @@ on each other only via data dependencies. In the following text, names in angle
 brackets <> are supposed to be substituted by the corresponding content. A list of
 keywords separated by "|" within a pair of curly brackets {} provides alternatives
 among which a specific one needs to be chosen by the programmer. All user-defined
-names in TAProl may only contain alphanumeric characters and underscore "_".
+names in TAProl may only contain alphanumeric characters and underscore "_", and
+they must begin with a letter character.
 
 Scope specification:
 
@@ -194,7 +195,7 @@ A tensor can be stored in persistent storage by the following statement:
 
 2.3. Tensor operations:
 
-A tensor operation is a well-defined numeric primitive operating on tensors
+A tensor operation is a well-defined numerical primitive operating on tensors
 or tensor slices. The resulting tensor is allowed to be undefined beforehand,
 in which case it will be created and defined as a result of the tensor operation.
 Each tensor in a tensor operation may additionally be complex conjugated via
@@ -286,7 +287,7 @@ A Scope can be invoked from another Scope by the following statement:
 
  invoke <scope_name>
 
- After finishing, the invoked Scope will pass control to the
+ After finishing, the invoked Scope will pass control back to the
  statement following "invoke ...".
 
 To pass data between Scopes, the following statements are used:
