@@ -1,7 +1,7 @@
 !ExaTENSOR: Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/11
+!REVISION: 2018/10/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -890,7 +890,7 @@
            if(present(align)) then; nbnd=size(align); else; nbnd=0; endif
            !write(CONS_OUT,'("#DEBUG(seg_int_t:split): align(:) array size = ",i11)') nbnd !debug
            if(nbnd.gt.0) then !aligned splitting
-            if(num_segs.le.nbnd) then
+            if(num_segs.le.nbnd) then !segments must be aligned on boundaries
              ub=this%upper_bound()-this%lower_bound()
              nchnk=nbnd+1 !number of alignment chunks
              do while(nchnk.gt.num_segs)
@@ -938,7 +938,7 @@
               endif
              enddo
              if(errc.eq.0) call segs(num_segs)%set(ub,this%upper_bound(),errc)
-            elseif(num_segs.eq.nbnd+1) then
+            elseif(num_segs.eq.nbnd+1) then !boundaries divide the range into the requested number of segments
              lb=this%lower_bound(); call segs(1)%set(lb,lb+align(1),errc)
              if(errc.eq.0) then
               do i=2,num_segs-1
@@ -946,8 +946,26 @@
               enddo
               if(errc.eq.0) call segs(num_segs)%set(lb+align(nbnd),this%upper_bound(),errc)
              endif
-            else
-             errc=3
+            else !number of requested segments is larger than the number of segments created by boundaries
+             nchnk=nbnd+1
+             lb=this%lower_bound(); call segs(1)%set(lb,lb+align(1),errc)
+             if(errc.eq.0) then
+              do i=2,nchnk-1
+               call segs(i)%set(lb+align(i-1),lb+align(i),errc); if(errc.ne.0) exit
+              enddo
+              if(errc.eq.0) then
+               call segs(nchnk)%set(lb+align(nbnd),this%upper_bound(),errc)
+               if(errc.eq.0) then
+                do while(nchnk.lt.num_segs)
+                 incr=0; j=0; do i=1,nchnk; l=segs(i)%length(); if(l.gt.incr) then; incr=l; j=i; endif; enddo
+                 do i=nchnk,j,-1; call segs(i+1)%set(segs(i)%lower_bound(),segs(i)%upper_bound()); enddo
+                 lb=segs(j)%lower_bound(); ub=segs(j)%upper_bound(); rem=(incr+1_INTL)/2_INTL
+                 call segs(j)%set(lb,lb+rem); call segs(j+1)%set(lb+rem,ub)
+                 nchnk=nchnk+1
+                enddo
+               endif
+              endif
+             endif
             endif
            else !unaligned splitting
             lb=this%lower_bound(); incr=rl/int(num_segs,INTL); rem=rl-incr*int(num_segs,INTL)
