@@ -1,6 +1,6 @@
 Tensor Algebra Programming Language (TAProL) Specification
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2018-10-15
+REVISION: 2018-10-16
 
 Copyright (C) 2016 Dmitry I. Liakh.
 Copyright (C) 2016 Oak Ridge National Laboratory, UT-Battelle, LLC.
@@ -9,7 +9,8 @@ Copyright (C) 2016 Oak Ridge National Laboratory, UT-Battelle, LLC.
 0. PREAMBULE
 
 TAProL is a high-level concise programming language for expressing tensor algebra computations,
-that is, numeric operations performed on individual tensors and their aggregates.
+that is, numerical operations performed on individual tensors and their aggregates. A subset of
+TAProL also serves as the assembly language for the ExaTENSOR tensor algebra processor.
 
 
 1. TAProL PROGRAM STRUCTURE
@@ -18,17 +19,18 @@ A TAProl program, written in one or more source files with extension .tapl, is a
 of "Scopes" with a single "Entry Point". The Entry Point specifies the first Scope to interpret.
 Each Scope contains TAProl code. A Scope can call another Scope which will return to the
 next line after finishing. By default, the objects defined within a specfic Scope are only
-visible in that Scope. To pass objects from one Scope to another Scope the "Exchange Space"
+visible to that Scope. To pass objects from one Scope to another Scope the "Exchange Space"
 needs to be used. The Exchange Space contains named objects for exchange between Scopes,
 together with their access permissions. An object can be Exported from one Scope into the
-Exchange Space with the user-defined permissions and subsequently Imported by another Scope,
+Exchange Space with user-defined access permissions and subsequently Imported by another Scope,
 provided that the latter has matching access permissions. Thus, different Scopes may depend
-on each other only via data dependencies. In the following text, names in angle
-brackets <> are supposed to be substituted by the corresponding content. A list of
-keywords separated by "|" within a pair of curly brackets {} provides alternatives
-among which a specific one needs to be chosen by the programmer. All user-defined
-names in TAProl may only contain alphanumeric characters and underscore "_", and
-they must begin with a letter character.
+on each other only via data dependencies.
+
+In the following text, names in angle brackets <> are supposed to be substituted by
+the corresponding content. A list of keywords separated by "|" within a pair of curly
+brackets {} provides alternatives among which a specific one needs to be chosen by
+the programmer. All user-defined names in TAProl are case-sensitive and may only contain
+alphanumeric characters and underscores "_" (must begin with a letter character).
 
 Scope specification:
 
@@ -39,7 +41,7 @@ Scope specification:
  The comma-separated list of <group_name> specifies which logical
  groups the Scope belongs to. Each Scope always belongs to its
  default (own) group, which has the same name as the Scope, as well
- as to the global group called "global" which contains all Scopes.
+ as to the global group called "GLOBAL" which contains all Scopes.
  Example:
   scope my_scope group()
   end scope my_scope
@@ -67,23 +69,25 @@ Vector space specification:
   where
    <first> and <last> define the numeration of the basis vectors, and the actual
    dimension of the space is (<last>-<first>+1). <first> and <last> can either be
-   numeric literals or alphanumeric identifiers (with at least one letter).
+   numerical literals or alphanumeric identifiers (with at least one letter).
    In the latter case, these identifiers will be dereferenced from the Exchange Space
    assuming that they are available there (if not, the program will fail).
  Example:
   space(complex): space1=[0:947], space2=[1:upper_limit2]
+ Here "upper_limit2" will be looked up in the Exchange Space.
 
 Vector subspace specification:
 
  subspace(<space_name>): <subspace0_name> = <range0>, <subspace1_name> = <range1>, ...
 
  where
-  <space_name> is the name of the parental vector space defined by the "space" statement;
+  <space_name> is the name of the parental vector space defined by the "space" statement before;
   <rangeX> is the subrange of basis vectors which define the subspace being declared in
-  the form [<first>:<last>], analogously with the above description for the "space" statement.
+  the form [<first>:<last>], analogously with the above description of the "space" statement.
  Example:
   space(real): space1=[0:947]
   subspace(space1): subspace0=[13:134], subspace1=[lower1:upper1]
+ Here, again, "lower1" and "upper1" identifiers will be looked up in the Exchange Space.
 
 Index specification (placeholder for a given subspace):
 
@@ -99,29 +103,44 @@ Index specification (placeholder for a given subspace):
   index(subspace1): a1,b1,c2,d
 
 Index inheritance:
- One can also define an index by inheriting the properies from another already defined index, like:
- index: b1=a1, b2=a2
+
+ index: <index_name1>=<index_name0>,<index_name3>=<index_name2>
+
+ where
+  index <index_name1> inherits the properies from an already defined index <index_name0>.
+ Example:
+  index: b1=a1, b2=a2
  Here indices b1 and b2 will bind to the same subspaces as a1 and a2, respectively.
 
 
 2.2. Tensor creation and destruction:
 
-A tensor is specified via its alphanumeric name (at least one letter) and a comma-separated
+A tensor can be specified via its alphanumeric name (at least one letter) and a comma-separated
 list of indices enclosed in parentheses: <tensor_name>(<index>,<index>,...). No space is
 allowed between the tensor name and the left parenthesis. A scalar tensor is specified as <scalar_name>().
 Each index associates its subspace with the corresponding tensor dimension. The total number of tensor
 dimensions (total number of tensor indices) is called the tensor rank (or order). The subspace associated
-with a specific tensor dimension determines the range of that tensor dimension. The dimension of
-the subspace determines the extent of the corresponding tensor dimension.
+with a specific tensor dimension determines the range of that tensor dimension; the dimension of
+the subspace determines the extent of the tensor dimension.
 Examples of tensors: S34(a1,b,c3), TT(i,j,k,l), SS1().
+
+Alternatively, a tensor can be specified over anonymous subspaces by providing numerical literals
+or user-defined identifiers from the Exchange space, like F13(45,23:96), C4(dim1,4:dim2,32), etc.
+
+It is permitted to mix the subspace-based and anonymous tensor dimension definitions. Example:
+ index(subspace0):: k
+ G12(k,3:13,5:dim3,dim4)
+where k is a subspace index, while [3:13], [5:dim3], and dim4 are the explicitly provided dimension ranges.
 
 Explicit creation with initialization:
 
- 1) <tensor> = <numeric_value>
-    If <numeric_value> is a numeric literal, then all tensor elements will be assigned
-    that specific numeric value. If <numeric_value> is an alphanumeric identifier,
-    it will be dereferenced from the Exchange Space, provided it is there. Examples:
-    T3(i1,u,w23,k) = 0
+ 1) <tensor> = <numerical_value>
+    If <numerical_value> is a numerical literal, then all tensor elements will be assigned
+    that specific numerical value. Complex values are specified in parentheses (real,imag).
+    If <numerical_value> is an alphanumeric identifier, it will be dereferenced from the
+    Exchange Space, provided it is there. Examples:
+    T3(i1,u,w23,k) = 0.0
+    D(i2,7) = (1.0,0.0)
     W2(k,l,m) = init_value1
 
  2) <tensor> = method("<method_name>")
@@ -163,7 +182,7 @@ Index symmetry restrictions:
  MM(a,b) = 0: [a<b]
 
  In this case, only the tensor parts satisfying these conditions will be created.
- In particular, MM(a,b) will be created as a triangular matrix. Index symmetry
+ In particular, MM(a,b) will be created as an upper triangular matrix. Index symmetry
  restrictions can also be specified during indirect tensor creation in a tensor
  operation (when a previously undefined tensor appears as a result of the operation).
 
@@ -179,11 +198,13 @@ Explicit destruction:
  If a tensor is specified by its <tensor_name>, then the entire tensor will be destroyed.
  Optionally, by providing tensor indices in <tensor>, only the specific slice will be destroyed.
  Examples:
- ~Y13
- ~T4(i,j,k)
- destroy R5
- destroy F3(m,n,k)
- destroy C4,TT(i,j,l)
+  ~Y13
+  ~T4(i,j,k)
+  destroy R5
+  destroy F3(m,n,k)
+  destroy C4,TT(i,l,4:7)
+ It is not permitted to use literal ranges for tensor dimensions created via subspace indices,
+ and vice versa.
 
 A tensor can be stored in persistent storage by the following statement:
 
@@ -205,25 +226,28 @@ S34+(a,b,c,d)
 Currently defined tensor operations:
 
  1) Assignment:
-    <tensor> = <numeric_value>
+    <tensor> = <numerical_value>
     <tensor> = method("<method_name>")
     Examples:
     T1(i,j,k,l) = 0
     T1(i,j,k,l) = new_value
     T1(i,j,k,l) = method("Init my tensor")
-    In the second example, new_value will be looked up in the Exchange Space, if there.
+    In the second example, "new_value" will be looked up in the Exchange Space, if there.
 
  2) Permutation of tensor dimensions:
     <tensor0> = <tensor1>
     Examples:
     T1(i,j,k,l) = S1(k,j,l,i)
+    Pattern restrictions: (1) Every index on the left of "=" must appear only once;
+                          (2) Every index on the left of "=" must also appear on the right only once.
 
  3) Scaling:
-    <tensor> *= <numeric_value>
+    <tensor> *= <numerical_value>
     Examples:
     T1(i,j,k,l) *= 1.13
     T1(i,j,k,l) *= my_factor
-    In the second example, my_factor will be looked up in the Exchange Space, if there.
+    In the second example, "my_factor" will be looked up in the Exchange Space, if there.
+    Pattern restrictions: (1) Every index on the left of "=" must appear only once.
 
  4) Folding (dimension flattening):
     <tensor0> = <tensor1>
@@ -238,30 +262,37 @@ Currently defined tensor operations:
     Here dimension a of S1 is unfolded into three dimensions of T1, namely, i,j,l.
 
  6) Addition:
-    <tensor0> += <tensor1> {|* <numeric_value>}
+    <tensor0> += <tensor1> {|* <numerical_value>}
     Examples:
     T1(i,j,k,l) += S1(j,k,i,l)
     T1(i,j,k,l) += S1(i,j,k,l) * -1.13
     T1(i,j,k,l) += S1(j,k,i,l) * my_factor
-    In the third example, my_factor will be looked up in the Exchange Space, if there.
+    In the third example, "my_factor" will be looked up in the Exchange Space, if there.
+    Pattern restrictions: (1) Every index on the left of "=" must appear only once;
+                          (2) Every index on the left of "=" must also appear on the right only once.
 
  7) Product:
-    <tensor0> += <tensor1> * <tensor2> {|* <numeric_value>}
+    <tensor0> += <tensor1> * <tensor2> {|* <numerical_value>}
     where <tensor1> and <tensor2> do not have indices in common.
     Examples:
     T1(i,j,k,l) += S1(k,j) * S2(i,l)
     T1(i,j,k,l) += S1(i,j) * S2(k,l) * -1.13
     T1(i,j,k,l) += S1(k,j) * S2(i,l) * my_factor
-    In the third example, my_factor will be looked up in the Exchange Space, if there.
+    In the third example, "my_factor" will be looked up in the Exchange Space, if there.
+    Pattern restrictions: (1) Every index on the left of "=" must appear only once;
+                          (2) Every index on the left of "=" must also appear on the right only once.
 
  8) Contraction:
-    <tensor0> += <tensor1> * <tensor2> {|* <numeric_value>}
+    <tensor0> += <tensor1> * <tensor2> {|* <numerical_value>}
     where <tensor1> and <tensor2> have indices in common (contracted indices).
     Examples:
     T1(i,j,k,l) += S1(k,c,j,d) * S2(c,i,l,d)
     T1(i,j,k,l) += S1(k,c,j,d) * S2(d,i,c,l) * -1.13
     T1(i,j,k,l) += S1(k,c,j,d) * S2(c,i,l,d) * my_factor
-    In the third example, my_factor will be looked up in the Exchange Space, if there.
+    In the third example, "my_factor" will be looked up in the Exchange Space, if there.
+    Pattern restrictions: (1) Every index on the left of "=" must appear only once;
+                          (2) Every index on the left of "=" must also appear on the right only once;
+                          (3) Every index on the right which is not present on the left must appear twice on the right.
 
 
 2.4. Tensor network specification:
