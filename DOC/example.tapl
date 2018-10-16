@@ -39,7 +39,7 @@ scope my_tapl_program group(CC)
  save Z3(a0,a1,i0,i1): tag("My new tensor")              #save a tensor slice
  save V2: tag("My integrals")                            #save the full tensor
  destroy V2,T2,Z3(a0,a1,i0,i1)                           #destroy full V2 and T2, and a slice of Z3
- export Z4(a0,a1,i0,i1): tag("My Z4")                    #this will expose a Z4 slice to other scoping units
+ export Z4(a0,a1,i0,i1): tag("My Z4")                    #this will expose a Z4 slice to other scoping units belonging to the same group with read permissions
  export Z4(a0,a1,i0,i1): tag("My Z4") to(CC:w)           #this will expose a Z4 slice to the scoping group CC with write permissions
  invoke DIIS_algorithm                                   #invoke another scoping unit
  import C0(): tag("Scalar")                              #import the result from another scoping unit
