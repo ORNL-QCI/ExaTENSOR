@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/10/11
+!REVISION: 2018/10/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -170,6 +170,7 @@
        public exatns_tensor_create        !creates an empty tensor with an optional deferred initialization method
        public exatns_tensor_destroy       !destroys a tensor
        public exatns_tensor_get           !returns a locally storable slice of a tensor
+       public exatns_tensor_get_scalar    !retrieves the value of a scalar tensor
        public exatns_tensor_load          !loads a tensor from persistent storage (create + populate)
        public exatns_tensor_save          !saves a tensor to persistent storage
        public exatns_tensor_status        !returns the status of the tensor (e.g., empty, initialized, being updated, etc.)
@@ -312,6 +313,7 @@
         integer(INTD):: ierr                                      !out: error code
         integer(INT_MPI), intent(in), optional:: mpi_communicator !in: MPI communicator (defaults to MPI_COMM_WORLD)
         integer(INT_MPI):: errc,num_procs,my_rank
+        type(tens_scalar_get_t):: retrieve_scalar
 
         ierr=EXA_SUCCESS
 !Check whether the ExaTENSOR runtime is currently OFF:
@@ -383,18 +385,32 @@
          ierr=-7; return
         endif
 !Set the default universal tensor dimension strength assessing and shape resolution functions, if none preset by a user earlier:
-        if(.not.associated(tens_dim_extent_resolve)) errc=exatns_dim_resolution_setup(tens_rcrsv_dim_resolve_default)
-        if(.not.associated(tens_dim_strength_assess)) errc=exatns_dim_strength_setup(tens_rcrsv_dim_strength_default,0d0)
+        if(.not.associated(tens_dim_extent_resolve)) then
+         errc=exatns_dim_resolution_setup(tens_rcrsv_dim_resolve_default)
+         if(errc.ne.0) then; call dil_process_finish(errc); ierr=-8; return; endif
+        endif
+        if(.not.associated(tens_dim_strength_assess)) then
+         errc=exatns_dim_strength_setup(tens_rcrsv_dim_strength_default,0d0)
+         if(errc.ne.0) then; call dil_process_finish(errc); ierr=-9; return; endif
+        endif
+!Register scalar retrieving functor:
+        call retrieve_scalar%tens_scalar_get_ctor(GLOBAL_MPI_COMM,num_procs-1,errc) !receiving process is the Driver (last MPI process)
+        if(errc.eq.0) then
+         errc=exatns_method_register('_RetrieveScalar_',retrieve_scalar)
+         if(errc.ne.EXA_SUCCESS) then; call dil_process_finish(errc); ierr=-10; return; endif
+        else
+         call dil_process_finish(errc); ierr=-11; return
+        endif
 !Sync all MPI processes before configuring and launching TAVPs:
-        call dil_global_comm_barrier(errc); if(errc.ne.0) then; call dil_process_finish(errc); ierr=-8; return; endif
+        call dil_global_comm_barrier(errc); if(errc.ne.0) then; call dil_process_finish(errc); ierr=-12; return; endif
 !Mark the ExaTENSOR runtime active:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_ON,EXA_SUCCESS,num_procs,0_INTL)
 !Live TAVP life:
         ierr=EXA_SUCCESS
         if(process_role.eq.EXA_DRIVER) then
-         ierr=instr_log%init(instructions); if(ierr.ne.GFC_SUCCESS) ierr=-9
-         call bytecode_out%reserve_mem(ierr); if(ierr.ne.0) ierr=-10
-         call bytecode_in%reserve_mem(ierr); if(ierr.ne.0) ierr=-11
+         ierr=instr_log%init(instructions); if(ierr.ne.GFC_SUCCESS) ierr=-13
+         call bytecode_out%reserve_mem(ierr); if(ierr.ne.0) ierr=-14
+         call bytecode_in%reserve_mem(ierr); if(ierr.ne.0) ierr=-15
          return !Driver process returns immediately, it will later call exatns_stop()
         elseif(process_role.eq.EXA_MANAGER) then
          call tavp_mng_reset_output(jo)
@@ -420,24 +436,26 @@
         if(allocated(tavp)) then
          call tavp%destroy(errc); deallocate(tavp)
         endif
+!Unregister internal methods:
+        errc=exatns_method_unregister('_RetrieveScalar_')
 !Sync everyone:
         write(jo,'()')
         write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
              &dil_global_process_id(),dil_global_comm_size(),ierr
         call dil_global_comm_barrier(errc)
-        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-12; endif
+        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-16; endif
 !Free role specific MPI communicators:
         if(drv_mng_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-13
+         call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-17
         endif
         if(mng_wrk_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-14
+         call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-18
         endif
         if(role_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-15
+         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-19
         endif
 !Finish the MPI process:
-        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-16
+        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-20
         return
 
         contains
@@ -662,6 +680,8 @@
           call bytecode_out%destroy(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-8
 !Mark the ExaTENSOR runtime is off:
           exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0,ip+1_INTL)
+!Unregister internal methods:
+          errc=exatns_method_unregister('_RetrieveScalar_')
 !Sync with others globally:
           write(jo,'()')
           write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
@@ -1135,6 +1155,43 @@
         endif
         return
        end function exatns_tensor_get
+!-------------------------------------------------------------------
+       function exatns_tensor_get_scalar(tensor,scalar) result(ierr)
+!Retrieves the value of a scalar tensor.
+        implicit none
+        integer(INTD):: ierr                       !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor !in: (distributed) tensor of rank 0 (scalar)
+        complex(8), intent(out):: scalar           !out: scalar value
+        integer(INTD):: n
+        integer(INT_MPI):: stat(MPI_STATUS_SIZE),req
+        real(8):: rl8(2)
+
+        ierr=EXA_SUCCESS; scalar=(0d0,0d0)
+        if(tensor%is_set(ierr,num_dims=n)) then
+         if(ierr.eq.TEREC_SUCCESS.and.n.eq.0) then !only scalar tensors
+          call MPI_Irecv(rl8,2,MPI_REAL8,MPI_ANY_SOURCE,TAVP_SCALAR_TAG,GLOBAL_MPI_COMM,req,ierr)
+          if(ierr.eq.MPI_SUCCESS) then
+           ierr=exatns_tensor_traverse(tensor,'_RetrieveScalar_',sync=.FALSE.)
+           if(ierr.eq.EXA_SUCCESS) then
+            call MPI_Wait(req,stat,ierr)
+            if(ierr.eq.MPI_SUCCESS) then
+             scalar=cmplx(rl8(1),rl8(2),8)
+            else
+             ierr=EXA_ERR_UNABLE_COMPLETE
+            endif
+            n=exatns_sync(); if(ierr.eq.EXA_SUCCESS) ierr=n
+           endif
+          else
+           ierr=EXA_ERR_UNABLE_COMPLETE
+          endif
+         else
+          ierr=EXA_ERR_INVALID_ARGS
+         endif
+        else
+         ierr=EXA_ERR_INVALID_REQ
+        endif
+        return
+       end function exatns_tensor_get_scalar
 !--------------------------------------------------------------------
        function exatns_tensor_load(tensor,filename,sync) result(ierr)
 !Loads a tensor from an external storage.

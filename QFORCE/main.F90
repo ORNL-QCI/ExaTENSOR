@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/10
+!REVISION: 2018/10/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -180,6 +180,7 @@
         integer(INT_MPI):: mpi_th_provided
         integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role,hsp(1:MAX_TENSOR_RANK)
         integer(INTL):: l,ao_space_root,ssp(1:MAX_TENSOR_RANK)
+        complex(8):: etens_value
         real(8):: tms,tmf
 
 !Application initializes MPI:
@@ -371,6 +372,13 @@
            !ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+ !Retrieve scalar etens directly:
+           write(6,'("Retrieving directly scalar etens ... ")'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_get_scalar(etens,etens_value)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_get_scalar() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: Value =",2(1x,D21.14),":",F16.4," sec")') etens_value,tmf-tms; flush(6)
  !Destroy tensors:
   !rtens:
            write(6,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)

@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/09/27
+!REVISION: 2018/10/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -120,6 +120,7 @@
         integer(INT_MPI), parameter, public:: TAVP_COLLECT_TAG=2  !MPI message containing instructions being collected after execution
         integer(INT_MPI), parameter, public:: TAVP_LOCATE_TAG=3   !MPI message containing instructions undergoing meta-data location
         integer(INT_MPI), parameter, public:: TAVP_REPLICA_TAG=4  !MPI message containing instructions for data replication
+        integer(INT_MPI), parameter, public:: TAVP_SCALAR_TAG=5   !MPI message containing a scalar value
  !TAVP instruction error codes [-1:-100]:
         integer(INTD), parameter, public:: TAVP_ERR_GEN_FAILURE=-1     !unspecified generic failure
         integer(INTD), parameter, public:: TAVP_ERR_BTC_BAD=-2         !bad instruction bytecode
@@ -301,6 +302,14 @@
           procedure, public:: print_it=>TensCachePrintIt           !prints the content of the tensor cache
           final:: tens_cache_dtor                                  !dtor
         end type tens_cache_t
+ !Scalar retrieval functor:
+        type, extends(tens_method_uni_t), public:: tens_scalar_get_t
+         integer(INTD), private:: receive_comm=MPI_COMM_NULL           !MPI communicator of the scalar value receiver
+         integer(INTD), private:: receive_rank=-1                      !MPI rank of the scalar value receiver
+         contains
+          procedure, public:: tens_scalar_get_ctor=>TensScalarGetCtor  !ctor
+          procedure, public:: apply=>TensScalarGetApply                !passes the scalar value to the receiver MPI process
+        end type tens_scalar_get_t
  !External data register:
         type, public:: data_register_t
          type(dictionary_t), private:: ext_data                           !string --> tens_data_t{talsh_tens_data_t}
@@ -455,6 +464,9 @@
         private TensCacheGetNumEntries
         private TensCachePrintIt
         public tens_cache_dtor
+ !tens_scalar_get_t:
+        private TensScalarGetCtor
+        private TensScalarGetApply
  !data_register_t:
         private DataRegisterRegisterData
         private DataRegisterUnregisterData
@@ -2036,7 +2048,93 @@
 #endif
          return
         end subroutine tens_cache_dtor
-![data_register_t]---------------------------------------------------------
+![tens_scalar_get_t]=====================================
+        subroutine TensScalarGetCtor(this,comm,rank,ierr)
+         implicit none
+         class(tens_scalar_get_t), intent(out):: this !out: scalar getting functor
+         integer(INTD), intent(in):: comm             !MPI communicator of the receiving MPI process
+         integer(INTD), intent(in):: rank             !MPI rank of the receiving MPI process
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(comm.ne.MPI_COMM_NULL.and.rank.ge.0) then
+          this%receive_comm=comm
+          this%receive_rank=rank
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensScalarGetCtor
+!-------------------------------------------------------------------
+        function TensScalarGetApply(this,tensor,scalar) result(ierr)
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(tens_scalar_get_t), intent(in):: this  !in: scalar getting functor
+         class(tens_rcrsv_t), intent(inout):: tensor  !in: tensor
+         complex(8), intent(inout), optional:: scalar !in: scalar (not used here)
+         integer(INTD):: data_kind,n
+         logical:: laid,locd
+         type(C_PTR):: body_p
+         real(8):: rl8(2)
+         real(4), pointer:: r4p
+         real(8), pointer:: r8p
+         complex(4), pointer:: c4p
+         complex(8), pointer:: c8p
+
+         ierr=0
+         if(this%receive_comm.ne.MPI_COMM_NULL) then
+          if(tensor%is_set(ierr,num_dims=n,layed=laid,located=locd)) then
+           if(ierr.eq.TEREC_SUCCESS) then
+            if(n.eq.0) then
+             if(laid.and.locd) then
+              data_kind=tensor%get_data_type(ierr)
+              if(ierr.eq.TEREC_SUCCESS) then
+               body_p=tensor%get_body_ptr(ierr)
+               if(ierr.eq.TEREC_SUCCESS) then
+                select case(data_kind)
+                case(R4)
+                 call c_f_pointer(body_p,r4p)
+                 rl8(1:2)=(/real(r4p,8),0d0/)
+                 call MPI_Rsend(rl8,2,MPI_REAL8,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,ierr)
+                 if(ierr.ne.MPI_SUCCESS) ierr=-9
+                case(R8)
+                 call c_f_pointer(body_p,r8p)
+                 rl8(1:2)=(/r8p,0d0/)
+                 call MPI_Rsend(rl8,2,MPI_REAL8,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,ierr)
+                 if(ierr.ne.MPI_SUCCESS) ierr=-8
+                case(C4)
+                 call c_f_pointer(body_p,c4p)
+                 rl8(1:2)=(/real(c4p,8),real(aimag(c4p),8)/)
+                 call MPI_Rsend(rl8,2,MPI_REAL8,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,ierr)
+                 if(ierr.ne.MPI_SUCCESS) ierr=-7
+                case(C8)
+                 call c_f_pointer(body_p,c8p)
+                 rl8(1:2)=(/real(c8p),aimag(c8p)/)
+                 call MPI_Rsend(rl8,2,MPI_REAL8,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,ierr)
+                 if(ierr.ne.MPI_SUCCESS) ierr=-6
+                case default
+                 ierr=-5
+                end select
+               endif
+              endif
+             else
+              ierr=-4
+             endif
+            else
+             ierr=-3
+            endif
+           endif
+          else
+           if(ierr.eq.TEREC_SUCCESS) ierr=-2
+          endif
+         else
+          ierr=-1
+         endif
+         return
+        end function TensScalarGetApply
+![data_register_t]=========================================================
         subroutine DataRegisterRegisterData(this,data_name,extrn_data,ierr)
          implicit none
          class(data_register_t), intent(inout):: this     !inout: data register
