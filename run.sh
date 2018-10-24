@@ -5,11 +5,11 @@
 export QF_PATH=/home/dima/src/ExaTensor #full path to ExaTensor
 export QF_NUM_PROCS=4                   #number of MPI processes
 export QF_PROCS_PER_NODE=4              #number of MPI processes per node
-export QF_CORES_PER_PROC=1              #number of cores per MPI process
-export QF_NUM_THREADS=8                 #number of threads per MPI process (at least 8)
+export QF_CORES_PER_PROC=1              #number of cores per MPI process (no less than 1)
 export QF_GPUS_PER_PROCESS=0            #number of discrete NVIDIA GPU's per process (optional)
 export QF_MICS_PER_PROCESS=0            #number of discrete Intel Xeon Phi's per process (optional)
-export QF_AMDS_PER_PROCESS=0            #number of dsicrete AMD GPU's per process (optional)
+export QF_AMDS_PER_PROCESS=0            #number of discrete AMD GPU's per process (optional)
+export QF_NUM_THREADS=8                 #number of threads per MPI process (keep it 8)
 
 #OpenMP:
 export OMP_NUM_THREADS=$QF_NUM_THREADS #initial number of OpenMP threads per MPI process
@@ -18,11 +18,12 @@ export OMP_NESTED=TRUE                 #OpenMP nested parallelism is mandatory
 export OMP_MAX_ACTIVE_LEVELS=3         #max number of OpenMP nesting levels (at least 3)
 export OMP_THREAD_LIMIT=256            #max total number of OpenMP threads per process
 export OMP_WAIT_POLICY=PASSIVE         #idle thread behavior
+export OMP_STACKSIZE=16M               #stack size per thread
 export OMP_PROC_BIND=close,spread,spread
 export OMP_PLACES=threads
 
 #Intel specific:
-export KMP_AFFINITY="verbose,granularity=core,compact" #Intel CPU thread affinity
+#export KMP_AFFINITY="verbose,granularity=core,compact" #Intel CPU thread affinity
 export MIC_PREFIX=MIC                                  #mandatory when using MIC
 export MIC_ENV_PREFIX=MIC                              #mandatory when using MIC
 export MIC_OMP_PREFIX=MIC                              #mandatory when using MIC
@@ -32,10 +33,10 @@ export MIC_KMP_PLACE_THREADS="64c,4t"                  #Intel MIC thread placeme
 export MIC_KMP_AFFINITY="granularity=fine,compact"     #Intel MIC thread affinity
 export MIC_USE_2MB_BUFFERS=64K                         #Intel MIC only
 export MKL_MIC_ENABLE=0                                #Intel MIC MKL auto-offloading
-export MKL_NUM_THREADS=$OMP_NUM_THREADS                #number of Intel MKL threads per process
 export OFFLOAD_REPORT=2                                #Intel MIC offload reporting level
+#export MKL_NUM_THREADS=$OMP_NUM_THREADS               #number of Intel MKL threads per process
 
-#Cray specific:
+#Cray/MPICH specific:
 export CRAY_OMP_CHECK_AFFINITY=TRUE          #CRAY: Show thread placement
 export MPICH_NEMESIS_ASYNC_PROGRESS="SC"     #CRAY: Activate MPI asynchronous progress thread {"SC","MC"}
 export MPICH_MAX_THREAD_SAFETY=multiple      #CRAY: Required for MPI asynchronous progress
@@ -52,7 +53,7 @@ export MPICH_RMA_OVER_DMAPP=1                #CRAY: DMAPP backend for CRAY-MPICH
 #Summit (jsrun) specific:
 unset PAMI_IBV_ENABLE_DCT
 
-rm *.tmp *.log *.out *.x
+rm core.* *.tmp *.log *.out *.x
 cp $QF_PATH/Qforce.x ./
 
 #jsrun -n8 -r2 -a1 -c21 -g3 -brs ./Qforce.x #>& qforce.log
@@ -63,7 +64,7 @@ cp $QF_PATH/Qforce.x ./
 
 #aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./Qforce.x #>& qforce.log
 
-#aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -cc none ./Qforce.x #>& qforce.log
+#aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc none ./Qforce.x #>& qforce.log
 
 #nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x #>& qforce.log
 
