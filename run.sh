@@ -11,6 +11,8 @@ export QF_MICS_PER_PROCESS=0            #number of discrete Intel Xeon Phi's per
 export QF_AMDS_PER_PROCESS=0            #number of discrete AMD GPU's per process (optional)
 export QF_NUM_THREADS=8                 #number of threads per MPI process (keep it 8)
 
+ulimit -s unlimited
+
 #OpenMP:
 export OMP_NUM_THREADS=$QF_NUM_THREADS #initial number of OpenMP threads per MPI process
 export OMP_DYNAMIC=FALSE               #no OpenMP dynamic threading
@@ -18,9 +20,12 @@ export OMP_NESTED=TRUE                 #OpenMP nested parallelism is mandatory
 export OMP_MAX_ACTIVE_LEVELS=3         #max number of OpenMP nesting levels (at least 3)
 export OMP_THREAD_LIMIT=256            #max total number of OpenMP threads per process
 export OMP_WAIT_POLICY=PASSIVE         #idle thread behavior
-export OMP_STACKSIZE=16M               #stack size per thread
 export OMP_PROC_BIND=close,spread,spread
 export OMP_PLACES=threads
+#export OMP_STACKSIZE=1M                #stack size per thread
+#export GOMP_STACKSIZE=1024             #stack size per thread (gcc only)
+#export OMP_DISPLAY_ENV=VERBOSE
+#export GOMP_DEBUG=1
 
 #Intel specific:
 #export KMP_AFFINITY="verbose,granularity=core,compact" #Intel CPU thread affinity
@@ -29,20 +34,20 @@ export MIC_ENV_PREFIX=MIC                              #mandatory when using MIC
 export MIC_OMP_PREFIX=MIC                              #mandatory when using MIC
 export MIC_OMP_NUM_THREADS=256                         #mandatory when using MIC
 export MIC_MKL_NUM_THREADS=$MIC_OMP_NUM_THREADS        #mandatory when using MIC (Intel MIC MKL)
-export MIC_KMP_PLACE_THREADS="64c,4t"                  #Intel MIC thread placement
-export MIC_KMP_AFFINITY="granularity=fine,compact"     #Intel MIC thread affinity
+#export MIC_KMP_PLACE_THREADS="64c,4t"                  #Intel MIC thread placement
+#export MIC_KMP_AFFINITY="verbose,granularity=fine,compact" #Intel MIC thread affinity
 export MIC_USE_2MB_BUFFERS=64K                         #Intel MIC only
 export MKL_MIC_ENABLE=0                                #Intel MIC MKL auto-offloading
 export OFFLOAD_REPORT=2                                #Intel MIC offload reporting level
-#export MKL_NUM_THREADS=$OMP_NUM_THREADS               #number of Intel MKL threads per process
+export MKL_NUM_THREADS=$OMP_NUM_THREADS                #number of Intel MKL threads per process
 
 #Cray/MPICH specific:
 export CRAY_OMP_CHECK_AFFINITY=TRUE          #CRAY: Show thread placement
-export MPICH_NEMESIS_ASYNC_PROGRESS="SC"     #CRAY: Activate MPI asynchronous progress thread {"SC","MC"}
 export MPICH_MAX_THREAD_SAFETY=multiple      #CRAY: Required for MPI asynchronous progress
-export MPICH_GNI_ASYNC_PROGRESS_TIMEOUT=0    #CRAY:
-export MPICH_GNI_MALLOC_FALLBACK=enabled     #CRAY:
+export MPICH_NEMESIS_ASYNC_PROGRESS="SC"     #CRAY: Activate MPI asynchronous progress thread {"SC","MC"}
 export MPICH_RMA_OVER_DMAPP=1                #CRAY: DMAPP backend for CRAY-MPICH
+#export MPICH_GNI_ASYNC_PROGRESS_TIMEOUT=0   #CRAY:
+#export MPICH_GNI_MALLOC_FALLBACK=enabled    #CRAY:
 #export _DMAPPI_NDREG_ENTRIES=16384          #CRAY: Max number of entries in UDREG memory registration cache
 #export MPICH_ALLOC_MEM_HUGE_PAGES=1
 #export MPICH_ALLOC_MEM_HUGEPG_SZ=2M

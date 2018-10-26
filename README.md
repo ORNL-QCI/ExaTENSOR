@@ -61,15 +61,16 @@ BUILD: Choose the right options for your platform in the Makefile header and mak
        m) PATH_CUTT: If you chose to use cuTT, provide the path to it.
 
 RUN: An example script run.sh shows how to run ExaTENSOR for a test case (Qforce.x)
-     implemented in QFORCE/main.F90. In general, at least 3 MPI processes are needed
-     in order to run ExaTENSOR. The test configuration actually utilizes 8 MPI processes,
+     implemented in QFORCE/main.F90. In general, at least 4 MPI processes are needed
+     in order to run ExaTENSOR. The test configuration utilizes >=4 MPI processes,
      each process running at least 5 OpenMP threads. This MPI test can still be run on a
      single node via oversubscription of CPU cores. Environment variables to set:
      a) QF_PATH: Path to the ExaTENSOR root directory.
-     b) QF_NUM_PROCS: Number of MPI processes, must be 8 for this test.
+     b) QF_NUM_PROCS: Number of MPI processes, must be greater or equal to 4 for this test.
      c) QF_PROCS_PER_NODE: Number of MPI processes per node.
      d) QF_CORES_PER_PROC: Number of CPU cores per MPI process. In case you have less
         CPU cores than the number of MPI processes, specify the minimum of 1.
-     e) QF_NUM_THREADS: Number of threads per MPI process. Must be at least 8.
+     e) QF_NUM_THREADS: Number of threads per MPI process (set to 8).
      f) QF_GPUS_PER_PROCESS: Number of exclusive NVIDIA GPUs per MPI process.
-     At the bottom of run.sh, pick or specify your MPI execution command for Qforce.x.
+     At the bottom of run.sh, pick or specify your MPI execution command for Qforce.x,
+        taking into account the number of MPI processes per node, oversubscription, etc.
