@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/22
+!REVISION: 2018/11/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -83,7 +83,7 @@
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !default output for this module
-        integer(INTD), private:: DEBUG=1    !debugging mode
+        integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Runtime errors (ExaTENSOR aliases of basic DSVP errors):
         integer(INTD), parameter, public:: EXA_SUCCESS=DSVP_SUCCESS                         !success
@@ -879,15 +879,19 @@
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+!$OMP CRITICAL (IO)
          do l=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+!$OMP END CRITICAL (IO)
          l=len_trim(this%method_name)
          if(l.gt.0) then
           call printl(devo,'Method: '//this%method_name(1:l)//';',.FALSE.)
          else
           call printl(devo,'No method;',.FALSE.)
          endif
+!$OMP CRITICAL (IO)
          write(devo,'(" Scalar: ",D23.14,1x,D23.14,";")',ADVANCE='NO') this%alpha
          write(devo,'(" Defined: ",l1)') (.not.this%undefined)
+!$OMP END CRITICAL (IO)
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -984,12 +988,16 @@
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Permutation: ")',ADVANCE='NO')
+!$OMP END CRITICAL (IO)
          call this%permutation%print_it(errc,devo,0)
          if(errc.eq.TEREC_SUCCESS) then
+!$OMP CRITICAL (IO)
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Scalar: ",(D23.14,1x,D23.14))') this%alpha
+!$OMP END CRITICAL (IO)
          else
           errc=-1
          endif
@@ -1112,12 +1120,16 @@
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Pattern: ")',ADVANCE='NO')
+!$OMP END CRITICAL (IO)
          call this%contr_ptrn%print_it(errc,devo,0)
          if(errc.eq.TEREC_SUCCESS) then
+!$OMP CRITICAL (IO)
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Scalar: ",D23.14,1x,D23.14)') this%alpha
+!$OMP END CRITICAL (IO)
          else
           errc=-1
          endif
@@ -1589,8 +1601,10 @@
           call this%destroy_lock()
          else
           errc=-1
+!$OMP CRITICAL (IO)
           write(jo,'("#ERROR(TensorCache:tens_cache_entry_t.destroy): Attempt to destroy an active tensor cache entry!")')
           write(jo,'("RefCount = ",i11,", UseCount = ",i11,", Persistency = ",l1)') this%ref_count,this%use_count,this%persistent
+!$OMP END CRITICAL (IO)
           call this%tensor%print_it(dev_id=jo); flush(jo)
           !call crash() !debug
           call quit(errc,'#ERROR(TensorCache:tens_cache_entry_t.destroy): Attempt to destroy an active tensor cache entry!')
@@ -1607,13 +1621,21 @@
 !$OMP FLUSH(this)
          if(.not.this%lock_initialized) then
           if(DEBUG.gt.1) then
-           write(jo,'("New cache entry lock: ",i18," --> ")',ADVANCE='NO') this%entry_lock; flush(jo)
+!$OMP CRITICAL (IO)
+           write(jo,'("New cache entry lock: ",i18," --> ")',ADVANCE='NO') this%entry_lock
+!$OMP END CRITICAL (IO)
+           flush(jo)
           endif
           call omp_init_nest_lock(this%entry_lock)
 !!!$OMP ATOMIC WRITE SEQ_CST
 !$OMP ATOMIC WRITE
           this%lock_initialized=.TRUE.
-          if(DEBUG.gt.1) then; write(jo,'(i18)') this%entry_lock; flush(jo); endif
+          if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
+           write(jo,'(i18)') this%entry_lock
+!$OMP END CRITICAL (IO)
+           flush(jo)
+          endif
          endif
 #endif
          return
@@ -1626,13 +1648,21 @@
 !$OMP FLUSH(this)
          if(this%lock_initialized) then
           if(DEBUG.gt.1) then
-           write(jo,'("Destroying cache entry lock ",i18," ... ")',ADVANCE='NO') this%entry_lock; flush(jo)
+!$OMP CRITICAL (IO)
+           write(jo,'("Destroying cache entry lock ",i18," ... ")',ADVANCE='NO') this%entry_lock
+!$OMP END CRITICAL (IO)
+           flush(jo)
           endif
           call omp_destroy_nest_lock(this%entry_lock)
 !!!$OMP ATOMIC WRITE SEQ_CST
 !$OMP ATOMIC WRITE
           this%lock_initialized=.FALSE.
-          if(DEBUG.gt.1) then; write(jo,'("Done")'); flush(jo); endif
+          if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
+           write(jo,'("Done")')
+!$OMP END CRITICAL (IO)
+           flush(jo)
+          endif
          endif
 #endif
          return
@@ -1646,7 +1676,9 @@
           call omp_set_nest_lock(this%entry_lock)
 !$OMP FLUSH
          else
+!$OMP CRITICAL (IO)
           write(jo,'("#FATAL(VIRTA:tens_cache_entry_t.lock): Attempt to set an uninitialized lock for tensor:")')
+!$OMP END CRITICAL (IO)
           if(associated(this%tensor)) call this%tensor%print_it(dev_id=jo); flush(jo)
           call quit(-1,'#FATAL(VIRTA:tens_cache_entry_t.lock): Attempt to set an uninitialized lock!')
          endif
@@ -1662,7 +1694,9 @@
 !$OMP FLUSH
           call omp_unset_nest_lock(this%entry_lock)
          else
+!$OMP CRITICAL (IO)
           write(jo,'("#FATAL(VIRTA:tens_cache_entry_t.unlock): Attempt to unset an uninitialized lock for tensor:")')
+!$OMP END CRITICAL (IO)
           if(associated(this%tensor)) call this%tensor%print_it(dev_id=jo); flush(jo)
           call quit(-1,'#FATAL(VIRTA:tens_cache_entry_t.lock): Attempt to unset an uninitialized lock!')
          endif
@@ -1773,9 +1807,11 @@
           endif
           call this%unlock()
          else
-          if(DEBUG.gt.0) then
+          if(VERBOSE) then
+!$OMP CRITICAL (IO)
            write(jo,'("#ERROR(VIRTA:tens_cache_t.lookup)[",i6,":",i3,"]: Unable to get tensor descriptor: Error ",i11)')&
            &impir,omp_get_thread_num(),errc
+!$OMP END CRITICAL (IO)
            flush(jo)
           endif
           errc=-1
@@ -1810,7 +1846,10 @@
          call this%init_lock()
          if(associated(tensor)) then
           if(DEBUG.gt.1) then
-           write(jo,'("#MSG(TensorCache)[",i6,"]: Creating cache entry for tensor")') impir; flush(jo)
+!$OMP CRITICAL (IO)
+           write(jo,'("#MSG(TensorCache)[",i6,"]: Creating cache entry for tensor")') impir
+!$OMP END CRITICAL (IO)
+           flush(jo)
            call tensor%print_it(dev_id=jo); flush(jo)
           endif
           tens_descr=tensor%get_descriptor(errc,only_signature=.TRUE.) !compute tensor descriptor by tensor signature only
@@ -1827,11 +1866,21 @@
               if(res.eq.GFC_NOT_FOUND) then
                call tcep%init_lock()
                call tcep%set_tensor(tensor,errc); if(errc.ne.0) errc=-8
-               if(DEBUG.gt.1.and.errc.eq.0) then; write(jo,'("Tensor cache entry created")'); flush(jo); endif
+               if(DEBUG.gt.1.and.errc.eq.0) then
+!$OMP CRITICAL (IO)
+                write(jo,'("Tensor cache entry created")')
+!$OMP END CRITICAL (IO)
+                flush(jo)
+               endif
                stored=.TRUE.; this%num_entries=this%num_entries+1
               else
                if(res.eq.GFC_FOUND) then
-                if(DEBUG.gt.1) then; write(jo,'("Tensor cache entry exists")'); flush(jo); endif
+                if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
+                 write(jo,'("Tensor cache entry exists")')
+!$OMP END CRITICAL (IO)
+                 flush(jo)
+                endif
                else
                 errc=-7
                endif
@@ -1883,7 +1932,10 @@
          evicted=.FALSE.; decr=.FALSE.; if(present(decr_use)) decr=decr_use
          call this%init_lock()
          if(DEBUG.gt.1) then
-          write(jo,'("#MSG(TensorCache)[",i6,"]: Evicting cache entry for tensor")') impir; flush(jo)
+!$OMP CRITICAL (IO)
+          write(jo,'("#MSG(TensorCache)[",i6,"]: Evicting cache entry for tensor")') impir
+!$OMP END CRITICAL (IO)
+          flush(jo)
           call tensor%print_it(dev_id=jo); flush(jo)
          endif
          tens_descr=tensor%get_descriptor(errc,only_signature=.TRUE.) !compute tensor descriptor by tensor signature only
@@ -1909,18 +1961,33 @@
              if(ready_to_die) then
               res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
               if(res.eq.GFC_FOUND) then
-               if(DEBUG.gt.1) then; write(jo,'("Tensor cache entry evicted")'); flush(jo); endif
+               if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
+                write(jo,'("Tensor cache entry evicted")')
+!$OMP END CRITICAL (IO)
+                flush(jo)
+               endif
                tensor=>NULL(); evicted=.TRUE.; this%num_entries=this%num_entries-1
               else
                errc=-5
               endif
              else
-              if(DEBUG.gt.1) then; write(jo,'("Tensor cache entry is still in use")'); flush(jo); endif
+              if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
+               write(jo,'("Tensor cache entry is still in use")')
+!$OMP END CRITICAL (IO)
+               flush(jo)
+              endif
              endif
             endif
            else
             if(res.eq.GFC_NOT_FOUND) then
-             if(DEBUG.gt.1) then; write(jo,'("Tensor cache entry does not exist")'); flush(jo); endif
+             if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
+              write(jo,'("Tensor cache entry does not exist")')
+!$OMP END CRITICAL (IO)
+              flush(jo)
+             endif
             else
              errc=-4
             endif
@@ -1932,14 +1999,18 @@
           call this%unlock()
          else
           if(VERBOSE) then
+!$OMP CRITICAL (IO)
            write(jo,'("#ERROR(TAVP:tens_cache_t.evict): Unable to compute descriptor: Error ",i11,"; Tensor:")') errc
+!$OMP END CRITICAL (IO)
            call tensor%print_it(dev_id=jo)
            flush(jo)
           endif
           errc=-1
          endif
          if(errc.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
           write(jo,'("#ERROR(TAVP:tens_cache_t.evict): Error ",i11)') errc
+!$OMP END CRITICAL (IO)
           flush(jo)
          endif
          if(present(ierr)) ierr=errc

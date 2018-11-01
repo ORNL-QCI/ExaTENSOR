@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/10/22
+!REVISION: 2018/11/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -43,7 +43,7 @@
 !PARAMETERS:
  !Basic:
        integer(INTD), private:: CONS_OUT=6 !output device
-       integer(INTD), private:: DEBUG=1    !debugging level
+       integer(INTD), private:: DEBUG=0    !debugging level
        logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Error codes (user-level):
        public EXA_SUCCESS,&

@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/09
+!REVISION: 2018/11/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1260,7 +1260,7 @@
          integer(INTD), intent(in):: finish
          integer(INTD), intent(in):: length
          integer(INTD):: i
-
+!$OMP CRITICAL (IO)
          write(CONS_OUT,'("PRINTING TCG BUFFER: ",i8," - ",i8)') start,finish
          if(allocated(tcg_num_buf)) then
           if(start.ge.lbound(tcg_num_buf,1).and.finish.le.ubound(tcg_num_buf,1)) then
@@ -1270,6 +1270,7 @@
           endif
          endif
          write(CONS_OUT,'("END OF PRINTING")')
+!$OMP END CRITICAL (IO)
          return
         end subroutine print_tcg_buffer
 ![hspace_register_t]============================
@@ -2017,17 +2018,25 @@
 
          errc=TEREC_SUCCESS
          if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
-         if(present(nspaces)) then; do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo; endif
+         if(present(nspaces)) then
+!$OMP CRITICAL (IO)
+          do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+!$OMP END CRITICAL (IO)
+         endif
          if(this%is_set()) then
           call printl(dev,this%char_name,adv=.FALSE.)
+!$OMP CRITICAL (IO)
           write(dev,'("(")',ADVANCE='NO')
           do i=1,this%num_dims
            write(dev,'(i9)',ADVANCE='NO') this%space_idx(i)
            if(i.lt.this%num_dims) write(dev,'(",")',ADVANCE='NO')
           enddo
           write(dev,'(")")')
+!$OMP END CRITICAL (IO)
          else
+!$OMP CRITICAL (IO)
           write(dev,'("EMPTY TENSOR SIGNATURE")')
+!$OMP END CRITICAL (IO)
          endif
          flush(dev)
          if(present(ierr)) ierr=errc
@@ -2648,8 +2657,13 @@
 
          errc=TEREC_SUCCESS
          if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
-         if(present(nspaces)) then; do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo; endif
+         if(present(nspaces)) then
+!$OMP CRITICAL (IO)
+          do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+!$OMP END CRITICAL (IO)
+         endif
          if(this%is_set()) then
+!$OMP CRITICAL (IO)
           write(dev,'("SHAPE")',ADVANCE='NO')
           write(dev,'("(")',ADVANCE='NO')
           if(this%num_groups().gt.0) then
@@ -2675,8 +2689,11 @@
            enddo
            write(dev,'(")")')
           endif
+!$OMP END CRITICAL (IO)
          else
+!$OMP CRITICAL (IO)
           write(dev,'("Empty tensor shape")')
+!$OMP END CRITICAL (IO)
          endif
          flush(dev)
          if(present(ierr)) ierr=errc
@@ -3213,17 +3230,25 @@
          errc=TEREC_SUCCESS
          if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
          if(present(nspaces)) then
+!$OMP CRITICAL (IO)
           do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
           write(dev,'("TENSOR HEADER{")')
+!$OMP END CRITICAL (IO)
           call this%signature%print_it(errc,dev,nspaces+1)
           call this%shape%print_it(errc,dev,nspaces+1)
+!$OMP CRITICAL (IO)
           do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
           write(dev,'("}")')
+!$OMP END CRITICAL (IO)
          else
+!$OMP CRITICAL (IO)
           write(dev,'("TENSOR HEADER{")')
+!$OMP END CRITICAL (IO)
           call this%signature%print_it(errc,dev,1)
           call this%shape%print_it(errc,dev,1)
+!$OMP CRITICAL (IO)
           write(dev,'("}")')
+!$OMP END CRITICAL (IO)
          endif
          flush(dev)
          if(present(ierr)) ierr=errc
@@ -4373,23 +4398,28 @@
          errc=TEREC_SUCCESS
          if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
          if(present(nspaces)) then
+!$OMP CRITICAL (IO)
           do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
           write(dev,'("TENSOR BODY{")')
           do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
           write(dev,'(" Number of subtensors    = ",i7)') this%num_subtensors
           do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
           write(dev,'(" Tensor body data kind   = ",i7)') this%data_type
+!$OMP END CRITICAL (IO)
           tens_layout=>this%get_layout()
           if(associated(tens_layout)) then
+!$OMP CRITICAL (IO)
            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
            write(dev,'(" Tensor body layout kind = ",i7)') tens_layout%layout
            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
            write(dev,'(" Layout data kind        = ",i7)') tens_layout%data_type
+!$OMP END CRITICAL (IO)
            descr=>tens_layout%get_data_descr()
            if(associated(descr)) then
             if(descr%is_set(errc,rank,comm)) then
              sts=descr%get_comm_stat(errc,req)
              ds=descr%data_size()
+!$OMP CRITICAL (IO)
              do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
              if(req.ne.MPI_REQUEST_NULL) then
               write(dev,'(" Data descriptor: Comm = ",i11,"; Rank = ",i7,"; Size (B) = ",i12,"; Request = ",i12)')&
@@ -4398,32 +4428,49 @@
               write(dev,'(" Data descriptor: Comm = ",i11,"; Rank = ",i7,"; Size (B) = ",i12)')&
               &comm,rank,ds
              endif
+!$OMP END CRITICAL (IO)
             else
+!$OMP CRITICAL (IO)
              do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
              write(dev,'(" Data descriptor empty")')
+!$OMP END CRITICAL (IO)
             endif
            else
+!$OMP CRITICAL (IO)
             do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
             write(dev,'(" Data descriptor empty")')
+!$OMP END CRITICAL (IO)
            endif
           else
+!$OMP CRITICAL (IO)
            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
            write(dev,'(" Tensor body has no layout yet")')
+!$OMP END CRITICAL (IO)
           endif
+!$OMP CRITICAL (IO)
           do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
           write(dev,'("}")')
+!$OMP END CRITICAL (IO)
          else
+!$OMP CRITICAL (IO)
           write(dev,'("TENSOR BODY{")')
           write(dev,'(" Number of subtensors    = ",i7)') this%num_subtensors
           write(dev,'(" Tensor body data kind   = ",i7)') this%data_type
+!$OMP END CRITICAL (IO)
           tens_layout=>this%get_layout()
           if(associated(tens_layout)) then
+!$OMP CRITICAL (IO)
            write(dev,'(" Tensor body layout kind = ",i7)') tens_layout%layout
            write(dev,'(" Layout data kind        = ",i7)') tens_layout%data_type
+!$OMP END CRITICAL (IO)
           else
+!$OMP CRITICAL (IO)
            write(dev,'(" Tensor body has no layout yet")')
+!$OMP END CRITICAL (IO)
           endif
+!$OMP CRITICAL (IO)
           write(dev,'("}")')
+!$OMP END CRITICAL (IO)
          endif
          flush(dev)
          if(present(ierr)) ierr=errc
@@ -4525,7 +4572,9 @@
          this%header=source%header
          call this%body%tens_body_copy(source%body,this%header,errc)
          if(errc.ne.TEREC_SUCCESS) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#FATAL(tens_rcrsv_t.copy_ctor): Tensor body copy constructor failed with error ",i11)') errc
+!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
           call crash() !debug
          endif
@@ -6062,12 +6111,16 @@
 
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR{")')
+!$OMP END CRITICAL (IO)
          call this%header%print_it(errc,devo,nsp+1)
          call this%body%print_it(errc,devo,nsp+1)
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+!$OMP END CRITICAL (IO)
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -6125,6 +6178,7 @@
 
          errc=TEREC_SUCCESS
          devo=6; if(present(dev_id)) devo=dev_id
+!$OMP CRITICAL (IO)
          write(devo,'("TENSOR_DESCRIPTOR{")')
          write(devo,'(1x,i4)') this%rank
          write(devo,*) this%char_name
@@ -6136,6 +6190,7 @@
           l=l+1; write(devo,'(1x,i11)') this%info(l)
          enddo
          write(devo,'("}")')
+!$OMP END CRITICAL (IO)
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -7073,6 +7128,7 @@
          errc=TEREC_SUCCESS
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+!$OMP CRITICAL (IO)
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          if(this%length.gt.0) then
           write(devo,'("(",i2,"){")',ADVANCE='NO') this%prm(0) !sign
@@ -7082,6 +7138,7 @@
          else
           write(devo,'("(1){}")')
          endif
+!$OMP END CRITICAL (IO)
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -7582,6 +7639,7 @@
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
          if(this%is_set(errc)) then
+!$OMP CRITICAL (IO)
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
           if(this%ddim.gt.0) then
            call numchar(this%ddim,l,num_pos)
@@ -7623,9 +7681,12 @@
            endif
           endif
           write(devo,'()')
+!$OMP END CRITICAL (IO)
          else
+!$OMP CRITICAL (IO)
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("{Empty/invalid extended tensor contraction}")')
+!$OMP END CRITICAL (IO)
          endif
          flush(devo)
          if(present(ierr)) ierr=errc
@@ -8025,9 +8086,12 @@
 
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR TRANSFORMATION{")')
+!$OMP END CRITICAL (IO)
          if(this%is_set(errc)) then
+!$OMP CRITICAL (IO)
           do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
           if(allocated(this%definer_name)) then
            call printl(devo,'External method: '//this%definer_name(1:len_trim(this%definer_name)))
@@ -8036,6 +8100,7 @@
           endif
           do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Complex Prefactor = (",D21.14,",",D21.14,")")') this%alpha
+!$OMP END CRITICAL (IO)
           n=this%get_num_args(ier); if(errc.eq.TEREC_SUCCESS.and.ier.ne.TEREC_SUCCESS) errc=ier
           do i=0,n-1
            trp=>NULL(); trp=>this%get_argument(i,ier)
@@ -8044,11 +8109,15 @@
            if(errc.eq.TEREC_SUCCESS.and.ier.ne.TEREC_SUCCESS) errc=ier
           enddo
          else
+!$OMP CRITICAL (IO)
           do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Empty/invalid tensor transformation")')
+!$OMP END CRITICAL (IO)
          endif
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+!$OMP END CRITICAL (IO)
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -8306,14 +8375,20 @@
 
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR ADDITION{")')
+!$OMP END CRITICAL (IO)
          if(this%is_set(errc)) then
+!$OMP CRITICAL (IO)
           do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Permutation: ")',ADVANCE='NO')
+!$OMP END CRITICAL (IO)
           call this%permut%print_it(ier,devo,0); if(errc.eq.TEREC_SUCCESS.and.ier.ne.TEREC_SUCCESS) errc=ier
+!$OMP CRITICAL (IO)
           do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Complex Prefactor = (",D21.14,",",D21.14,")")') this%alpha
+!$OMP END CRITICAL (IO)
           n=this%get_num_args(ier); if(errc.eq.TEREC_SUCCESS.and.ier.ne.TEREC_SUCCESS) errc=ier
           do i=0,n-1
            trp=>NULL(); trp=>this%get_argument(i,ier)
@@ -8322,11 +8397,15 @@
            if(errc.eq.TEREC_SUCCESS.and.ier.ne.TEREC_SUCCESS) errc=ier
           enddo
          else
+!$OMP CRITICAL (IO)
           do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Empty/invalid tensor addition")')
+!$OMP END CRITICAL (IO)
          endif
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+!$OMP END CRITICAL (IO)
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -9351,12 +9430,16 @@
 
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR CONTRACTION{")')
+!$OMP END CRITICAL (IO)
          if(this%is_set(errc)) then
           call this%contr_ptrn%print_it(j,devo,nsp+1); if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
+!$OMP CRITICAL (IO)
           do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Complex Prefactor = (",D21.14,",",D21.14,")")') this%alpha
+!$OMP END CRITICAL (IO)
           n=this%get_num_args(j); if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
           do i=0,n-1
            trp=>NULL(); trp=>this%get_argument(i,j)
@@ -9365,11 +9448,15 @@
            if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
           enddo
          else
+!$OMP CRITICAL (IO)
           do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Empty/invalid tensor contraction")')
+!$OMP END CRITICAL (IO)
          endif
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+!$OMP END CRITICAL (IO)
          flush(devo)
          if(present(ierr)) ierr=errc
          return

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/12
+!REVISION: 2018/11/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -112,7 +112,7 @@
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !default output device
-        integer(INTD), private:: DEBUG=1    !debugging mode
+        integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
@@ -670,21 +670,27 @@
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
          call this%lock()
+!$OMP CRITICAL (IO)
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR CACHE ENTRY{")')
+!$OMP END CRITICAL (IO)
  !Tensor:
          tensor=>this%get_tensor(errc)
          if(errc.eq.0) call tensor%print_it(errc,devo,nsp+1)
  !Metadata owner id:
+!$OMP CRITICAL (IO)
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Metadata owner TAVP-MNG id = (",i4,1x,i4,")")') this%owner_id(1:2)
+!$OMP END CRITICAL (IO)
  !Counters:
          pers=this%is_persistent(); refc=this%get_ref_count(); usec=this%get_use_count()
          rwc=this%get_rw_counter(); drwc=this%get_rw_counter(defer=.TRUE.)
+!$OMP CRITICAL (IO)
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Persist = ",l1,". Counters: Ref = ",i5,"; Use = ",i2,"; RW/DRW = ",i3,1x,i3)') pers,refc,usec,rwc,drwc
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+!$OMP END CRITICAL (IO)
          call this%unlock()
          flush(devo)
          if(present(ierr)) ierr=errc
@@ -769,7 +775,9 @@
               this%owner_id(1:2)=(/pid,cid/) !import owner ids from the tensor cache entry
               if(DEBUG.gt.1.and.errc.eq.0) then
                refc=this%cache_entry%get_ref_count()
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Tensor operand associated with a cache entry (",i4,"):")') impir,refc
+!$OMP END CRITICAL (IO)
                call this%tensor%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
               endif
              else
@@ -1330,19 +1338,25 @@
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
          call this%lock()
+         actv=this%is_active(); sts=this%get_comm_stat()
+!$OMP CRITICAL (IO)
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR OPERAND{")')
-         actv=this%is_active(); sts=this%get_comm_stat()
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Active = ",l1,"; Communication = ",i2,"; Metadata owner = (",i4,1x,i4,")")') actv,sts,this%owner_id(1:2)
+!$OMP END CRITICAL (IO)
          if(associated(this%tensor)) then
           call this%tensor%print_it(errc,devo,nsp+1); if(errc.ne.TEREC_SUCCESS) errc=-1
          else
+!$OMP CRITICAL (IO)
           do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("No Tensor!")')
+!$OMP END CRITICAL (IO)
          endif
+!$OMP CRITICAL (IO)
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+!$OMP END CRITICAL (IO)
          call this%unlock()
          flush(devo)
          if(present(ierr)) ierr=errc
@@ -1357,7 +1371,9 @@
          call this%destruct(errc)
          if(errc.ne.0) then
           if(VERBOSE) then
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_oprnd_dtor): Destruction error ",i11)') errc
+!$OMP END CRITICAL (IO)
            call this%print_it(dev_id=CONS_OUT)
            flush(CONS_OUT)
           endif
@@ -2137,7 +2153,9 @@
             jerr=-1
            end select
            if(VERBOSE.and.jerr.ne.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_instr_t.get_operation:get_tens_transformation): Error ",i11)') jerr
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
            return
@@ -2221,12 +2239,13 @@
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
-!$OMP CRITICAL (TAVP_PRINT)
+         iid=this%get_id(); opcode=this%get_code(); sts=this%get_status(errc,ier)
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR INSTRUCTION{")')
-         iid=this%get_id(); opcode=this%get_code(); sts=this%get_status(errc,ier)
          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("id = ",i11,"; opcode = ",i4,"; stat = ",i6,"; err = ",i11)') iid,opcode,sts,ier
+!$OMP END CRITICAL (IO)
          n=this%get_num_operands(errc)
          if(errc.eq.DSVP_SUCCESS) then
           ctrl=>this%get_control()
@@ -2236,13 +2255,16 @@
            if(associated(oprnd)) call oprnd%print_it(errc,devo,nsp+1)
           enddo
          else
+!$OMP CRITICAL (IO)
           do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Error: Unable to determine the number of operands!")')
+!$OMP END CRITICAL (IO)
          endif
+!$OMP CRITICAL (IO)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+!$OMP END CRITICAL (IO)
          flush(devo)
-!$OMP END CRITICAL (TAVP_PRINT)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrPrintIt
@@ -2362,8 +2384,10 @@
           if(errc.ne.DSVP_SUCCESS) call quit(errc,'#ERROR(TAVP-MNG:tens_instr_dtor): Tensor instruction destruction failed!')
          else
           if(errc.eq.DSVP_SUCCESS.and.VERBOSE) then
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_instr_dtor): TAVP instruction is still active: code = ",i5,", stat = ",i5)')&
            &opcode,sts
+!$OMP END CRITICAL (IO)
            call this%print_it(dev_id=CONS_OUT)
            flush(CONS_OUT)
           endif
@@ -2432,7 +2456,9 @@
           errc=-1
          end select
          if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder configured: ",i11,1x,i6)') impir,this%source_comm,this%source_rank
+!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
@@ -2459,8 +2485,10 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder started as DSVU # ",i2," (thread ",i2,"): Listening to ",i11,1x,i6)')&
           &impir,uid,thid,this%source_comm,this%source_rank
+!$OMP END CRITICAL (IO)
           call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
@@ -2492,8 +2520,10 @@
             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-40; exit wloop; endif
             num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-39; exit wloop; endif
             if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder unit ",i2," received ",i9," new instructions")')&
              &impir,uid,num_packets
+!$OMP END CRITICAL (IO)
              flush(CONS_OUT)
             endif
             if(num_packets.gt.0) then
@@ -2504,8 +2534,10 @@
   !Extract an instruction:
               call this%bytecode%extract_packet(i,instr_packet,ier,preclean=.TRUE.)
               if(ier.ne.0.and.errc.eq.0) then
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder)[",i6,":",i2,"]: Instruction packet extraction error ",i11,'//&
                &'": ",i11,1x,i11)') impir,uid,ier,i,num_packets
+!$OMP END CRITICAL (IO)
                flush(CONS_OUT)
                errc=-36; exit wloop
               endif
@@ -2521,7 +2553,9 @@
               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
               if(DEBUG.gt.0) then
                if(uid.eq.0) then !uDecoder only
+!$OMP CRITICAL (IO)
                 write(CONS_OUT,'("#DEBUG(TAVP-MNG:uDecoder): Decoded a new tensor instruction:")')
+!$OMP END CRITICAL (IO)
                 call tens_instr%print_it(dev_id=CONS_OUT)
                 flush(CONS_OUT)
                endif
@@ -2531,7 +2565,9 @@
                if(i.gt.1.and.errc.eq.0) then; errc=-28; exit wloop; endif !trap: DUMP_CACHE must always be invoked after synchronization
                call tavp%pause_decode() !tensor cache dump will require a TAVP pause
                if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
                 write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decoder): Decoding paused for tensor cache dumping!")')
+!$OMP END CRITICAL (IO)
                 flush(CONS_OUT)
                endif
                ier=this%iqueue%move_elem(dumpi); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif !remove DUMP_CACHE from the main queue
@@ -2602,8 +2638,12 @@
          ier=dumpi%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decoder error ",i11," by thread ",i2)')&
-         &impir,errc,thid
+         if(errc.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decoder error ",i11," by thread ",i2)') impir,errc,thid
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -2620,11 +2660,16 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder DSVU # ",i2," (thread ",i2,"): Time stats (sec): ")',ADVANCE='NO')&
-          &impir,uid,thid; call this%print_timing(CONS_OUT)
+          &impir,uid,thid
+!$OMP END CRITICAL (IO)
+          call this%print_timing(CONS_OUT)
           empt=this%port_empty(0)
+!!$OMP CRITICAL (IO)
           !write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder DSVU # ",i2,": Port empty = ",l1)') impir,uid,empt !debug
+!!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -2724,9 +2769,11 @@
          else
           errc=-1
          endif
-         if(DEBUG.gt.0.and.errc.ne.0) then
+         if(VERBOSE.and.errc.ne.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode)[",i6,":",i3,"]: Error ",i11)')&
           &impir,omp_get_thread_num(),errc
+!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
@@ -2765,8 +2812,10 @@
              call tensor_tmp%tens_rcrsv_ctor(instr_packet,jerr) !unpack tensor information into a temporary tensor
              if(jerr.ne.TEREC_SUCCESS) then
               if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_operands)[",i6,":",i3,"]: TensCtor Error ",i11)')&
                &impir,omp_get_thread_num(),jerr
+!$OMP END CRITICAL (IO)
                flush(CONS_OUT)
               endif
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-8; exit
@@ -2790,7 +2839,9 @@
              jcwn=tens_mng_entry%get_owner_id(as_child=.TRUE.) !owner id as a child from the tensor cache
              if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
               if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decoder): Tensor info update in the tensor cache:")')
+!$OMP END CRITICAL (IO)
                call tensor%print_it(dev_id=CONS_OUT)
                call tensor_tmp%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
@@ -2798,15 +2849,19 @@
               call tensor%update(tensor_tmp,jerr,updated) !tensor metadata update is done inside the tensor cache
               if(DEBUG.gt.1.and.jerr.eq.TEREC_SUCCESS) then
                call tensor%print_it(dev_id=CONS_OUT)
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("Update status = ",l1,": Metadata exporter = ",i5,", prev = ",i5," (Decoder id = ",i2,")")')&
                &updated,jown,jpwn,uid
+!$OMP END CRITICAL (IO)
                flush(CONS_OUT)
               endif
               deallocate(tensor_tmp); tensor_tmp=>NULL() !deallocate temporary tensor after importing its information into the cache
               if(jerr.ne.TEREC_SUCCESS) then
                if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
                 write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_operands)[",i6,":",i3,'//&
                 &'"]: tens_rcrsv_t.update() error ",i11)') impir,omp_get_thread_num(),jerr
+!$OMP END CRITICAL (IO)
                 flush(CONS_OUT)
                endif
                if(associated(tens_entry)) then; call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); endif
@@ -2852,9 +2907,11 @@
            else
             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-1
            endif
-           if(DEBUG.gt.0.and.jerr.ne.0) then
+           if(VERBOSE.and.jerr.ne.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_operands)[",i6,":",i3,"]: Error ",i11)')&
             &impir,omp_get_thread_num(),jerr
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
            return
@@ -2883,9 +2940,11 @@
            else
             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
            endif
-           if(DEBUG.gt.0.and.jerr.ne.0) then
+           if(VERBOSE.and.jerr.ne.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_tens_create_destroy)[",i6,":",i3,"]: Error ",i11)')&
             &impir,omp_get_thread_num(),jerr
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
            return
@@ -2943,9 +3002,11 @@
            else
             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
            endif
-           if(jerr.ne.0.and.VERBOSE) then
+           if(VERBOSE.and.jerr.ne.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_tens_transform)[",i6,":",i3,"]: Error ",i11)')&
             &impir,omp_get_thread_num(),jerr
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
            return
@@ -2990,9 +3051,11 @@
            else
             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
            endif
-           if(jerr.ne.0.and.VERBOSE) then
+           if(VERBOSE.and.jerr.ne.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_tens_contract)[",i6,":",i3,"]: Error ",i11)')&
             &impir,omp_get_thread_num(),jerr
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
            return
@@ -3042,8 +3105,10 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer started as DSVU # ",i2," (thread ",i2,"): Reporting to ",i11,1x,i6)')&
           &impir,uid,thid,this%retire_comm,this%retire_rank
+!$OMP END CRITICAL (IO)
           call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
@@ -3067,8 +3132,10 @@
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
           ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer unit ",i2," received ",i9," instructions from Collector")')&
            &impir,uid,n
+!$OMP END CRITICAL (IO)
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
@@ -3087,7 +3154,9 @@
            call tavp%incr_rtrd_instr_counter(); if(iec.ne.DSVP_SUCCESS) call tavp%incr_fail_instr_counter()
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
            if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Retirer): Retired instruction:")')
+!$OMP END CRITICAL (IO)
             call tens_instr%print_it(dev_id=CONS_OUT)
             flush(CONS_OUT)
            endif
@@ -3134,7 +3203,9 @@
   !Synchronize the bytecode send:
             call comm_hl%wait(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
             if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer unit ",i2," retired ",i9," instructions")') impir,uid,n
+!$OMP END CRITICAL (IO)
              flush(CONS_OUT)
             endif
             call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
@@ -3146,8 +3217,12 @@
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Retirer error ",i11," by thread ",i2)')&
-         &impir,errc,thid
+         if(errc.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Retirer error ",i11," by thread ",i2)') impir,errc,thid
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -3163,7 +3238,9 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -3246,8 +3323,10 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2," (thread ",i2,"): Recv/Send = ",i6,"/",i6)')&
           &impir,uid,thid,this%ring_recv,this%ring_send
+!$OMP END CRITICAL (IO)
           call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
@@ -3290,8 +3369,10 @@
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-82; exit wloop; endif
           ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-81; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," appended ",i9,'//&
            &'" new instructions from uDecoder into main queue")') impir,uid,i
+!$OMP END CRITICAL (IO)
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset() !print all instructions
            flush(CONS_OUT)
           endif
@@ -3300,8 +3381,10 @@
           ier=this%unload_port(2,this%loc_list,max_items=MAX_LOCATE_SUB_INSTR,num_moved=n)
           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-79; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," received ",i9," instructions back from Decomposer")')&
            &impir,uid,n
+!$OMP END CRITICAL (IO)
            flush(CONS_OUT)
           endif
           num_loc_instr=num_loc_instr+n; n=0
@@ -3319,7 +3402,9 @@
             if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-73; exit wloop; endif
             opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-72; exit wloop; endif
             if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#DEBUG(TAVP-MNG:Locator): An instruction is received for operand location:")')
+!$OMP END CRITICAL (IO)
              call tens_instr%print_it(dev_id=CONS_OUT)
              flush(CONS_OUT)
             endif
@@ -3336,7 +3421,9 @@
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-69; exit wloop; endif
              if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
               if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," received STOP instruction!")') impir,uid
+!$OMP END CRITICAL (IO)
                flush(CONS_OUT)
               endif
               stopping=.TRUE.
@@ -3354,8 +3441,10 @@
             if(this%iqueue%get_status().ne.GFC_IT_ACTIVE) exit mloop
            enddo mloop
            if(DEBUG.gt.0.and.n.gt.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," extracted ",i9," new instructions from main queue")')&
             &impir,uid,n
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
            call tavp%incr_recv_instr_counter(ier,int(n,INTL))
@@ -3368,8 +3457,10 @@
            ier=this%def_list%move_list(this%loc_list,MAX_LOCATE_DEF_INSTR,n) !at most MAX_LOCATE_DEF_INSTR tensor instructions will be moved to the locating list from the deferred list
            if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-61; exit wloop; endif
            if(DEBUG.gt.0.and.n.gt.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," extracted ",i9," instructions from deferred queue")')&
             &impir,uid,n
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
            num_def_instr=num_def_instr+n !increment the number of instructions taken from the deferred instruction list
@@ -3395,8 +3486,10 @@
           if(ring_exists) then
            if(DEBUG.gt.1) then
             num_c_entries=this%arg_cache%get_num_entries()
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Entered rotation cycle; Cache volume = ",i12)')&
             &impir,uid,num_c_entries
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
   !Insert the trailing dummmy instruction (CTRL_RESUME), which will tag the bytecode, into the locating list:
@@ -3423,8 +3516,10 @@
             if(ier.ne.0.and.errc.eq.0) then; errc=-46; exit wloop; endif
             num_sent=this%bytecode%get_num_packets()
             if(DEBUG.gt.1.and.num_sent.gt.0) then !one instruction is always the special markup instruction
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Sent ",i9," instructions")')&
              &impir,uid,rot_num+1,num_sent-1
+!$OMP END CRITICAL (IO)
              flush(CONS_OUT)
             endif
   !Clean the locating list and evict the relevant remote tensors with zero reference count from the tensor cache:
@@ -3445,12 +3540,16 @@
               tensor=>cache_entries(i)%cache_entry%get_tensor(ier)
               if(ier.eq.0) then
                if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
                 write(CONS_OUT,'("#DEBUG(TAVP-MNG:Locator): Trying to evict the following tensor:")')
+!$OMP END CRITICAL (IO)
                 call tensor%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
                endif
                evicted=this%arg_cache%evict(tensor,ier,decr_use=.TRUE.); if(ier.ne.0.and.errc.eq.0) errc=-39
                if(DEBUG.gt.1.and.ier.eq.0) then
+!$OMP CRITICAL (IO)
                 write(CONS_OUT,'("Eviction status: ",l1)') evicted
+!$OMP END CRITICAL (IO)
                 flush(CONS_OUT)
                endif
               else
@@ -3467,7 +3566,9 @@
             call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-35; exit wloop; endif
             call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-34; exit wloop; endif
             if(DEBUG.gt.1.and.num_sent.gt.1) then
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Send synced")') impir,uid,rot_num+1
+!$OMP END CRITICAL (IO)
              flush(CONS_OUT)
             endif
   !Absorb located tensor insructions from port 1 (delivered by lDecoder):
@@ -3478,8 +3579,10 @@
              ier=this%unload_port(1,this%loc_list,stop_predicate=tens_instr_locator_mark,num_moved=num_recv)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
              if(DEBUG.gt.1.and.num_recv.gt.0) then
+!$OMP CRITICAL (IO)
               write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Received ",i6," instructions")')&
               &impir,uid,rot_num+1,num_recv-1
+!$OMP END CRITICAL (IO)
               flush(CONS_OUT)
              endif
              ier=this%loc_list%get_status()
@@ -3497,8 +3600,10 @@
               rot_num=rot_num+1 !next rotation step (send/recv) has happened
               bytecode_tag=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
               if(DEBUG.gt.1.and.num_recv.gt.0) then
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Sender TAVP-MNG id = ",i4)')&
                &impir,uid,rot_num,bytecode_tag
+!$OMP END CRITICAL (IO)
                flush(CONS_OUT)
               endif
               if(bytecode_tag.eq.role_rank) then !TAVP's own instructions are back => remove the header dummy instruction
@@ -3516,15 +3621,19 @@
            enddo rloop
            if(DEBUG.gt.1) then
             num_c_entries=this%arg_cache%get_num_entries()
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": ",i4,"-rotation cycle completed; Cache volume = ",i12)')&
             &impir,uid,rot_num,num_c_entries
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
           else !ring does not exist (single TAVP-MNG level)
            if(DEBUG.gt.1) then
             num_c_entries=this%arg_cache%get_num_entries()
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": No rotations; Cache volume = ",i12)')&
             &impir,uid,num_c_entries
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
           endif
@@ -3538,15 +3647,19 @@
            located=tens_instr%fully_located(ier,inp_located,inp_valued)
            if(ier.ne.0.and.errc.eq.0) then
             if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#ERROR(TAVP-MNG:Locator)[",i6,":",i3,"]: tens_instr.fully_located() error ",i11)')&
              &impir,omp_get_thread_num(),ier
+!$OMP END CRITICAL (IO)
              flush(CONS_OUT)
             endif
             errc=-16; exit wloop
            endif
            if(.not.(inp_located.and.inp_valued)) then !input tensors must have been located and they must be defined
             if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#DEBUG(TAVP-MNG:Locator): An instruction is deferred (operands not ready):")')
+!$OMP END CRITICAL (IO)
              call tens_instr%print_it(dev_id=CONS_OUT)
              flush(CONS_OUT)
             endif
@@ -3565,12 +3678,16 @@
           if(DEBUG.gt.1.and.errc.eq.0) then
            ier=this%loc_list%reset()
            if(this%loc_list%get_status().eq.GFC_IT_ACTIVE) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Locator): Queue of located tensor instructions:")')
+!$OMP END CRITICAL (IO)
             ier=this%loc_list%scanp(action_f=tens_instr_print); ier=this%loc_list%reset() !print all instructions
            endif
            ier=this%def_list%reset()
            if(this%def_list%get_status().eq.GFC_IT_ACTIVE) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Locator): Queue of deferred tensor instructions:")')
+!$OMP END CRITICAL (IO)
             ier=this%def_list%scanp(action_f=tens_instr_print); ier=this%def_list%reset() !print all instructions
            endif
            flush(CONS_OUT)
@@ -3619,8 +3736,12 @@
          call tens_instr_dummy%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Locator error ",i11," by thread ",i2)')&
-         &impir,errc,thid
+         if(errc.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Locator error ",i11," by thread ",i2)') impir,errc,thid
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -3636,7 +3757,9 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -3743,7 +3866,9 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+!$OMP END CRITICAL (IO)
           call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
@@ -3779,8 +3904,10 @@
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-48; exit wloop; endif
           ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-47; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," received ",i9," instructions from Locator")')&
            &impir,uid,i
+!$OMP END CRITICAL (IO)
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
@@ -3799,7 +3926,9 @@
            if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-41; exit wloop; endif !trap
            if(iec.eq.TAVP_ERR_TAG_ONE) then !special tag to distinguish previously decomposed child tensor subinstructions from new parent instructions
             if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer): A previously decomposed instruction is received back (bottom):")')
+!$OMP END CRITICAL (IO)
              call tens_instr%print_it(dev_id=CONS_OUT)
              flush(CONS_OUT)
             endif
@@ -3813,7 +3942,9 @@
             if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
              call this%decompose(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-37; exit wloop; endif
              if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
               write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer): A new instruction was decomposed:")')
+!$OMP END CRITICAL (IO)
               call tens_instr%print_it(dev_id=CONS_OUT)
               flush(CONS_OUT)
              endif
@@ -3834,8 +3965,10 @@
            if(expired.or.last_instr.or.tavp%get_crtd_instr_counter()-base_created.ge.MAX_DECOMPOSE_CHLD_INSTR.or.&
              &num_processed.ge.MAX_DECOMPOSE_PRNT_INSTR.or.stopping) then
             if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," entered distribution phase")')&
              &impir,uid
+!$OMP END CRITICAL (IO)
              flush(CONS_OUT)
             endif
    !Clone control instructions for Collector:
@@ -3857,8 +3990,10 @@
              enddo
              if(ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-24; exit wloop; endif
              if(DEBUG.gt.0.and.n.gt.0) then
+!$OMP CRITICAL (IO)
               write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," copied ",i9," control instructions for Collector")')&
               &impir,uid,n
+!$OMP END CRITICAL (IO)
               flush(CONS_OUT)
              endif
             endif
@@ -3868,8 +4003,10 @@
              ier=tavp%collector%load_port(0,this%col_list,num_moved=n)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
              if(DEBUG.gt.0.and.n.gt.0) then
+!$OMP CRITICAL (IO)
               write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," passed ",i9," parent instructions to Collector")')&
               &impir,uid,n
+!$OMP END CRITICAL (IO)
               flush(CONS_OUT)
              endif
             endif
@@ -3889,8 +4026,10 @@
               ier=tavp%dispatcher%load_port(0,this%ret_list,num_moved=n)
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
               if(DEBUG.gt.0.and.n.gt.0) then
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," passed ",i9," subinstructions to Dispatcher")')&
                &impir,uid,n
+!$OMP END CRITICAL (IO)
                flush(CONS_OUT)
               endif
              endif
@@ -3900,8 +4039,10 @@
               ier=tavp%locator%load_port(2,this%sub_list,num_moved=n)
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
               if(DEBUG.gt.0.and.n.gt.0) then
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," passed ",i9," subinstructions back to Locator")')&
                &impir,uid,n
+!$OMP END CRITICAL (IO)
                flush(CONS_OUT)
               endif
              endif
@@ -3921,8 +4062,10 @@
               ier=tavp%dispatcher%load_port(0,this%sub_list,num_moved=n)
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
               if(DEBUG.gt.0.and.n.gt.0) then
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," passed ",i9," subinstructions to Dispatcher")')&
                &impir,uid,n
+!$OMP END CRITICAL (IO)
                flush(CONS_OUT)
               endif
              endif
@@ -3935,7 +4078,9 @@
              if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
             endif
             if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," exited distribution phase")') impir,uid
+!$OMP END CRITICAL (IO)
              flush(CONS_OUT)
             endif
            endif !distribution phase
@@ -3948,8 +4093,12 @@
          ier=timer_destroy(dec_timer)
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decomposer error ",i11," by thread ",i2)')&
-         &impir,errc,thid
+         if(errc.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decomposer error ",i11," by thread ",i2)') impir,errc,thid
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -3965,8 +4114,10 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer stopped as DSVU # ",i2," (thread ",i2,")")')&
           &impir,uid,thid
+!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -4091,9 +4242,11 @@
                 call decompose_instr_tens_contract(errc)
                case default
                 !`Call decomposition for other relevant tensor instructions
+!$OMP CRITICAL (IO)
                 write(CONS_OUT,&
                 &'("#FATAL(TAVP-MNG:Decomposer:decompose)[",i6,"]: Tensor instruction code ",i3," is not implemented!")')&
                 &impir,opcode
+!$OMP END CRITICAL (IO)
                 errc=-7
                end select
               else
@@ -4205,7 +4358,9 @@
              tensor=>oprnd%get_tensor(jerr) !parental tensor
              if(jerr.eq.0) then
               if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
                write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer.decompose)[",i6,"]: Decomposing TENS_CREATE for tensor:")') impir
+!$OMP END CRITICAL (IO)
                call tensor%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
@@ -4228,7 +4383,9 @@
                    if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-23; exit cloop; endif
                   endif
                   if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
                    write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer.decompose)[",i6,"]: TENS_CREATE created a subtensor:")') impir
+!$OMP END CRITICAL (IO)
                    call subtensor%print_it(dev_id=CONS_OUT)
                    flush(CONS_OUT)
                   endif
@@ -4300,11 +4457,15 @@
           endif
           if(DEBUG.gt.0) then
            if(jerr.eq.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_CREATE subinstructions")')&
             &impir,uid,num_subinstr
+!$OMP END CRITICAL (IO)
            else
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
             &'" failed to create TENS_CREATE subinstructions: Error ",i11)') impir,uid,jerr
+!$OMP END CRITICAL (IO)
            endif
            flush(CONS_OUT)
           endif
@@ -4414,11 +4575,15 @@
           endif
           if(DEBUG.gt.0) then
            if(jerr.eq.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_DESTROY subinstructions")')&
             &impir,uid,num_subinstr
+!$OMP END CRITICAL (IO)
            else
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
             &'" failed to create TENS_DESTROY subinstructions: Error ",i11)') impir,uid,jerr
+!$OMP END CRITICAL (IO)
            endif
            flush(CONS_OUT)
           endif
@@ -4552,12 +4717,16 @@
           endif
           if(DEBUG.gt.0) then
            if(jerr.eq.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_INIT subinstructions")')&
             &impir,uid,num_subinstr
+!$OMP END CRITICAL (IO)
            else
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
             &'" failed to create TENS_INIT subinstructions with error ",i11," for parent tensor instruction:")')&
             &impir,uid,jerr
+!$OMP END CRITICAL (IO)
             call tens_instr%print_it(dev_id=CONS_OUT)
            endif
            flush(CONS_OUT)
@@ -4695,12 +4864,16 @@
           endif
           if(DEBUG.gt.0) then
            if(jerr.eq.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_CONTRACT subinstructions")')&
             &impir,uid,num_subinstr
+!$OMP END CRITICAL (IO)
            else
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
             &'" failed to create TENS_CONTRACT subinstructions with error ",i11," for parent tensor instruction:")')&
             &impir,uid,jerr
+!$OMP END CRITICAL (IO)
             call tens_instr%print_it(dev_id=CONS_OUT)
            endif
            flush(CONS_OUT)
@@ -4757,8 +4930,10 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,'//&
           &'") with ",i4," channels over communicator ",i11)') impir,uid,thid,this%num_ranks,this%dispatch_comm
+!$OMP END CRITICAL (IO)
           call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
@@ -4802,8 +4977,10 @@
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
           ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher unit ",i2," received ",i9," instructions from Decomposer")')&
            &impir,uid,i
+!$OMP END CRITICAL (IO)
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
@@ -4821,7 +4998,9 @@
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
            if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Dispatcher): A new instruction is dispatched:")')
+!$OMP END CRITICAL (IO)
             call tens_instr%print_it(dev_id=CONS_OUT)
             flush(CONS_OUT)
            endif
@@ -4844,12 +5023,16 @@
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
              stopping=.TRUE.
             elseif(opcode.eq.TAVP_INSTR_CTRL_DUMP_CACHE) then
+!$OMP CRITICAL (IO)
              write(jo,'("#DEBUG(TAVP-MNG): TENSOR CACHE DUMP:")')
+!$OMP END CRITICAL (IO)
              call this%arg_cache%print_it()
              flush(jo)
              call tavp%resume_decode() !decode was paused for tensor cache dumping
              if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
               write(CONS_OUT,'("#DEBUG(TAVP-MNG:Dispatcher): Decoding resumed after tensor cache dumping!")')
+!$OMP END CRITICAL (IO)
               flush(CONS_OUT)
              endif
             endif
@@ -4858,7 +5041,9 @@
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
            if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher): Deleting dispatched instruction:")')
+!$OMP END CRITICAL (IO)
             call tens_instr%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
            endif
            ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
@@ -4881,8 +5066,12 @@
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Dispatcher error ",i11," by thread ",i2)')&
-         &impir,errc,thid
+         if(errc.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Dispatcher error ",i11," by thread ",i2)') impir,errc,thid
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -4898,7 +5087,9 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -5163,15 +5354,19 @@
            endif
           else
            if(VERBOSE) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.dispatch)[",i6,"]: Unable to acquire packet: Error ",i11)') impir,errc
+!$OMP END CRITICAL (IO)
             flush(CONS_OUT)
            endif
            errc=-1
           endif
          endif
          if(VERBOSE.and.errc.ne.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.dispatch)[",i6,"]: Dispatch to channel ",i2," failed: Error ",i11)')&
           &impir,channel,errc
+!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
@@ -5206,13 +5401,17 @@
          if(DEBUG.gt.0) then
           if(errc.eq.0) then
            npck=this%bytecode(channel)%get_num_packets()
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.issue)[",i6,"]: Issued ",i6," instructions to channel ",i2,": Rank = ",i4)')&
            &impir,npck,channel,this%dispatch_rank(channel)
+!$OMP END CRITICAL (IO)
           else
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.issue)[",i6,"]: Unable to issue bytecode to channel ",i2,": Error ",i11)')&
            &impir,channel,errc
            write(CONS_OUT,'("#INFO(TAVP-MNG:Dispatcher.issue)[",i6,"]: Target rank = ",i6,", Target comm = ",i11)')&
            &impir,this%dispatch_rank(channel),this%dispatch_comm
+!$OMP END CRITICAL (IO)
           endif
           flush(CONS_OUT)
          endif
@@ -5260,13 +5459,19 @@
          if(DEBUG.gt.0) then
           if(errc.eq.0) then
            if(present(channel)) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Synced channel ",i2,": Rank = ",i4)')&
             &impir,channel,this%dispatch_rank(channel)
+!$OMP END CRITICAL (IO)
            else
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Synced all channels")') impir
+!$OMP END CRITICAL (IO)
            endif
           else
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Sync error ",i11)') impir,errc
+!$OMP END CRITICAL (IO)
           endif
           flush(CONS_OUT)
          endif
@@ -5347,7 +5552,9 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+!$OMP END CRITICAL (IO)
           call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
@@ -5374,8 +5581,12 @@
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Replicator error ",i11," by thread ",i2)')&
-         &impir,errc,thid
+         if(errc.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Replicator error ",i11," by thread ",i2)') impir,errc,thid
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -5391,7 +5602,9 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -5493,7 +5706,9 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+!$OMP END CRITICAL (IO)
           call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
@@ -5525,8 +5740,10 @@
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-60; exit wloop; endif
           ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-59; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector unit ",i2," received ",i9," parent instructions from Decomposer")')&
            &impir,uid,i
+!$OMP END CRITICAL (IO)
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
@@ -5543,7 +5760,9 @@
            sts=tens_instr%get_status(ier,cnt); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-53; exit wloop; endif
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-52; exit wloop; endif
            if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Collector): A parent instruction was received:")')
+!$OMP END CRITICAL (IO)
             call tens_instr%print_it(dev_id=CONS_OUT)
             flush(CONS_OUT)
            endif
@@ -5595,8 +5814,10 @@
   !Append a new batch of subinstructions from cDecoder (port 1) into the main queue:`Do I need MAX_COLLECT_INSTR here?
           ier=this%flush_port(1,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
+!$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector unit ",i2," received ",i9," subinstructions from lower level")')&
            &impir,uid,i
+!$OMP END CRITICAL (IO)
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
@@ -5620,7 +5841,9 @@
            if(ier.ne.0.and.errc.eq.0) then; errc=-22; exit wloop; endif
            if(matched) then
             if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
              write(CONS_OUT,'("#DEBUG(TAVP-MNG:Collector): Matched a child instruction:")')
+!$OMP END CRITICAL (IO)
              call tens_instr%print_it(dev_id=CONS_OUT)
              flush(CONS_OUT)
             endif
@@ -5684,8 +5907,12 @@
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Collector error ",i11," by thread ",i2)')&
-         &impir,errc,thid
+         if(errc.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Collector error ",i11," by thread ",i2)') impir,errc,thid
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -5701,7 +5928,9 @@
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
+!$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
 !Release the tensor argument cache pointer:
@@ -5909,7 +6138,12 @@
          else
           errc=-1
          endif
-         if(errc.ne.0) write(CONS_OUT,'("#ERROR(TAVP-MNG:Collector.match_subinstr): Error ",i11)') errc !debug
+         if(VERBOSE.and.errc.ne.0) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-MNG:Collector.match_subinstr): Error ",i11)') errc !debug
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TAVPMNGCollectorMatchSubinstr
@@ -6108,7 +6342,9 @@
          else
           errc=-1
          endif
+!!$OMP CRITICAL (IO)
          !write(CONS_OUT,*) '#DEBUG(TAVPMNGConfigure): Exit status ',errc !debug
+!!$OMP END CRITICAL (IO)
          if(errc.ne.0) call this%destroy()
          if(present(ierr)) ierr=errc
          return
@@ -6213,7 +6449,12 @@
          else
           errc=-1
          endif
-         if(errc.ne.0) write(CONS_OUT,'("#ERROR(TAVP-MNG.map_instr): Error ",i11)') errc !debug
+         if(VERBOSE.and.errc.ne.0) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-MNG.map_instr): Error ",i11)') errc !debug
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TAVPMNGMapInstr

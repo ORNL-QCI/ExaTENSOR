@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/12
+!REVISION: 2018/11/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1121,22 +1121,30 @@
  !Print the instruction control field:
          ctrl=>this%get_control(errc)
          if(errc.eq.DSVP_SUCCESS) then
+!$OMP CRITICAL (IO)
           do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("Control{")')
+!$OMP END CRITICAL (IO)
           call ctrl%print_it(errc,devo,nsp+1)
           if(errc.eq.0) then
+!$OMP CRITICAL (IO)
            do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
            write(devo,'("}")')
+!$OMP END CRITICAL (IO)
  !Print instruction operands:
            n=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
             do i=0,n-1
              oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-5; exit; endif
+!$OMP CRITICAL (IO)
              do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
              write(devo,'("Operand ",i2,"{")') i
+!$OMP END CRITICAL (IO)
              call oprnd%print_it(errc,devo,nsp+1); if(errc.ne.0) then; errc=-4; exit; endif
+!$OMP CRITICAL (IO)
              do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
              write(devo,'("}")')
+!$OMP END CRITICAL (IO)
             enddo
            else
             errc=-3
@@ -1147,7 +1155,9 @@
          else
           errc=-1
          endif
+!$OMP CRITICAL (IO)
          if(errc.ne.DSVP_SUCCESS) write(devo,'("Printing failed: Error ",i11)') errc
+!$OMP END CRITICAL (IO)
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -1509,13 +1519,17 @@
          if(this%id.ge.0) then
           if(this%alive_last.eq.-DS_UNIT_ALIVE_INTERVAL.or.curr_time_stamp.gt.this%alive_last+this%alive_interval) then
            this%alive_last=curr_time_stamp
+!$OMP CRITICAL (IO)
            write(dev_out,'("#MSG(ds_unit_t): DS unit ",i3," is alive with error status ",i11,".")',ADVANCE='NO')&
            &this%id,this%error_code
            if(present(mesg)) then; write(dev_out,*) mesg; else; write(dev_out,'()'); endif
+!$OMP END CRITICAL (IO)
           endif
          else
           errc=DSVP_ERR_UNABLE_COMPLETE
+!$OMP CRITICAL (IO)
           write(dev_out,'("#ERROR(ds_unit_t.report_alive): Attempt to report alive for an uninitialized DS unit!")')
+!$OMP END CRITICAL (IO)
          endif
          flush(dev_out)
          if(present(ierr)) ierr=errc
@@ -1624,7 +1638,9 @@
          integer(INTD):: devo
 
          devo=6; if(present(dev_id)) devo=dev_id
+!$OMP CRITICAL (IO)
          write(devo,'(2(1x,F12.9))') this%decode_time_min,this%decode_time_max
+!$OMP END CRITICAL (IO)
          return
         end subroutine DSDecoderPrintTiming
 ![dsvp_t]==============================
@@ -1692,11 +1708,13 @@
 
          errc=DSVP_SUCCESS
          if(VERBOSE) then
+!$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(DSVP): Shut down DSVP ",i6,":")',ADVANCE='NO') this%id
           if(allocated(this%description)) write(CONS_OUT,*) this%description
           write(CONS_OUT,'("#MSG(DSVP): Counters: Recv ",i7,"; Rtrd ",i7,"; Crtd ",i7,"; Fail ",i4)',ADVANCE='NO')&
           &this%get_recv_instr_counter(),this%get_rtrd_instr_counter(),this%get_crtd_instr_counter(),this%get_fail_instr_counter()
           write(CONS_OUT,'(": Time (s) ",F12.3)') this%time_active()
+!$OMP END CRITICAL (IO)
          endif
          this%decode_paused=.FALSE.
          this%sync_count=0
@@ -1900,8 +1918,10 @@
          if(this%get_status(errc).ne.DSVP_STAT_OFF) then
           if(errc.eq.DSVP_SUCCESS) then
            if(present(incr)) then
+!$OMP ATOMIC UPDATE
             this%instr_received=this%instr_received+incr
            else
+!$OMP ATOMIC UPDATE
             this%instr_received=this%instr_received+1_INTL
            endif
           endif
@@ -1924,8 +1944,10 @@
          if(this%get_status(errc).ne.DSVP_STAT_OFF) then
           if(errc.eq.DSVP_SUCCESS) then
            if(present(incr)) then
+!$OMP ATOMIC UPDATE
             this%instr_processed=this%instr_processed+incr
            else
+!$OMP ATOMIC UPDATE
             this%instr_processed=this%instr_processed+1_INTL
            endif
           endif
@@ -1948,8 +1970,10 @@
          if(this%get_status(errc).ne.DSVP_STAT_OFF) then
           if(errc.eq.DSVP_SUCCESS) then
            if(present(incr)) then
+!$OMP ATOMIC UPDATE
             this%instr_created=this%instr_created+incr
            else
+!$OMP ATOMIC UPDATE
             this%instr_created=this%instr_created+1_INTL
            endif
           endif
@@ -1972,8 +1996,10 @@
          if(this%get_status(errc).ne.DSVP_STAT_OFF) then
           if(errc.eq.DSVP_SUCCESS) then
            if(present(incr)) then
+!$OMP ATOMIC UPDATE
             this%instr_failed=this%instr_failed+incr
            else
+!$OMP ATOMIC UPDATE
             this%instr_failed=this%instr_failed+1_INTL
            endif
           endif
@@ -1991,6 +2017,7 @@
          class(dsvp_t), intent(in):: this            !in: DSVP
          integer(INTD), intent(out), optional:: ierr !out: error code
 
+!$OMP ATOMIC READ
          cnt=this%instr_received
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
@@ -2003,6 +2030,7 @@
          class(dsvp_t), intent(in):: this            !in: DSVP
          integer(INTD), intent(out), optional:: ierr !out: error code
 
+!$OMP ATOMIC READ
          cnt=this%instr_processed
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
@@ -2015,6 +2043,7 @@
          class(dsvp_t), intent(in):: this            !in: DSVP
          integer(INTD), intent(out), optional:: ierr !out: error code
 
+!$OMP ATOMIC READ
          cnt=this%instr_created
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
@@ -2027,6 +2056,7 @@
          class(dsvp_t), intent(in):: this            !in: DSVP
          integer(INTD), intent(out), optional:: ierr !out: error code
 
+!$OMP ATOMIC READ
          cnt=this%instr_failed
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
