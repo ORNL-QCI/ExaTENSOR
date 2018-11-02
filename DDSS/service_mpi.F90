@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/12
+!REVISION: 2018/11/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -698,8 +698,10 @@
          devo=6; if(present(dev_out)) devo=dev_out
          place_num=get_omp_place_info(num_procs,procs)
          if(place_num.ge.0) then
+!$OMP CRITICAL(IO)
           write(devo,'("#MSG(OpenMP): Host place ",i4," consists of ",i4," hardware units:",1024(1x,i4))')&
           &place_num,num_procs,procs(1:num_procs)
+!$OMP END CRITICAL(IO)
           flush(devo)
          endif
          return
