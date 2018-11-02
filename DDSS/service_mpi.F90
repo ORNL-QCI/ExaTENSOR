@@ -698,10 +698,10 @@
          devo=6; if(present(dev_out)) devo=dev_out
          place_num=get_omp_place_info(num_procs,procs)
          if(place_num.ge.0) then
-!$OMP CRITICAL(IO)
+!$OMP CRITICAL (IO)
           write(devo,'("#MSG(OpenMP): Host place ",i4," consists of ",i4," hardware units:",1024(1x,i4))')&
           &place_num,num_procs,procs(1:num_procs)
-!$OMP END CRITICAL(IO)
+!$OMP END CRITICAL (IO)
           flush(devo)
          endif
          return
