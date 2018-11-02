@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/01
+!REVISION: 2018/11/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -76,7 +76,7 @@
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !default console output
-        integer(INTD), private:: DEBUG=0    !debugging mode
+        integer(INTD), private:: DEBUG=1    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WRK_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
@@ -2552,6 +2552,12 @@
                    if(errc.ne.TRY_LATER) errc=-9
                   endif
                  else
+                  if(VERBOSE) then
+!$OMP CRITICAL (IO)
+                   write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t:acquire_rsc)[",i6,"]: tens_layout_t.get_body_size() failed: ",'//&
+                   &'i11,1x,i13)') impir,errc,buf_size
+!$OMP END CRITICAL (IO)
+                  endif
                   errc=-8
                  endif
                 else

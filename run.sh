@@ -3,13 +3,14 @@
 #the environment variable QF_PROCS_PER_NODE must be set appropriately!
 
 export QF_PATH=/home/dima/src/ExaTensor #full path to ExaTensor
-export QF_NUM_PROCS=4                   #number of MPI processes
+export QF_NUM_PROCS=4                   #total number of MPI processes
 export QF_PROCS_PER_NODE=4              #number of MPI processes per node
-export QF_CORES_PER_PROC=1              #number of cores per MPI process (no less than 1)
+export QF_CORES_PER_PROCESS=1           #number of CPU cores per MPI process (no less than 1)
 export QF_GPUS_PER_PROCESS=0            #number of discrete NVIDIA GPU's per process (optional)
 export QF_MICS_PER_PROCESS=0            #number of discrete Intel Xeon Phi's per process (optional)
 export QF_AMDS_PER_PROCESS=0            #number of discrete AMD GPU's per process (optional)
 export QF_NUM_THREADS=8                 #number of threads per MPI process (keep it 8)
+export QF_MEM_PER_PROCESS=1024          #memory limit per MPI process in MB
 
 ulimit -s unlimited
 
@@ -67,9 +68,9 @@ cp $QF_PATH/Qforce.x ./
 
 #/usr/local/mpi/mpich-3.2/bin/mpiexec -n $QF_NUM_PROCS ./Qforce.x #>& qforce.log
 
-#aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./Qforce.x #>& qforce.log
+#aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROCESS -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./Qforce.x #>& qforce.log
 
-#aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc none ./Qforce.x #>& qforce.log
+#aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROCESS -cc none ./Qforce.x #>& qforce.log
 
 #nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x #>& qforce.log
 
