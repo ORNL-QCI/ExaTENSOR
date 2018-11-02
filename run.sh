@@ -10,7 +10,8 @@ export QF_GPUS_PER_PROCESS=0            #number of discrete NVIDIA GPU's per pro
 export QF_MICS_PER_PROCESS=0            #number of discrete Intel Xeon Phi's per process (optional)
 export QF_AMDS_PER_PROCESS=0            #number of discrete AMD GPU's per process (optional)
 export QF_NUM_THREADS=8                 #number of threads per MPI process (keep it 8)
-export QF_MEM_PER_PROCESS=1024          #memory limit per MPI process in MB
+export QF_MEM_PER_PROCESS=1024          #host memory limit per MPI process in MB
+export QF_NVMEM_PER_PROCESS=0           #non-volatile memory limit per MPI process in MB
 
 ulimit -s unlimited
 

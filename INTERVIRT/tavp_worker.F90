@@ -80,8 +80,10 @@
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WRK_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
- !On-node pinned Host memory buffer:
+ !Memory:
+        integer(INTD), parameter, public:: TAVP_WRK_MIN_HOST_MEM=64 !minimal required host memory size (MB) per MPI process
         integer(INTL), parameter, private:: TAVP_WRK_HOST_BUF_SIZE=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !default Host buffer size in bytes
+        integer(INTL), parameter, private:: TAVP_WRK_MIN_SIZE_IN_BUF=64*(1024_INTL*1024_INTL) !minimal data size (bytes) to consider allocation in Host buffer
  !Tensor initialization during creation:
         logical, parameter, private:: TAVP_WRK_ZERO_ON_CREATE=.TRUE. !if TRUE, tensors will be initialized to zero during creation
  !Elementary tensor instruction granularity classification:
@@ -1045,22 +1047,33 @@
         subroutine TensResrcAllocateBuffer(this,bytes,ierr,in_buffer,dev_id,set_to_zero)
 !Allocates local memory either from a system or from a custom buffer.
 !If the resource has already been allocated before, an error will be returned.
+!If the memory allocation is unsuccessful, returns either TRY_LATER or an error code.
          implicit none
          class(tens_resrc_t), intent(inout):: this    !inout: tensor resource
          integer(INTL), intent(in):: bytes            !in: size in bytes
-         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD), intent(out), optional:: ierr  !out: error code or TRY_LATER
          logical, intent(in), optional:: in_buffer    !in: if TRUE the memory will be allocated from a custom buffer, FALSE from the system
          integer(INTD), intent(in), optional:: dev_id !in: flat device id (defaults to Host)
          logical, intent(in), optional:: set_to_zero  !in: if TRUE, the resource memory will be brute-force initialized to zero
          integer(INTD):: errc
          integer(C_INT):: in_buf,dev
          type(C_PTR):: addr
+         logical:: retry
 
          if(this%is_empty(errc)) then
           if(bytes.gt.0_INTL) then
-           in_buf=NOPE; if(present(in_buffer)) then; if(in_buffer) in_buf=YEP; endif
            dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
+           if(present(in_buffer)) then
+            if(in_buffer) then; in_buf=YEP; else; in_buf=NOPE; endif
+            retry=.FALSE.
+           else
+            if(bytes.ge.TAVP_WRK_MIN_SIZE_IN_BUF) then; in_buf=YEP; else; in_buf=NOPE; endif
+            retry=.TRUE.
+           endif
            errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr)
+           if(errc.eq.TRY_LATER.and.in_buf.eq.YEP.and.retry) then
+            in_buf=NOPE; errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr) !fall back to system allocator
+           endif
            if(errc.eq.0) then
             this%base_addr=addr
             this%bytes=bytes
@@ -1072,7 +1085,7 @@
              endif
             endif
            else
-            errc=-3 !`Here TRY_LATER should be distinguished from fatal errors
+            if(errc.ne.TRY_LATER) errc=-3
            endif
           else
            errc=-2
@@ -1458,10 +1471,9 @@
 !-----------------------------------------------------------------
         subroutine TensEntryWrkAcquireResource(this,ierr,init_rsc)
 !Acquires resource for the tensor cache entry if it has not been acquired yet.
-!`The memory is acquired from the regular Host memory pool.
          implicit none
          class(tens_entry_wrk_t), intent(inout):: this !inout: active tensor cache entry
-         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(out), optional:: ierr   !out: error code or TRY_LATER
          logical, intent(in), optional:: init_rsc      !in: if TRUE, the memory resource will be initialized to zero
          integer(INTD):: errc
          integer(INTL):: buf_size
@@ -1493,7 +1505,7 @@
                  flush(CONS_OUT)
                 endif
                else
-                errc=-7
+                if(errc.ne.TRY_LATER) errc=-7
                endif
               else
                errc=-6
@@ -2515,7 +2527,7 @@
 !If the resource component is not set, an error will be returned.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
-         integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
+         integer(INTD), intent(out), optional:: ierr !out: error code or TRY_LATER
          logical, intent(in), optional:: init_rsc    !in: if TRUE, the memory resource will be explicitly initialized to zero upon allocation
          integer(INTD):: errc
          integer(INTL):: buf_size
@@ -2596,7 +2608,7 @@
 !If the resource has not been allocated yet, it will be allocated here.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
+         integer(INTD), intent(out), optional:: ierr !out: error code or TRY_LATER
          integer(INTD):: errc,comm_stat,req
          class(DataDescr_t), pointer:: descr
          type(C_PTR):: cptr
@@ -2615,7 +2627,7 @@
                  if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
                   if(descr%is_set(errc)) then
                    if(errc.eq.0) then
-                    if(this%resource%is_empty()) call this%acquire_rsc(errc) !`may return TRY_LATER
+                    if(this%resource%is_empty()) call this%acquire_rsc(errc)
                     if(errc.eq.0) then
                      comm_stat=this%get_comm_stat(errc)
                      if(errc.eq.0.and.comm_stat.eq.DS_OPRND_NO_COMM) then
@@ -2646,7 +2658,7 @@
                       if(errc.ne.0.or.comm_stat.ne.DS_OPRND_FETCHING) errc=-11
                      endif
                     else
-                     errc=-10
+                     if(errc.ne.TRY_LATER) errc=-10
                     endif
                    else
                     errc=-9
@@ -7031,7 +7043,7 @@
          implicit none
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK Resourcer
          class(tens_instr_t), intent(inout):: tens_instr   !inout: active tensor instruction
-         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD), intent(out), optional:: ierr       !out: error code or TRY_LATER
          logical, intent(in), optional:: omit_output       !in: if TRUE, the output operand(s) will be ommitted (defaults to FALSE)
          integer(INTD):: errc,ier,n,l
          class(ds_oprnd_t), pointer:: oprnd
@@ -7256,7 +7268,7 @@
                call tens_instr%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
-             else
+             else !`May be just TRY_LATER (see tens_oprnd_t.prefetch())
               if(VERBOSE) then
 !$OMP CRITICAL (IO)
                write(CONS_OUT,'("#ERROR(TAVP-WRK:Communicator): Failed to initiate input prefetch: Error ",i11)') ier
@@ -7550,7 +7562,7 @@
          implicit none
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK Communicator
          class(tens_instr_t), intent(inout):: tens_instr      !inout: active tensor instruction
-         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD), intent(out), optional:: ierr          !out: error code or TRY_LATER
          integer(INTD):: errc,ier,n
          class(ds_oprnd_t), pointer:: oprnd
          logical:: op_output,fetch
@@ -7563,7 +7575,10 @@
            if(op_output.and.(.not.fetch)) cycle
            oprnd=>tens_instr%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
-            call oprnd%prefetch(ier); if(ier.ne.0.and.errc.eq.0) errc=-3
+            call oprnd%prefetch(ier)
+            if(ier.ne.0.and.errc.eq.0) then
+             if(ier.eq.TRY_LATER) then; errc=ier; else; errc=-3; endif
+            endif
            else
             errc=-2; exit
            endif

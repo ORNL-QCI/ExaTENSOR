@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/11/01
+!REVISION: 2018/11/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -464,9 +464,10 @@
           implicit none
           integer(INTD), intent(out):: jerr
           type(tavp_wrk_conf_t):: tavp_wrk_conf
-          integer(INTD):: ji
+          integer(INTD):: ji,jn
           integer(INTL):: aid
-          character(128):: tavpname
+          character(128):: tavpname,envar
+          real(8):: val
 
           allocate(tavp_wrk_t::tavp,STAT=jerr)
           if(jerr.eq.0) then
@@ -480,15 +481,28 @@
              tavp_wrk_conf%source_rank=tavp_role_rank(int(aid,INTD))
              tavp_wrk_conf%retire_comm=tavp_wrk_conf%source_comm
              tavp_wrk_conf%retire_rank=tavp_wrk_conf%source_rank
-             tavp_wrk_conf%host_ram_size=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !`Make configurable
-             tavp_wrk_conf%nvram_size=0_INTL !`Make configurable
-             tavp_wrk_conf%num_mpi_windows=1 !`Make configurable
-             tavp_wrk_conf%host_buf_size=tavp_wrk_conf%host_ram_size !`Make configurable
-             if(gpu_count.gt.0) then
-              allocate(tavp_wrk_conf%gpu_list(gpu_count))
-              tavp_wrk_conf%gpu_list(1:gpu_count)=(/(ji,ji=gpu_start,gpu_start+gpu_count-1)/)
+             envar=' '; call get_environment_variable('QF_MEM_PER_PROCESS',envar)
+             call charnum(envar,val,jn) !host memory per MPI process in MB
+             if(jn.ge.TAVP_WRK_MIN_HOST_MEM) then
+              tavp_wrk_conf%host_ram_size=int(jn,INTL)*1048576_INTL !host memory per MPI process in Bytes
+              tavp_wrk_conf%host_buf_size=tavp_wrk_conf%host_ram_size
+              envar=' '; call get_environment_variable('QF_NVMEM_PER_PROCESS',envar)
+              call charnum(envar,val,jn) !non-volatile memory per MPI process in MB
+              if(jn.gt.0) then
+               tavp_wrk_conf%nvram_size=int(jn,INTL)*1048576_INTL !non-volatile memory per MPI process in Bytes
+              else
+               tavp_wrk_conf%nvram_size=0
+              endif
+              tavp_wrk_conf%num_mpi_windows=1 !`Make configurable
+              if(gpu_count.gt.0) then
+               allocate(tavp_wrk_conf%gpu_list(gpu_count))
+               tavp_wrk_conf%gpu_list(1:gpu_count)=(/(ji,ji=gpu_start,gpu_start+gpu_count-1)/)
+              endif
+              call tavp%configure(tavp_wrk_conf,jerr); if(jerr.ne.0) jerr=-5
+             else
+              write(jo,'("#FATAL(exatns_start:prepare_tavp_wrk): Invalid QF_MEM_PER_PROCESS variable value!")')
+              jerr=-4
              endif
-             call tavp%configure(tavp_wrk_conf,jerr); if(jerr.ne.0) jerr=-4
             else
              jerr=-3
             endif
