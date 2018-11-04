@@ -23,8 +23,8 @@
 
 **/
 
-#ifndef _EXA_TENSOR_DENSE_ADPT_H
-#define _EXA_TENSOR_DENSE_ADPT_H
+#ifndef EXA_TENSOR_DENSE_ADPT_H_
+#define EXA_TENSOR_DENSE_ADPT_H_
 
 #include <assert.h>
 #include <iostream>
@@ -106,4 +106,4 @@ public:
 
 } //end namespace exatensor
 
-#endif //_EXA_TENSOR_DENSE_ADPT_H
+#endif //EXA_TENSOR_DENSE_ADPT_H_

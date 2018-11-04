@@ -23,8 +23,8 @@
 
 **/
 
-#ifndef _EXA_TENSOR_SOLVER_H
-#define _EXA_TENSOR_SOLVER_H
+#ifndef EXA_TENSOR_SOLVER_H_
+#define EXA_TENSOR_SOLVER_H_
 
 #include <vector>
 
@@ -48,4 +48,4 @@ int optimizeOverlapMax(TensorNetwork<T> tensNet,                         //inout
 
 } //end namespace exatensor
 
-#endif //_EXA_TENSOR_SOLVER_H
+#endif //EXA_TENSOR_SOLVER_H_

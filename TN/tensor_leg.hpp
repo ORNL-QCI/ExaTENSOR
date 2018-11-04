@@ -23,8 +23,8 @@
 
 **/
 
-#ifndef _EXA_TENSOR_LEG_H
-#define _EXA_TENSOR_LEG_H
+#ifndef EXA_TENSOR_LEG_H_
+#define EXA_TENSOR_LEG_H_
 
 #include <assert.h>
 #include <iostream>
@@ -70,4 +70,4 @@ public:
 
 } //end namespace exatensor
 
-#endif //_EXA_TENSOR_LEG_H
+#endif //EXA_TENSOR_LEG_H_

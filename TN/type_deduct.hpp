@@ -23,9 +23,9 @@
 
 **/
 
-#ifndef _TYPE_DEDUCT_H
-#define _TYPE_DEDUCT_H
+#ifndef TYPE_DEDUCT_H_
+#define TYPE_DEDUCT_H_
 
 template<typename T> class dbg_type_deduct;
 
-#endif
+#endif //TYPE_DEDUCT_H_

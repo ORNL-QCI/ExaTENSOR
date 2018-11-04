@@ -23,8 +23,8 @@
 
 **/
 
-#ifndef _EXA_TENSOR_NETWORK_H
-#define _EXA_TENSOR_NETWORK_H
+#ifndef EXA_TENSOR_NETWORK_H_
+#define EXA_TENSOR_NETWORK_H_
 
 #include <cstdint>
 #include <assert.h>
@@ -218,4 +218,4 @@ private:
 
 } //end namespace exatensor
 
-#endif //_EXA_TENSOR_NETWORK_H
+#endif //EXA_TENSOR_NETWORK_H_

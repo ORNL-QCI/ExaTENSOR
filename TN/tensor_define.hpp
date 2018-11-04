@@ -23,8 +23,8 @@
 
 **/
 
-#ifndef _EXA_TENSOR_DEFINE_H
-#define _EXA_TENSOR_DEFINE_H
+#ifndef EXA_TENSOR_DEFINE_H_
+#define EXA_TENSOR_DEFINE_H_
 
 #include <complex>
 
@@ -60,4 +60,4 @@ public:
 
 } //end namespace exatensor
 
-#endif //_EXA_TENSOR_DEFINE_H
+#endif //EXA_TENSOR_DEFINE_H_
