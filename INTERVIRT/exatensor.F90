@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/11/02
+!REVISION: 2018/11/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -43,7 +43,7 @@
 !PARAMETERS:
  !Basic:
        integer(INTD), private:: CONS_OUT=6 !output device
-       integer(INTD), private:: DEBUG=0    !debugging level
+       integer(INTD), private:: DEBUG=1    !debugging level
        logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Error codes (user-level):
        public EXA_SUCCESS,&
@@ -1068,7 +1068,11 @@
           if(ierr.eq.0) then
            tens_instr=>add_new_instruction(ip,ierr)
            if(ierr.eq.0) then
-            write(jo,'(i11)') ip; flush(jo) !new instruction id number
+            write(jo,'(i11)') ip !new instruction id number
+            if(DEBUG.gt.0) then
+             call tensor%print_head(dev_id=jo); write(jo,'()')
+            endif
+            flush(jo)
             call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_CREATE,ierr,tensor,iid=ip)
             if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -1113,7 +1117,11 @@
 !Construct the tensor instruction:
           tens_instr=>add_new_instruction(ip,ierr)
           if(ierr.eq.0) then
-           write(jo,'(i11)') ip; flush(jo) !new instruction id number
+           write(jo,'(i11)') ip !new instruction id number
+           if(DEBUG.gt.0) then
+            call tensor%print_head(dev_id=jo); write(jo,'()')
+           endif
+           flush(jo)
            call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_DESTROY,ierr,tensor,iid=ip)
            if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -1285,7 +1293,11 @@
 !Construct the tensor instruction:
             tens_instr=>add_new_instruction(ip,ierr)
             if(ierr.eq.0) then
-             write(jo,'(i11)') ip; flush(jo) !new instruction id number
+             write(jo,'(i11)') ip !new instruction id number
+             if(DEBUG.gt.0) then
+              call tensor%print_head(dev_id=jo); write(jo,'(" = (",D22.14,1x,D22.14,")")') scal
+             endif
+             flush(jo)
              call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_init,iid=ip)
              if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -1345,7 +1357,11 @@
 !Construct the tensor instruction:
             tens_instr=>add_new_instruction(ip,ierr)
             if(ierr.eq.0) then
-             write(jo,'(i11)') ip; flush(jo) !new instruction id number
+             write(jo,'(i11)') ip !new instruction id number
+             if(DEBUG.gt.0) then
+              call tensor%print_head(dev_id=jo); call printl(jo,' = '//method(1:len_trim(method)))
+             endif
+             flush(jo)
              call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_init,iid=ip)
              if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -1405,7 +1421,11 @@
 !Construct the tensor instruction:
             tens_instr=>add_new_instruction(ip,ierr)
             if(ierr.eq.0) then
-             write(jo,'(i11)') ip; flush(jo) !new instruction id number
+             write(jo,'(i11)') ip !new instruction id number
+             if(DEBUG.gt.0) then
+              call tensor%print_head(dev_id=jo); call printl(jo,' += '//method(1:len_trim(method)))
+             endif
+             flush(jo)
              call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_trans,iid=ip)
              if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -1679,7 +1699,15 @@
          if(ierr.eq.EXA_SUCCESS) then
           tens_instr=>add_new_instruction(ip,ierr)
           if(ierr.eq.0) then
-           write(jo,'(i11)') ip; flush(jo) !new instruction id number
+           write(jo,'(i11)') ip !new instruction id number
+           if(DEBUG.gt.0) then
+            call printl(jo,pattern(1:len_trim(pattern))//':',adv=.FALSE.); write(jo,'(" ")',ADVANCE='NO')
+            call tensor0%print_head(dev_id=jo); write(jo,'(" += ")',ADVANCE='NO')
+            call tensor1%print_head(dev_id=jo); write(jo,'(" * ")',ADVANCE='NO')
+            call tensor2%print_head(dev_id=jo)
+            if(present(prefactor)) then; write(jo,'(" * (",D22.14,1x,D22.14,")")') prefactor; else; write(jo,'()'); endif
+           endif
+           flush(jo)
            call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_CONTRACT,ierr,tens_contr,iid=ip)
            if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:

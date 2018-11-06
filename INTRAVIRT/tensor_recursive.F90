@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/01
+!REVISION: 2018/11/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3313,7 +3313,7 @@
          else
           str(l+1:l+4)='()[]'; l=l+4
          endif
-         call printl(dev,str(1:l))
+         call printl(dev,str(1:l),adv=.FALSE.)
          flush(dev)
          if(present(ierr)) ierr=errc
          return
@@ -6297,7 +6297,7 @@
              if(ierr.eq.TEREC_SUCCESS) then
               call header%get_dims(dims,n,ierr)
               if(ierr.eq.TEREC_SUCCESS) then
-               call header%print_head(dev_id=this%print_dev)
+               call header%print_head(dev_id=this%print_dev); write(this%print_dev,'()')
                layout=>tensor%get_layout(ierr)
                if(ierr.eq.TEREC_SUCCESS) then
                 body_p=layout%get_body_ptr(ierr)

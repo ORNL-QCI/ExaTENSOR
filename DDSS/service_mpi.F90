@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/02
+!REVISION: 2018/11/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -675,7 +675,6 @@
          integer:: place_num                 !out: OpenMP place the current thread belongs to
          integer, intent(out):: num_procs    !out: number of processing elements in the place
          integer, intent(inout):: procs(1:*) !out: processing element id in the place
-
 #if defined(_OPENMP)
 #if _OPENMP >= 201307
          place_num=omp_get_place_num()
@@ -693,7 +692,7 @@
         subroutine print_omp_place_info(dev_out)
 !Prints the information on the OpenMP place the current thread belongs to.
          integer, intent(in), optional:: dev_out !in: output device (defaults to 6)
-         integer:: devo,place_num,num_procs,procs(1:16384)
+         integer:: devo,place_num,num_procs,procs(1024)
 
          devo=6; if(present(dev_out)) devo=dev_out
          place_num=get_omp_place_info(num_procs,procs)
