@@ -5,7 +5,7 @@
 export QF_PATH=/home/dima/src/ExaTensor #full path to ExaTensor
 export QF_NUM_PROCS=4                   #total number of MPI processes
 export QF_PROCS_PER_NODE=4              #number of MPI processes per node
-export QF_CORES_PER_PROCESS=1           #number of CPU cores per MPI process (no less than 1)
+export QF_CORES_PER_PROCESS=1           #number of physical CPU cores per MPI process (no less than 1)
 export QF_GPUS_PER_PROCESS=0            #number of discrete NVIDIA GPU's per process (optional)
 export QF_MICS_PER_PROCESS=0            #number of discrete Intel Xeon Phi's per process (optional)
 export QF_AMDS_PER_PROCESS=0            #number of discrete AMD GPU's per process (optional)
@@ -15,19 +15,26 @@ export QF_NVMEM_PER_PROCESS=0           #non-volatile memory limit per MPI proce
 
 ulimit -s unlimited
 
-#OpenMP:
+#OpenMP generic:
 export OMP_NUM_THREADS=$QF_NUM_THREADS #initial number of OpenMP threads per MPI process
 export OMP_DYNAMIC=FALSE               #no OpenMP dynamic threading
 export OMP_NESTED=TRUE                 #OpenMP nested parallelism is mandatory
 export OMP_MAX_ACTIVE_LEVELS=3         #max number of OpenMP nesting levels (at least 3)
-export OMP_THREAD_LIMIT=256            #max total number of OpenMP threads per process
+export OMP_THREAD_LIMIT=1024           #max total number of OpenMP threads per process
 export OMP_WAIT_POLICY=PASSIVE         #idle thread behavior
-export OMP_PROC_BIND=close,spread,spread
-export OMP_PLACES=threads
-#export OMP_STACKSIZE=1M                #stack size per thread
-#export GOMP_STACKSIZE=1024             #stack size per thread (gcc only)
+#export OMP_STACKSIZE=200M             #stack size per thread
 #export OMP_DISPLAY_ENV=VERBOSE
 #export GOMP_DEBUG=1
+
+#OpenMP thread binding:
+export OMP_PLACES_DEFAULT=threads                                  #default thread binding to CPU hardware threads
+export OMP_PLACES_TITAN={0},{2},{4},{6,8},{1:8:2},{10},{12},{14}   #Titan 16-core AMD thread binding (odd hardware threads do computing)
+export OMP_PLACES_POWER9={0},{2},{4},{6,8},{1:42:2},{10},{12},{14} #Summit 21-core socket thread binding (odd hardware threads do computing)
+export OMP_PLACES_KNL={0},{2},{4},{6,8},{1:128:2},{10},{12},{14}   #KNL 64-core thread binding (odd hardware threads do computing)
+export OMP_PLACES=$OMP_PLACES_DEFAULT
+export OMP_PROC_BIND=close,spread,spread #nest1: Functional threads (DSVU)
+                                         #nest2: TAVP-WRK:Dispatcher spawns coarse-grain executors
+                                         #nest3: TAVP-WRK:Dispatcher:Executor spawns execution threads in CP-TAL kernels
 
 #Intel specific:
 #export KMP_AFFINITY="verbose,granularity=core,compact" #Intel CPU thread affinity
@@ -63,15 +70,13 @@ unset PAMI_IBV_ENABLE_DCT
 rm core.* *.tmp *.log *.out *.x
 cp $QF_PATH/Qforce.x ./
 
-#jsrun -n8 -r2 -a1 -c21 -g3 -brs ./Qforce.x #>& qforce.log
+#/usr/local/mpi/openmpi/3.1.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE -oversubscribe ./Qforce.x #>& qforce.log
 
-#/usr/local/mpi/openmpi-3.1.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE -oversubscribe ./Qforce.x #>& qforce.log
-
-#/usr/local/mpi/mpich-3.2/bin/mpiexec -n $QF_NUM_PROCS ./Qforce.x #>& qforce.log
-
-#aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROCESS -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./Qforce.x #>& qforce.log
+#/usr/local/mpi/mpich/3.2.1/bin/mpiexec -n $QF_NUM_PROCS ./Qforce.x #>& qforce.log
 
 #aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROCESS -cc none ./Qforce.x #>& qforce.log
+
+#jsrun -n8 -r2 -a1 -c21 -g3 -brs ./Qforce.x #>& qforce.log
 
 #nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x #>& qforce.log
 

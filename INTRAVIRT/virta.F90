@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/06
+!REVISION: 2018/11/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -109,6 +109,8 @@
         integer(INTD), parameter, public:: EXA_DATA_KIND_C8=C8      !double precision complex
  !External methods:
         integer(INTD), parameter, public:: EXA_MAX_METHOD_NAME_LEN=64 !max length of an external method name
+ !Subspace hierarchy configuration:
+        integer(INTD), parameter, public:: EXA_SUBSPACE_BRANCH_FACTOR_DEFAULT=2 !default branching factor for construction of subspace aggregation trees
  !TAVP hierarchy configuration:
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=32 !maximal size of a work group (max number of workers per manager)
         integer(INTD), public:: EXA_MANAGER_BRANCH_FACT=2  !branching factor for the managing hierarchy
