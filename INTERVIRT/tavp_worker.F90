@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/08
+!REVISION: 2018/11/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -299,16 +299,16 @@
         end type tavp_wrk_retirer_conf_t
  !TAVP-WRK resourcer:
         type, extends(ds_unit_t), private:: tavp_wrk_resourcer_t
-         integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- Decoder (Tens,Ctrl,Aux), Port 1 <- Communicator (Tens)
-         integer(INTL), private:: host_ram_size=0_INTL              !size of the usable Host RAM memory in bytes
-         integer(INTL), private:: nvram_size=0_INTL                 !size of the usable NVRAM memory (if any) in bytes
-         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
-         type(list_bi_t), private:: staged_list                     !list of staged instructions ready for subsequent processing
-         type(list_iter_t), private:: stg_list                      !iterator for <staged_list>
-         type(list_bi_t), private:: deferred_list                   !list of deferred instructions
-         type(list_iter_t), private:: def_list                      !iterator for <deferred_list>
-         type(list_bi_t), private:: release_list                    !list of completed tensor instructions expecting resource release
-         type(list_iter_t), private:: rls_list                      !iterator for <release_list>
+         integer(INTD), public:: num_ports=2                          !number of ports: Port 0 <- Decoder (Tens,Ctrl,Aux), Port 1 <- Communicator (Tens)
+         integer(INTL), private:: host_ram_size=TAVP_WRK_MIN_HOST_MEM !size of the usable Host RAM memory in bytes
+         integer(INTL), private:: nvram_size=0_INTL                   !size of the usable NVRAM memory (if any) in bytes
+         class(tens_cache_t), pointer, private:: arg_cache=>NULL()    !non-owning pointer to the tensor argument cache
+         type(list_bi_t), private:: staged_list                       !list of staged instructions ready for subsequent processing
+         type(list_iter_t), private:: stg_list                        !iterator for <staged_list>
+         type(list_bi_t), private:: deferred_list                     !list of deferred instructions
+         type(list_iter_t), private:: def_list                        !iterator for <deferred_list>
+         type(list_bi_t), private:: release_list                      !list of completed tensor instructions expecting resource release
+         type(list_iter_t), private:: rls_list                        !iterator for <release_list>
          contains
           procedure, public:: configure=>TAVPWRKResourcerConfigure                !configures TAVP-WRK resourcer
           procedure, public:: start=>TAVPWRKResourcerStart                        !starts TAVP-WRK resourcer
@@ -391,6 +391,7 @@
          type(tavp_wrk_resourcer_t), private:: resourcer          !DSVU: allocates local resources for tensor instructions (only for defined tensor operands)
          type(tavp_wrk_communicator_t), private:: communicator    !DSVU: fetches/uploads remote tensor operands
          type(tavp_wrk_dispatcher_t), private:: dispatcher        !DSVU: dispatches and executes ready to be executed tensor instructions on compute devices (runs the microcode)
+         integer(INTD), private:: units_active=0                  !number of active (running) DSVU
          logical, private:: talsh_in_use=.FALSE.                  !TAL-SH init/shutdown synchronization flag
          contains
           procedure, public:: configure=>TAVPWRKConfigure         !configures the TAVP-WRK DSVP
@@ -404,9 +405,9 @@
          integer(INTD), public:: retire_comm                !MPI communicator of the retired bytecode destination
          integer(INTD), public:: retire_rank                !MPI process rank of the retired bytecode destination
          integer(INTL), public:: host_ram_size              !size of the usable Host RAM memory in bytes
+         integer(INTL), public:: host_buf_size              !pinned Host argument buffer size in bytes
          integer(INTL), public:: nvram_size                 !size of the usable NVRAM memory (if any) in bytes
          integer(INTD), public:: num_mpi_windows            !number of dynamic MPI windows per global addressing space
-         integer(INTL), public:: host_buf_size              !pinned Host argument buffer size in bytes
          integer(INTD), allocatable, public:: gpu_list(:)   !list of the accesible NVIDIA GPU devices
          integer(INTD), allocatable, public:: amd_list(:)   !list of the accesible AMD GPU devices
          integer(INTD), allocatable, public:: mic_list(:)   !list of the accesible Intel MIC devices
@@ -422,6 +423,11 @@
           integer(INTD), intent(in), optional:: dev_id       !in: flat device id
          end subroutine tavp_wrk_dispatch_proc_i
         end interface
+!GLOBAL DATA:
+ !Memory usage:
+        integer(INTL), protected:: host_ram_limit=0 !host RAM memory limit in bytes for the current TAVP-WRK (set by Resourcer)
+        integer(INTL), protected:: host_ram_used=0  !host RAM memory (bytes) currently in use for storing tensor data (includes host buffer memory)
+        integer(INTL), protected:: host_buf_used=0  !pinned host buffer memory (bytes) currently in use for storing tensor data
 !VISIBILITY:
  !non-member test/debug:
         private test_carma
@@ -1056,6 +1062,7 @@
          integer(INTD), intent(in), optional:: dev_id !in: flat device id (defaults to Host)
          logical, intent(in), optional:: set_to_zero  !in: if TRUE, the resource memory will be brute-force initialized to zero
          integer(INTD):: errc
+         integer(INTL):: mu
          integer(C_INT):: in_buf,dev
          type(C_PTR):: addr
          logical:: retry
@@ -1070,11 +1077,23 @@
             if(bytes.ge.TAVP_WRK_MIN_SIZE_IN_BUF) then; in_buf=YEP; else; in_buf=NOPE; endif
             retry=.TRUE.
            endif
-           errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr)
-           if(errc.eq.TRY_LATER.and.in_buf.eq.YEP.and.retry) then
-            in_buf=NOPE; errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr) !fall back to system allocator
+!$OMP ATOMIC READ
+           mu=host_ram_used
+           if(mu+bytes.le.host_ram_limit) then
+            errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr)
+            if(errc.eq.TRY_LATER.and.in_buf.eq.YEP.and.retry) then
+             in_buf=NOPE; errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr) !fall back to system allocator
+            endif
+           else
+            errc=TRY_LATER
            endif
            if(errc.eq.0) then
+!$OMP ATOMIC UPDATE
+            host_ram_used=host_ram_used+bytes
+            if(in_buf.eq.YEP) then
+!$OMP ATOMIC UPDATE
+             host_buf_used=host_buf_used+bytes
+            endif
             this%base_addr=addr
             this%bytes=bytes
             this%pinned=(in_buf.ne.NOPE)
@@ -1108,6 +1127,12 @@
           if(this%ref_count.le.1) then !at most one (last) tensor operand can still be associated with this resource
            errc=mem_free(this%dev_id,this%base_addr)
            if(errc.eq.0) then
+            if(this%pinned) then
+!$OMP ATOMIC UPDATE
+             host_buf_used=host_buf_used-this%bytes
+            endif
+!$OMP ATOMIC UPDATE
+            host_ram_used=host_ram_used-this%bytes
             this%base_addr=C_NULL_PTR
             this%bytes=0_C_SIZE_T
             this%pinned=.FALSE.
@@ -2550,7 +2575,7 @@
                  buf_size=layout%get_body_size(errc)
                  if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0_INTL) then
                   init_zero=.FALSE.; if(present(init_rsc)) init_zero=init_rsc
-                  call this%resource%allocate_buffer(buf_size,errc,set_to_zero=init_zero) !`may return TRY_LATER
+                  call this%resource%allocate_buffer(buf_size,errc,set_to_zero=init_zero)
                   if(errc.eq.0) then
                    if(associated(this%cache_entry).and.init_zero) call this%cache_entry%set_up_to_date(.TRUE.)
                    if(DEBUG.gt.0) then
@@ -5090,6 +5115,10 @@
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
+!$OMP FLUSH
+!$OMP ATOMIC UPDATE
+          tavp%units_active=tavp%units_active+1
+!$OMP FLUSH
           call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-45
          else
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-44
@@ -5236,6 +5265,8 @@
          class(tavp_wrk_decoder_t), intent(inout):: this !inout: TAVP-WRK decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid,uid
+         class(dsvp_t), pointer:: dsvp
+         class(tavp_wrk_t), pointer:: tavp
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
@@ -5267,6 +5298,12 @@
          call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
 !Record an error, if any:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+!Mark this DS unit inactive:
+         dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
+!$OMP FLUSH
+!$OMP ATOMIC UPDATE
+         tavp%units_active=tavp%units_active-1
+!$OMP FLUSH
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKDecoderShutdown
@@ -5661,6 +5698,10 @@
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
+!$OMP FLUSH
+!$OMP ATOMIC UPDATE
+          tavp%units_active=tavp%units_active+1
+!$OMP FLUSH
           call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-34
          else
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-33
@@ -5817,6 +5858,8 @@
          class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid,uid
+         class(dsvp_t), pointer:: dsvp
+         class(tavp_wrk_t), pointer:: tavp
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
@@ -5833,6 +5876,12 @@
          call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
 !Record an error, if any:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+!Mark this DS unit inactive:
+         dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
+!$OMP FLUSH
+!$OMP ATOMIC UPDATE
+         tavp%units_active=tavp%units_active-1
+!$OMP FLUSH
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKRetirerShutdown
@@ -6024,6 +6073,9 @@
           call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
+!Set host RAM memory limit:
+!$OMP ATOMIC WRITE
+         host_ram_limit=this%host_ram_size
 !Initialize queues and ports:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-91
 !Initialize the staged list:
@@ -6039,6 +6091,10 @@
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
+!$OMP FLUSH
+!$OMP ATOMIC UPDATE
+          tavp%units_active=tavp%units_active+1
+!$OMP FLUSH
           call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-86
          else
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-85
@@ -6420,8 +6476,9 @@
          implicit none
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier,thid,uid
+         integer(INTD):: errc,ier,thid,uid,n
          class(dsvp_t), pointer:: dsvp
+         class(tavp_wrk_t), pointer:: tavp
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
@@ -6431,12 +6488,9 @@
           flush(CONS_OUT)
          endif
 !Release TAL-SH:
-         dsvp=>this%get_dsvp()
-         select type(dsvp)
-         class is(tavp_wrk_t)
+         dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
 !$OMP ATOMIC WRITE
-          dsvp%talsh_in_use=.FALSE.
-         end select
+         tavp%talsh_in_use=.FALSE.
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
 !Deactivate the release list:
@@ -6477,8 +6531,34 @@
          endif
 !Release queues:
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Check memory leaks (either due to unallocated persistent tensors or real leaks):
+         do
+!$OMP FLUSH
+!$OMP ATOMIC READ
+          n=tavp%units_active
+          if(n.eq.1) exit !Resourcer must be the last DS unit to exit
+         enddo
+         if(DEBUG.gt.0) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Final memory balance: RAM in use = ",i13,'//&
+          &'"; Buffer in use = ",i13,"; RAM limit = ",i14)') host_ram_used,host_buf_used,host_ram_limit
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
+         if(host_ram_used.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#WARNING(TAVP-WRK:Resourcer): Non-zero memory balance: RAM in use = ",i13,'//&
+          &'"; Buffer in use = ",i13,"; RAM limit = ",i14)') host_ram_used,host_buf_used,host_ram_limit
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
 !Record an error, if any:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+!Mark this DS unit inactive:
+!$OMP FLUSH
+!$OMP ATOMIC UPDATE
+         tavp%units_active=tavp%units_active-1
+!$OMP FLUSH
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKResourcerShutdown
@@ -7224,6 +7304,10 @@
            if(errc.eq.0) errc=-58
           endif
 !Sync with other TAVP units:
+!$OMP FLUSH
+!$OMP ATOMIC UPDATE
+          tavp%units_active=tavp%units_active+1
+!$OMP FLUSH
           call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-57
          else
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-56
@@ -7480,6 +7564,8 @@
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
          integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTD):: errc,ier,thid,uid
+         class(dsvp_t), pointer:: dsvp
+         class(tavp_wrk_t), pointer:: tavp
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
          if(DEBUG.gt.0) then
@@ -7552,6 +7638,12 @@
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Record an error, if any:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+!Mark this DS unit inactive:
+         dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
+!$OMP FLUSH
+!$OMP ATOMIC UPDATE
+         tavp%units_active=tavp%units_active-1
+!$OMP FLUSH
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKCommunicatorShutdown
@@ -7791,6 +7883,10 @@
            if(errc.eq.0) errc=-35
           endif
 !Sync with other TAVP units:
+!$OMP FLUSH
+!$OMP ATOMIC UPDATE
+          tavp%units_active=tavp%units_active+1
+!$OMP FLUSH
           call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-34
          else
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-33
@@ -7952,6 +8048,7 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid,uid
          class(dsvp_t), pointer:: dsvp
+         class(tavp_wrk_t), pointer:: tavp
          logical:: talsh_on
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
@@ -7962,15 +8059,12 @@
           flush(CONS_OUT)
          endif
 !Shutdown the numerical computing runtime (TAL-SH):
-         dsvp=>this%get_dsvp()
-         select type(dsvp)
-         class is(tavp_wrk_t)
-          talsh_on=.TRUE.
-          do while(talsh_on)
+         dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
+         talsh_on=.TRUE.
+         do while(talsh_on)
 !$OMP ATOMIC READ
-           talsh_on=dsvp%talsh_in_use !wait until Resourcer releases TAL-SH
-          enddo
-         end select
+          talsh_on=tavp%talsh_in_use !wait until Resourcer releases TAL-SH
+         enddo
          ier=talsh_shutdown(); if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-8
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
@@ -8002,6 +8096,11 @@
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Record an error, if any:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+!Mark this DS unit inactive:
+!$OMP FLUSH
+!$OMP ATOMIC UPDATE
+         tavp%units_active=tavp%units_active-1
+!$OMP FLUSH
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKDispatcherShutdown
