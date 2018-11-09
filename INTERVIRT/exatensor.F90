@@ -484,21 +484,28 @@
              envar=' '; call get_environment_variable('QF_MEM_PER_PROCESS',envar)
              call charnum(envar,val,jn) !host memory per MPI process in MB
              if(jn.ge.TAVP_WRK_MIN_HOST_MEM) then
-              tavp_wrk_conf%host_ram_size=int(jn,INTL)*1048576_INTL !host memory per MPI process in Bytes
-              tavp_wrk_conf%host_buf_size=tavp_wrk_conf%host_ram_size
-              envar=' '; call get_environment_variable('QF_NVMEM_PER_PROCESS',envar)
-              call charnum(envar,val,jn) !non-volatile memory per MPI process in MB
-              if(jn.gt.0) then
-               tavp_wrk_conf%nvram_size=int(jn,INTL)*1048576_INTL !non-volatile memory per MPI process in Bytes
+              tavp_wrk_conf%host_ram_size=int(jn,INTL)*1048576_INTL !host memory limit per MPI process in Bytes
+              envar=' '; call get_environment_variable('QF_HOST_BUFFER_SIZE',envar)
+              call charnum(envar,val,jn) !host memory per MPI process in MB
+              tavp_wrk_conf%host_buf_size=int(jn,INTL)*1048576_INTL !host buffer size per MPI process in Bytes
+              if(tavp_wrk_conf%host_buf_size.le.tavp_wrk_conf%host_ram_size) then
+               envar=' '; call get_environment_variable('QF_NVMEM_PER_PROCESS',envar)
+               call charnum(envar,val,jn) !non-volatile memory per MPI process in MB
+               if(jn.gt.0) then
+                tavp_wrk_conf%nvram_size=int(jn,INTL)*1048576_INTL !non-volatile memory limit per MPI process in Bytes
+               else
+                tavp_wrk_conf%nvram_size=0
+               endif
+               tavp_wrk_conf%num_mpi_windows=1 !`Make configurable
+               if(gpu_count.gt.0) then
+                allocate(tavp_wrk_conf%gpu_list(gpu_count))
+                tavp_wrk_conf%gpu_list(1:gpu_count)=(/(ji,ji=gpu_start,gpu_start+gpu_count-1)/)
+               endif
+               call tavp%configure(tavp_wrk_conf,jerr); if(jerr.ne.0) jerr=-6
               else
-               tavp_wrk_conf%nvram_size=0
+               write(jo,'("#FATAL(exatns_start:prepare_tavp_wrk): Invalid QF_HOST_BUFFER_SIZE variable value!")')
+               jerr=-5
               endif
-              tavp_wrk_conf%num_mpi_windows=1 !`Make configurable
-              if(gpu_count.gt.0) then
-               allocate(tavp_wrk_conf%gpu_list(gpu_count))
-               tavp_wrk_conf%gpu_list(1:gpu_count)=(/(ji,ji=gpu_start,gpu_start+gpu_count-1)/)
-              endif
-              call tavp%configure(tavp_wrk_conf,jerr); if(jerr.ne.0) jerr=-5
              else
               write(jo,'("#FATAL(exatns_start:prepare_tavp_wrk): Invalid QF_MEM_PER_PROCESS variable value!")')
               jerr=-4

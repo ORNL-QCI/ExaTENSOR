@@ -2,16 +2,17 @@
 #if multiple MPI processes reside on the same node. In this case
 #the environment variable QF_PROCS_PER_NODE must be set appropriately!
 
-export QF_PATH=/home/dima/src/ExaTensor #full path to ExaTensor
-export QF_NUM_PROCS=4                   #total number of MPI processes
-export QF_PROCS_PER_NODE=4              #number of MPI processes per node
-export QF_CORES_PER_PROCESS=1           #number of physical CPU cores per MPI process (no less than 1)
-export QF_GPUS_PER_PROCESS=0            #number of discrete NVIDIA GPU's per process (optional)
-export QF_MICS_PER_PROCESS=0            #number of discrete Intel Xeon Phi's per process (optional)
-export QF_AMDS_PER_PROCESS=0            #number of discrete AMD GPU's per process (optional)
-export QF_NUM_THREADS=8                 #number of threads per MPI process (keep it 8)
-export QF_MEM_PER_PROCESS=1024          #host memory limit per MPI process in MB
-export QF_NVMEM_PER_PROCESS=0           #non-volatile memory limit per MPI process in MB
+export QF_PATH=/home/dima/src/ExaTensor #full path to ExaTENSOR root directory
+export QF_NUM_PROCS=4             #total number of MPI processes
+export QF_PROCS_PER_NODE=4        #number of MPI processes per logical node (logical nodes are created by node resource isolation)
+export QF_CORES_PER_PROCESS=1     #number of physical CPU cores per MPI process (no less than 1)
+export QF_MEM_PER_PROCESS=1024    #host RAM memory limit per MPI process in MB
+export QF_NVMEM_PER_PROCESS=0     #non-volatile memory limit per MPI process in MB
+export QF_HOST_BUFFER_SIZE=512    #host buffer size per MPI process in MB (must be less than QF_MEM_PER_PROCESS)
+export QF_GPUS_PER_PROCESS=0      #number of discrete NVIDIA GPU's per MPI process (optional)
+export QF_MICS_PER_PROCESS=0      #number of discrete Intel Xeon Phi's per MPI process (optional)
+export QF_AMDS_PER_PROCESS=0      #number of discrete AMD GPU's per MPI process (optional)
+export QF_NUM_THREADS=8           #initial number of CPU threads per MPI process (keep it 8)
 
 ulimit -s unlimited
 
@@ -23,8 +24,8 @@ export OMP_MAX_ACTIVE_LEVELS=3         #max number of OpenMP nesting levels (at 
 export OMP_THREAD_LIMIT=1024           #max total number of OpenMP threads per process
 export OMP_WAIT_POLICY=PASSIVE         #idle thread behavior
 #export OMP_STACKSIZE=200M             #stack size per thread
-#export OMP_DISPLAY_ENV=VERBOSE
-#export GOMP_DEBUG=1
+#export OMP_DISPLAY_ENV=VERBOSE         #display OpenMP environment variables
+#export GOMP_DEBUG=1                    #GNU OpenMP debugging
 
 #OpenMP thread binding:
 export OMP_PLACES_DEFAULT=threads                                  #default thread binding to CPU hardware threads

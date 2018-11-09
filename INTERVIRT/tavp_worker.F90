@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/06
+!REVISION: 2018/11/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -81,9 +81,9 @@
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WRK_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !Memory:
-        integer(INTD), parameter, public:: TAVP_WRK_MIN_HOST_MEM=64 !minimal required host memory size (MB) per MPI process
-        integer(INTL), parameter, private:: TAVP_WRK_HOST_BUF_SIZE=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !default Host buffer size in bytes
-        integer(INTL), parameter, private:: TAVP_WRK_MIN_SIZE_IN_BUF=64*(1024_INTL*1024_INTL) !minimal data size (bytes) to consider allocation in Host buffer
+        integer(INTD), parameter, public:: TAVP_WRK_MIN_HOST_MEM=256 !minimal required host RAM memory size (MB) per MPI process
+        integer(INTL), parameter, private:: TAVP_WRK_HOST_BUF_SIZE=TAVP_WRK_MIN_HOST_MEM*(1024_INTL*1024_INTL) !default Host buffer size in bytes per MPI process
+        integer(INTL), parameter, private:: TAVP_WRK_MIN_SIZE_IN_BUF=8*(1024_INTL*1024_INTL) !minimal data size (bytes) to consider allocation in Host memory buffer
  !Tensor initialization during creation:
         logical, parameter, private:: TAVP_WRK_ZERO_ON_CREATE=.TRUE. !if TRUE, tensors will be initialized to zero during creation
  !Elementary tensor instruction granularity classification:
@@ -7757,7 +7757,7 @@
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid,n,sts,opcode,errcode,num_outstanding,uid
+         integer(INTD):: errc,ier,thid,n,sts,opcode,errcode,num_outstanding,uid,opl
          logical:: active,stopping,completed
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
@@ -7795,6 +7795,9 @@
          else
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-33
          endif
+!Set the max number of OpenMP threads for the next parallel (computing) region:
+         opl=get_omp_place_info(n) !get the place id and place width the current (Dispatcher) thread is in
+         call omp_set_num_threads(n) !the next parallel region in TAL-SH can use up to n threads from this place
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active); num_outstanding=0
          wloop: do while(active)

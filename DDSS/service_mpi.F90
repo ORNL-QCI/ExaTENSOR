@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/06
+!REVISION: 2018/11/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -672,14 +672,14 @@
 !---------------------------------------------------------------------
         function get_omp_place_info(num_procs,procs) result(place_num)
 !Returns the information on the OpenMP place the current thread belongs to.
-         integer:: place_num                 !out: OpenMP place the current thread belongs to
-         integer, intent(out):: num_procs    !out: number of processing elements in the place
-         integer, intent(inout):: procs(1:*) !out: processing element id in the place
+         integer:: place_num                           !out: OpenMP place the current thread belongs to
+         integer, intent(out):: num_procs              !out: number of processing elements in the place
+         integer, intent(inout), optional:: procs(1:*) !out: processing element ids in the place
 #if defined(_OPENMP)
 #if _OPENMP >= 201307
          place_num=omp_get_place_num()
          num_procs=omp_get_place_num_procs(place_num)
-         call omp_get_place_proc_ids(place_num,procs)
+         if(present(procs)) call omp_get_place_proc_ids(place_num,procs)
 #else
          place_num=-1; num_procs=0 !not defined
 #endif
