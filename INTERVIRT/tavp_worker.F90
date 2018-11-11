@@ -97,7 +97,7 @@
         integer(INTD), private:: MAX_RESOURCER_INSTR=64  !max number of instructions during a single new resource allocation phase
         real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3 !max time spent in a single new resource allocation phase
  !Communicator:
-        logical, private:: COMMUNICATOR_BLOCKING=.TRUE.         !switches between blocking and non-blocking communications
+        logical, private:: COMMUNICATOR_BLOCKING=.FALSE.        !switches between blocking and non-blocking communications
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=16 !max number of outstanding prefetches issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=8     !max number of outstanding uploads issued by Communicator
         real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
@@ -6780,6 +6780,12 @@
               if(jerr.eq.TEREC_SUCCESS) then
                tens_entry=>this%arg_cache%lookup(temptens,jerr)
                if(.not.(jerr.eq.0.and.associated(tens_entry))) then
+                if(VERBOSE) then
+!$OMP CRITICAL (IO)
+                 write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.substitute_output.lookup_acc_tensor): Tensor cache lookup failed: "'//&
+                 &',i11,1x,l1)') jerr,associated(tens_entry)
+!$OMP END CRITICAL (IO)
+                endif
                 if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                 jerr=-5
                endif
