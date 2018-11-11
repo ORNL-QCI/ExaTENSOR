@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/09
+!REVISION: 2018/11/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -7866,11 +7866,11 @@
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-38
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-37
 !Initialize the issued instruction queue:
-         ier=this%iss_list%init(this%issued_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-37
+         ier=this%iss_list%init(this%issued_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-36
 !Initialize the completed instruction queue:
-         ier=this%cml_list%init(this%completed_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-36
+         ier=this%cml_list%init(this%completed_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-35
 !Initialize the numerical computing runtime (TAL-SH) and set up tensor argument cache:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -7880,16 +7880,16 @@
            tavp%talsh_in_use=.TRUE.
            this%arg_cache=>tavp%tens_cache
           else
-           if(errc.eq.0) errc=-35
+           if(errc.eq.0) errc=-34
           endif
 !Sync with other TAVP units:
 !$OMP FLUSH
 !$OMP ATOMIC UPDATE
           tavp%units_active=tavp%units_active+1
 !$OMP FLUSH
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-34
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-33
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-33
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-32
          endif
 !Set the max number of OpenMP threads for the next parallel (computing) region:
          opl=get_omp_place_info(n) !get the place id and place width the current (Dispatcher) thread is in
@@ -7898,9 +7898,9 @@
          active=(errc.eq.0); stopping=(.not.active); num_outstanding=0
          wloop: do while(active)
  !Get new instructions from Communicator (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
           ier=this%flush_port(0,max_items=MAX_DISPATCHER_INTAKE,num_moved=n)
-          if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
+          if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
 !$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher unit ",i2," received ",i6," instructions from Communicator")')&
@@ -7910,38 +7910,39 @@
            flush(CONS_OUT)
           endif
  !Issue instructions:
-          ier=this%iss_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
-          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
+          ier=this%iss_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
+          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
           do while(this%iqueue%get_status().eq.GFC_IT_ACTIVE)
-           if(stopping.and.errc.eq.0) then; errc=-27; exit wloop; endif !no instruction can follow STOP
-           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
+           if(stopping.and.errc.eq.0) then; errc=-26; exit wloop; endif !no instruction can follow STOP
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-25; exit wloop; endif !trap
-           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
-           if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-23; exit wloop; endif !trap
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-24; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
+           if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-22; exit wloop; endif !trap
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
-            call tens_instr%set_talsh_tensors(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-21; exit wloop; endif
+            call tens_instr%set_talsh_tensors(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-20; exit wloop; endif
             call tens_instr%set_status(DS_INSTR_ISSUED,ier,errcode)
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
             tens_instr%timings%time_dispatched=time_sys_sec()
-            select case(opcode)
-            case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
-             call this%issue_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-19; exit wloop; endif
+            call this%issue_instr(tens_instr,ier)
+            if(ier.eq.0) then
              num_outstanding=num_outstanding+1
-            case default
-             call this%issue_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-18; exit wloop; endif
-             num_outstanding=num_outstanding+1
-            end select
-            if(DEBUG.gt.0) then
+             if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
-             write(CONS_OUT,'("#DEBUG(TAVP-WRK:Dispatcher): Issued tensor instruction:")')
+              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Dispatcher): Issued tensor instruction:")')
 !$OMP END CRITICAL (IO)
-             call tens_instr%print_it(dev_id=CONS_OUT)
-             flush(CONS_OUT)
+              call tens_instr%print_it(dev_id=CONS_OUT)
+              flush(CONS_OUT)
+             endif
+             ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
+            elseif(ier.eq.TRY_LATER) then !instruction cannot be issued now
+             call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,errcode)
+             ier=this%iqueue%next()
+            else
+             errc=-17; exit wloop
             endif
-            ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
            else !auxiliary or control instruction
             tens_instr%timings%time_dispatched=time_sys_sec()
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
@@ -8110,7 +8111,7 @@
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK Dispatcher
          class(tens_instr_t), intent(inout):: tens_instr    !inout: defined tensor instruction ready to be issued
-         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(out), optional:: ierr        !out: error code, includes TRY_LATER
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id to issue the tensor instruction to
          integer(INTD):: errc,ier,opcode
          procedure(tavp_wrk_dispatch_proc_i), pointer:: iproc
@@ -8127,7 +8128,9 @@
              else
               call iproc(this,tens_instr,ier)
              endif
-             if(ier.ne.0) errc=-5
+             if(ier.ne.0) then
+              if(ier.eq.TRY_LATER) then; errc=ier; else; errc=-5; endif
+             endif
             else
              errc=-4
             endif
@@ -8140,7 +8143,7 @@
          else
           errc=-1
          endif
-         if(errc.ne.0.and.VERBOSE) then
+         if(errc.ne.0.and.errc.ne.TRY_LATER.and.VERBOSE) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#ERROR(TAVP-WRK:Dispatcher.issue_instr): Failed to issue opcode ",i4,": Error ",i2,1x,i11)')&
           &opcode,errc,ier
@@ -8413,7 +8416,7 @@
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK Dispatcher
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
-         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(out), optional:: ierr        !out: error code, includes TRY_LATER
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
          integer(INTD):: errc,dev,sl
          character(EXA_MAX_METHOD_NAME_LEN):: method_name
@@ -8460,7 +8463,7 @@
               else
  !Initialization to a scalar:
                errc=talsh_tensor_init(tens0,val=alpha,dev_id=dev,copy_ctrl=COPY_T,talsh_task=tens_instr%talsh_task)
-               if(errc.ne.TALSH_SUCCESS) then
+               if(errc.ne.TALSH_SUCCESS.and.errc.ne.TRY_LATER) then
                 if(VERBOSE) then
 !$OMP CRITICAL (IO)
                  write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorInit): talsh_tensor_init failed with error ",i11)') errc
@@ -8494,7 +8497,7 @@
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK Dispatcher
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
-         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(out), optional:: ierr        !out: error code, includes TRY_LATER
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
          integer(INTD):: errc,dev,conj,cpl,nl,nr,i,dig_ptrn(1:MAX_TENSOR_RANK*2)
          character(C_CHAR):: char_ptrn(256)
@@ -8536,7 +8539,7 @@
                    do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
                    errc=talsh_tensor_contract(str_ptrn(1:cpl),tens0,tens1,tens2,prefactor,dev_id=dev,copy_ctrl=COPY_TTT,&
                    &talsh_task=tens_instr%talsh_task)
-                   if(errc.ne.TALSH_SUCCESS) then
+                   if(errc.ne.TALSH_SUCCESS.and.errc.ne.TRY_LATER) then
                     if(VERBOSE) then
 !$OMP CRITICAL (IO)
                      write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorContract): talsh_tensor_contract failed with error ",i11)')&
@@ -8585,7 +8588,7 @@
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK Dispatcher
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
-         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(out), optional:: ierr        !out: error code, includes TRY_LATER
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
          integer(INTD):: errc,pl,i,n,dev
          integer(INTD), pointer:: prm(:)
@@ -8631,7 +8634,7 @@
                  if(cpl.gt.0) then
                   errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,copy_ctrl=COPY_MT,&
                   &talsh_task=tens_instr%talsh_task)
-                  if(errc.ne.TALSH_SUCCESS) then
+                  if(errc.ne.TALSH_SUCCESS.and.errc.ne.TRY_LATER) then
                    if(VERBOSE) then
 !$OMP CRITICAL (IO)
                     write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)') errc
