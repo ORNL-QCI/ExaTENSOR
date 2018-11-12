@@ -478,7 +478,7 @@
          if(my_rank.eq.comm_size-1) then
           write(6,'("Registering the hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
          endif
-         ierr=exatns_space_register('AO_space',basis,ao_space_id,ao_space,branch_factor=BRANCHING_FACTOR)
+         ierr=exatns_space_register('AOspace',basis,ao_space_id,ao_space,branch_factor=BRANCHING_FACTOR)
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
 !Print the registered space by levels (debug):
@@ -490,7 +490,7 @@
          if(my_rank.eq.comm_size-1) then
           write(6,'("Registering a user-defined tensor printing method ... ")',ADVANCE='NO'); flush(6)
          endif
-         ierr=exatns_method_register('PrintTensor',tens_printer)
+         ierr=exatns_method_register('PrintTens',tens_printer)
          if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_method_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
 !Application runs ExaTENSOR within MPI_COMM_WORLD:
@@ -576,7 +576,7 @@
  !Print scalar etens:
            write(6,'("Printing scalar etens ... ")'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_traverse(etens,'PrintTensor')
+           ierr=exatns_tensor_traverse(etens,'PrintTens')
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_traverse() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
@@ -637,8 +637,8 @@
 !Application initializes MPI:
         call MPI_Init_Thread(MPI_THREAD_MULTIPLE,mpi_th_provided,ierr)
         if(mpi_th_provided.eq.MPI_THREAD_MULTIPLE) then
-         !call test_exatensor()
-         call benchmark_exatensor()
+         call test_exatensor()
+         !call benchmark_exatensor()
         else
          write(6,*) 'Your MPI library does not support MPI_THREAD_MULTIPLE! Change it!'
         endif
