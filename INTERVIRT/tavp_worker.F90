@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/11
+!REVISION: 2018/11/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -78,6 +78,7 @@
         integer(INTD), private:: CONS_OUT=6 !default console output
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
+        integer(INTD), private:: LOGGING=1  !logging mode
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WRK_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !Memory:
@@ -254,6 +255,7 @@
           procedure, private:: fully_accumulated=>TensInstrFullyAccumulated  !returns TRUE if all related local accumulations have completed for this tensor instruction
           procedure, private:: mark_accumulated=>TensInstrMarkAccumulated    !increments the number of accumulations by one (number of accumulations <= number of output operands)
           procedure, private:: reset_accumulations=>TensInstrResetAccumulations !resets the number of accumulations to zero
+          procedure, private:: print_log_info=>TensInstrPrintLogInfo         !prints a brief log info for the tensor instruction
           final:: tens_instr_dtor                                            !dtor
         end type tens_instr_t
  !TAVP-WRK decoder:
@@ -529,6 +531,7 @@
         private TensInstrFullyAccumulated
         private TensInstrMarkAccumulated
         private TensInstrResetAccumulations
+        private TensInstrPrintLogInfo
         public tens_instr_dtor
         private tens_instr_print
  !tavp_wrk_decoder_t:
@@ -5004,6 +5007,58 @@
          if(present(ierr)) ierr=0
          return
         end subroutine TensInstrResetAccumulations
+!---------------------------------------------------------
+        subroutine TensInstrPrintLogInfo(this,ierr,dev_id)
+!Prints a brief log info for the tensor instruction.
+         implicit none
+         class(tens_instr_t), intent(in):: this       !in: tensor instruction
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD), intent(in), optional:: dev_id !in: output device id (6:screen)
+         integer(INTD):: errc,devo,id,opcode,sts,error_code,i,j,l,n
+         real(8):: isst,comt
+         character(2048):: str
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_rcrsv_t), pointer:: tensor
+
+         errc=0
+         devo=6; if(present(dev_id)) devo=dev_id
+         id=this%get_id(); opcode=this%get_code(); sts=this%get_status(errc,error_code)
+         if(errc.eq.DSVP_SUCCESS) then
+          l=0
+          call numchar(id,j,str(l+1:)); l=l+j; str(l+1:l+2)=': '; l=l+2
+          call numchar(opcode,j,str(l+1:)); l=l+j; str(l+1:l+2)=': '; l=l+2
+          call numchar(error_code,j,str(l+1:)); l=l+j; str(l+1:l+2)=': '; l=l+2
+          n=this%get_num_operands()
+          if(n.gt.0) then
+           do i=0,n-1
+            oprnd=>this%get_operand(i)
+            if(associated(oprnd)) then
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              tensor=>oprnd%get_tensor()
+              if(associated(tensor)) then
+               call tensor%print_head(str(l+1:),j); l=l+j
+               if(i.lt.n-1) then
+                str(l+1:l+2)=', '; l=l+2
+               else
+                str(l+1:l+2)=': '; l=l+2
+               endif
+              endif
+             end select
+            endif
+           enddo
+          endif
+          isst=this%get_issue_time(); comt=this%get_completion_time()
+!$OMP CRITICAL (IO)
+          call printl(devo,str(1:l),adv=.FALSE.)
+          write(devo,'(" beg ",F20.6,"; fin ",F20.6,": ")',ADVANCE='NO') isst,comt
+!$OMP END CRITICAL (IO)
+          call this%timings%print_it(dev_id=devo)
+          flush(devo)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrPrintLogInfo
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none
@@ -5754,6 +5809,7 @@
               call this%bytecode%seal_packet(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
               num_processed=num_processed+1
               call tavp%incr_rtrd_instr_counter(); if(errcode.ne.DSVP_SUCCESS) call tavp%incr_fail_instr_counter()
+              if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT)
               if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Retirer): Retired tensor instruction:")')
@@ -6405,6 +6461,7 @@
             if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then
              instr%timings%time_retired=time_sys_sec()
              call instr%set_status(DS_INSTR_RETIRED,ier) !TENS_ACCUMULATE retires locally
+             if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT)
             else
              call instr%set_status(DS_INSTR_RELEASED,ier)
             endif

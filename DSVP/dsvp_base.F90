@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/01
+!REVISION: 2018/11/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -93,7 +93,7 @@
         integer(INTD), parameter, public:: DSVP_INSTR_DIR_SIDE=0    !to the same hierarchy level
         integer(INTD), parameter, public:: DSVP_INSTR_DIR_UP=1      !up the hierarchy
  !Domain-specific unit:
-        real(8), parameter, public:: DS_UNIT_ALIVE_INTERVAL=1d-1    !interval (sec) upon which each DS unit is supposed to report that it is still alive
+        real(8), parameter, public:: DS_UNIT_ALIVE_INTERVAL=1d0     !interval (sec) upon which each DS unit is supposed to report that it is still alive
  !Domain-specific operand:
   !Data communication status:
         integer(INTD), parameter, public:: DS_OPRND_NO_COMM=0       !no pending communication on the domain-specific operand
@@ -1517,21 +1517,22 @@
 
          errc=DSVP_SUCCESS
          if(this%id.ge.0) then
-          if(this%alive_last.eq.-DS_UNIT_ALIVE_INTERVAL.or.curr_time_stamp.gt.this%alive_last+this%alive_interval) then
+          if(this%alive_last.lt.0d0.or.curr_time_stamp.gt.this%alive_last+this%alive_interval) then
            this%alive_last=curr_time_stamp
 !$OMP CRITICAL (IO)
            write(dev_out,'("#MSG(ds_unit_t): DS unit ",i3," is alive with error status ",i11,".")',ADVANCE='NO')&
            &this%id,this%error_code
            if(present(mesg)) then; write(dev_out,*) mesg; else; write(dev_out,'()'); endif
 !$OMP END CRITICAL (IO)
+           flush(dev_out)
           endif
          else
           errc=DSVP_ERR_UNABLE_COMPLETE
 !$OMP CRITICAL (IO)
           write(dev_out,'("#ERROR(ds_unit_t.report_alive): Attempt to report alive for an uninitialized DS unit!")')
 !$OMP END CRITICAL (IO)
+          flush(dev_out)
          endif
-         flush(dev_out)
          if(present(ierr)) ierr=errc
          return
         end subroutine DSUnitReportAlive
