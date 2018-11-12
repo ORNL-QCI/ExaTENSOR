@@ -5007,13 +5007,14 @@
          if(present(ierr)) ierr=0
          return
         end subroutine TensInstrResetAccumulations
-!---------------------------------------------------------
-        subroutine TensInstrPrintLogInfo(this,ierr,dev_id)
+!------------------------------------------------------------------
+        subroutine TensInstrPrintLogInfo(this,ierr,dev_id,msg_head)
 !Prints a brief log info for the tensor instruction.
          implicit none
-         class(tens_instr_t), intent(in):: this       !in: tensor instruction
-         integer(INTD), intent(out), optional:: ierr  !out: error code
-         integer(INTD), intent(in), optional:: dev_id !in: output device id (6:screen)
+         class(tens_instr_t), intent(in):: this        !in: tensor instruction
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device id (6:screen)
+         character(*), intent(in), optional:: msg_head !in: optional message header
          integer(INTD):: errc,devo,id,opcode,sts,error_code,i,j,l,n
          real(8):: isst,comt
          character(2048):: str
@@ -5024,7 +5025,11 @@
          devo=6; if(present(dev_id)) devo=dev_id
          id=this%get_id(); opcode=this%get_code(); sts=this%get_status(errc,error_code)
          if(errc.eq.DSVP_SUCCESS) then
-          l=0
+          if(present(msg_head)) then
+           l=len_trim(msg_head); str(1:l+2)=msg_head(1:l)//': '; l=l+2
+          else
+           l=0
+          endif
           call numchar(id,j,str(l+1:)); l=l+j; str(l+1:l+2)=': '; l=l+2
           call numchar(opcode,j,str(l+1:)); l=l+j; str(l+1:l+2)=': '; l=l+2
           call numchar(error_code,j,str(l+1:)); l=l+j; str(l+1:l+2)=': '; l=l+2
@@ -5051,9 +5056,37 @@
           isst=this%get_issue_time(); comt=this%get_completion_time()
 !$OMP CRITICAL (IO)
           call printl(devo,str(1:l),adv=.FALSE.)
-          write(devo,'(" beg ",F20.6,"; fin ",F20.6,": ")',ADVANCE='NO') isst,comt
+          write(devo,'(" iss ",F20.6,"; cml ",F20.6,": ")',ADVANCE='NO') isst,comt
+          write(devo,'("Timings:")',ADVANCE='NO')
+          if(this%timings%time_decoded.ge.0d0) then
+           write(devo,'(" DC: ",F20.6)',ADVANCE='NO') this%timings%time_decoded
+           if(this%timings%time_resourced.ge.0d0) then
+            write(devo,'("; RS: ",F10.6)',ADVANCE='NO') this%timings%time_resourced-this%timings%time_decoded
+            if(this%timings%time_fetch_started.ge.0d0) then
+             write(devo,'("; FS: ",F10.6)',ADVANCE='NO') this%timings%time_fetch_started-this%timings%time_resourced
+             if(this%timings%time_fetch_synced.ge.0d0) then
+              write(devo,'("; FC: ",F10.6)',ADVANCE='NO') this%timings%time_fetch_synced-this%timings%time_resourced
+              if(this%timings%time_dispatched.ge.0d0) then
+               write(devo,'("; ES: ",F10.6)',ADVANCE='NO') this%timings%time_dispatched-this%timings%time_resourced
+               if(this%timings%time_completed.ge.0d0) then
+                write(devo,'("; EC: ",F10.6)',ADVANCE='NO') this%timings%time_completed-this%timings%time_resourced
+                if(this%timings%time_upload_started.ge.0d0) then
+                 write(devo,'("; US: ",F10.6)',ADVANCE='NO') this%timings%time_upload_started-this%timings%time_resourced
+                 if(this%timings%time_upload_synced.ge.0d0) then
+                  write(devo,'("; UC: ",F10.6)',ADVANCE='NO') this%timings%time_upload_synced-this%timings%time_resourced
+                  if(this%timings%time_retired.ge.0d0) then
+                   write(devo,'("; RT: ",F10.6)',ADVANCE='NO') this%timings%time_retired-this%timings%time_resourced
+                  endif
+                 endif
+                endif
+               endif
+              endif
+             endif
+            endif
+           endif
+          endif
+          write(devo,'()')
 !$OMP END CRITICAL (IO)
-          call this%timings%print_it(dev_id=devo)
           flush(devo)
          endif
          if(present(ierr)) ierr=errc
@@ -5809,7 +5842,7 @@
               call this%bytecode%seal_packet(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
               num_processed=num_processed+1
               call tavp%incr_rtrd_instr_counter(); if(errcode.ne.DSVP_SUCCESS) call tavp%incr_fail_instr_counter()
-              if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT)
+              if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[RETIRER]')
               if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Retirer): Retired tensor instruction:")')
@@ -6461,7 +6494,7 @@
             if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then
              instr%timings%time_retired=time_sys_sec()
              call instr%set_status(DS_INSTR_RETIRED,ier) !TENS_ACCUMULATE retires locally
-             if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT)
+             if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER]')
             else
              call instr%set_status(DS_INSTR_RELEASED,ier)
             endif

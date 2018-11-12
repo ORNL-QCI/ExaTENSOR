@@ -448,7 +448,7 @@
         subroutine benchmark_exatensor()
          implicit none
          integer(INTL), parameter:: TEST_SPACE_DIM=64
-         integer(INTD), parameter:: BRANCHING_FACTOR=4
+         integer(INTD), parameter:: BRANCHING_FACTOR=3
          type(color_symmetry_t):: basis_symmetry(1:TEST_SPACE_DIM)
          type(subspace_basis_t):: basis
          class(h_space_t), pointer:: ao_space
