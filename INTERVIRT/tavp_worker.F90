@@ -6808,6 +6808,11 @@
 !$OMP END CRITICAL (IO)
             call cache_entry%print_it(dev_id=CONS_OUT)
             flush(CONS_OUT)
+!$OMP CRITICAL (IO)
+            write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.substitute_output.lookup_acc_tensor): Tensor Cache:")')
+!$OMP END CRITICAL (IO)
+            call this%arg_cache%print_it()
+            flush(jo)
            endif
            !call temptens%tens_rcrsv_dtor()
            return
