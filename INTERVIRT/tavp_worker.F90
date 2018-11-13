@@ -95,6 +95,7 @@
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=65536                        !max number of tensor instructions in a bytecode envelope
  !Resourcer:
+        real(8), parameter, private:: MAX_RESOURCER_ACTIVE_MEM_FRAC=7d-1 !fraction of Host RAM after which regular resourcing queue blocks and only deferred queue stays active
         integer(INTD), private:: MAX_RESOURCER_INSTR=64  !max number of instructions during a single new resource allocation phase
         real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3 !max time spent in a single new resource allocation phase
  !Communicator:
@@ -6147,7 +6148,7 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,ier,thid,n,num_staged,opcode,sts,errcode,uid
          integer:: rsc_timer
-         logical:: active,stopping,auxiliary,deferd,mainq,dependent,blocked,passed,expired,moved_fwd
+         logical:: active,stopping,auxiliary,deferd,mainq,dependent,blocked,passed,expired,moved_fwd,mem_block
          type(tens_instr_t):: instr_fence
          class(tens_instr_t), pointer:: instr
          class(dsvp_t), pointer:: dsvp
@@ -6191,7 +6192,7 @@
          endif
 !Work loop:
          ier=timer_start(rsc_timer,MAX_RESOURCER_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-84
-         active=(errc.eq.0); stopping=(.not.active); deferd=.FALSE.; mainq=.FALSE.; num_staged=0
+         active=(errc.eq.0); stopping=(.not.active); deferd=.FALSE.; mainq=.FALSE.; mem_block=.FALSE.; num_staged=0
          wloop: do while(active)
  !Process the deferred queue (check data dependencies and try acquiring resources for tensor operands again):
           ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-83; exit wloop; endif
@@ -6216,6 +6217,7 @@
               call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-76; exit wloop; endif
               instr%timings%time_resourced=time_sys_sec()
+              if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:OD]')
               if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources acquired for tensor instruction (deferred):")')
@@ -6270,8 +6272,9 @@
           endif
  !Process the main queue (rename output tensor operands, check data dependencies, and acquire resources for input tensor operands):
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-67; exit wloop; endif
-          auxiliary=.FALSE.; mainq=.FALSE.; ier=this%iqueue%get_status()
-          mloop: do while(ier.eq.GFC_IT_ACTIVE)
+          ier=this%iqueue%get_status(); mainq=(ier.eq.GFC_IT_ACTIVE); auxiliary=.FALSE.
+          mem_block=(host_ram_used.ge.int(MAX_RESOURCER_ACTIVE_MEM_FRAC*real(host_ram_limit,8),INTL)) !memory pressure needs to be handled via deactivating the main queue and only processing the deferred queue
+          mloop: do while(ier.eq.GFC_IT_ACTIVE.and.(.not.mem_block))
            mainq=.TRUE.
   !Extract an instruction:
            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-66; exit wloop; endif
@@ -6432,8 +6435,9 @@
             auxiliary=.FALSE.
            endif
            ier=this%iqueue%get_status()
+           mem_block=(host_ram_used.ge.int(MAX_RESOURCER_ACTIVE_MEM_FRAC*real(host_ram_limit,8),INTL)) !memory pressure needs to be handled via deactivating the main queue and only processing the deferred queue
           enddo mloop
-          if(ier.ne.GFC_IT_EMPTY.and.ier.ne.GFC_IT_DONE.and.errc.eq.0) then; errc=-30; exit wloop; endif !trap
+          if(ier.ne.GFC_IT_EMPTY.and.ier.ne.GFC_IT_DONE.and.(.not.mem_block).and.errc.eq.0) then; errc=-30; exit wloop; endif !trap
  !Pass the remaining staged instructions to Communicator Port 0:
           ier=this%stg_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
           if(this%stg_list%get_status().eq.GFC_IT_ACTIVE) then
