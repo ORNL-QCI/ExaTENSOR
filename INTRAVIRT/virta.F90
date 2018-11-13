@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/11
+!REVISION: 2018/11/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1950,10 +1950,10 @@
            if(res.eq.GFC_FOUND) then
             select type(uptr)
             class is(tens_cache_entry_t)
-             call uptr%lock() !may cause a deadlock?
+             !call uptr%lock() !`may cause a deadlock?
              if(decr) call uptr%decr_use_count()
              ready_to_die=(uptr%get_ref_count().eq.0.and.uptr%get_use_count().eq.0.and.(.not.uptr%is_persistent()))
-             call uptr%unlock() !may cause a deadlock?
+             !call uptr%unlock() !`may cause a deadlock?
             class default
              errc=-6
             end select
@@ -2033,14 +2033,11 @@
 
          errc=0
          if(associated(tens_entry_p)) then
-          call tens_entry_p%decr_use_count()
-          if(tens_entry_p%get_ref_count().eq.0.and.tens_entry_p%get_use_count().eq.0.and.(.not.tens_entry_p%is_persistent())) then
-           tensor=>tens_entry_p%get_tensor(errc)
-           if(errc.eq.0) then
-            evicted=this%evict(tensor,errc); if(errc.ne.0) errc=-3
-           else
-            errc=-2
-           endif
+          tensor=>tens_entry_p%get_tensor(errc)
+          if(errc.eq.0) then
+           evicted=this%evict(tensor,errc,decr_use=.TRUE.); if(errc.ne.0) errc=-3
+          else
+           errc=-2
           endif
           tens_entry_p=>NULL()
          else

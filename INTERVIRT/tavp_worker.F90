@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/12
+!REVISION: 2018/11/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -7075,7 +7075,7 @@
                   call tens_instr%extract_cache_entries(cache_entries,nce,errc)
                   if(errc.eq.0.and.nce.le.MAX_TENSOR_OPERANDS) then
                    if(this%rls_list%on_first()) moved_forward=.TRUE. !to avoid moving the iterator when exited from this procedure (already on the next element)
-                   tens_instr=>NULL(); uptr=>NULL()
+                   tens_instr=>NULL(); uptr=>NULL(); oprnd=>NULL()
                    errc=this%rls_list%delete() !deletes the local accumulation instruction (moves to the preceding instruction, if any, by default)
                    if(errc.eq.GFC_SUCCESS) then
   !Delete the tensor cache entries which are no longer used:
@@ -7085,29 +7085,28 @@
                       call tensor%get_name(tname,l)
                       temporary=tensor_name_is_temporary(tname(1:l),errc,id); if(.not.temporary) id=-1
                       if(errc.eq.0) then
-                       do while(cache_entries(i)%cache_entry%get_use_count().gt.1); enddo !`Bad workaround: Retirer.test_completion() can still increment use_count after this line, though unlikely
+                       tens_entry=>NULL()
+                       if(id.eq.0) then !accumulator tensor is a candidate for eviction: Persistent tensor tmp_count may need to be reset
+                        tens_entry=>this%arg_cache%lookup(tensor_pers,errc) !lookup the persistent output tensor in the cache
+                        if(errc.eq.0) then
+                         if(associated(tens_entry)) call tens_entry%lock() !hold the persistent tensor cache entry locked to make sure both accumulator eviction and persistent tensor tmp_count reset is done in a single shot
+                        else
+                         errc=-19; exit
+                        endif
+                       endif
+                       do while(cache_entries(i)%cache_entry%get_use_count().gt.1); enddo !`Bad workaround: Retirer.test_completion() can still increment use_count by tens_cache_t.lookup() before the next line takes control, though unlikely
                        evicted=this%arg_cache%evict(tensor,errc,decr_use=.TRUE.) !use_count of 1 was set by tens_instr_t.extract_cache_entries() above to protect the cache entry
                        if(errc.eq.0) then
                         if(evicted) then
+                         if(id.eq.0.and.associated(tens_entry)) then !accumulator was evicted => reset temporary count of the corresponding persistent tensor to zero
+                          call tens_entry%reset_temp_count()
+                         endif
                          if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                           write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Evicted temporary tensor")',ADVANCE='NO') impir
                           write(CONS_OUT,*) tname(1:l)
 !$OMP END CRITICAL (IO)
                           flush(CONS_OUT)
-                         endif
-                         if(id.eq.0) then !accumulator was evicted => reset temporary count of the corresponding persistent tensor to zero
-                          tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_pers,errc) !lookup the persistent output tensor in the cache
-                          if(errc.eq.0) then
-                           if(associated(tens_entry)) then
-                            call tens_entry%lock()
-                            call tens_entry%reset_temp_count()
-                            call tens_entry%unlock()
-                            call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
-                           endif
-                          else
-                           errc=-19; exit
-                          endif
                          endif
                         else !not evicted
                          if(DEBUG.gt.0) then
@@ -7118,9 +7117,17 @@
                           flush(CONS_OUT)
                          endif
                         endif
+                        if(associated(tens_entry)) then
+                         call tens_entry%unlock()
+                         call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+                        endif
                         cache_entries(i)%cache_entry=>NULL()
                        else
-                        if(VERBOSE.and.DEBUG.gt.0) then
+                        if(associated(tens_entry)) then
+                         call tens_entry%unlock()
+                         call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+                        endif
+                        if(VERBOSE) then
 !$OMP CRITICAL (IO)
                          write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.restore_output)[",i6,"]: Eviction failed for tensor")',&
                          &ADVANCE='NO') impir
