@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/13
+!REVISION: 2018/11/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -78,7 +78,7 @@
         integer(INTD), private:: CONS_OUT=6 !default console output
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
-        integer(INTD), private:: LOGGING=0  !logging mode
+        integer(INTD), private:: LOGGING=1  !logging mode
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WRK_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !Memory:
@@ -6019,8 +6019,9 @@
          integer(INTD):: errc,ier,n,i
          real(8):: instr_compl_time
          class(ds_oprnd_t), pointer:: oprnd
-         class(tens_cache_entry_t), pointer:: cache_entry
+         class(tens_cache_entry_t), pointer:: cache_entry,pers_entry
          type(tens_rcrsv_t):: acc
+         logical:: evictd
 
          completed=.TRUE.
          if(tens_instr%is_active(errc)) then
@@ -6053,10 +6054,20 @@
                           class is(tens_entry_wrk_t)
                            if(cache_entry%get_upload_time().le.instr_compl_time) completed=.FALSE.
                           class default
-                           errc=-16
+                           errc=-17
                           end select
                           call cache_entry%unlock()
-                          call this%arg_cache%release_entry(cache_entry,ier); if(ier.ne.0.and.errc.eq.0) errc=-15
+                          if(errc.eq.0) then
+                           pers_entry=>oprnd%get_cache_entry(ier)
+                           if(ier.eq.0.and.associated(pers_entry)) then
+                            call pers_entry%lock()
+                            call this%arg_cache%release_entry(cache_entry,ier,evicted=evictd); if(ier.ne.0) errc=-16
+                            if(evictd) call pers_entry%reset_temp_count()
+                            call pers_entry%unlock()
+                           else
+                            errc=-15
+                           endif
+                          endif
                           if((.not.completed).or.(errc.ne.0)) exit oloop
                          endif
                         else
@@ -7093,7 +7104,7 @@
                        if(id.eq.0) then !accumulator tensor is a candidate for eviction: Persistent tensor tmp_count may need to be reset
                         tens_entry=>this%arg_cache%lookup(tensor_pers,errc) !lookup the persistent output tensor in the cache
                         if(errc.eq.0) then
-                         if(associated(tens_entry)) call tens_entry%lock() !hold the persistent tensor cache entry locked to make sure both accumulator eviction and persistent tensor tmp_count reset is done in a single shot
+                         !if(associated(tens_entry)) call tens_entry%lock() !hold the persistent tensor cache entry locked to make sure both accumulator eviction and persistent tensor tmp_count reset is done in a single shot
                         else
                          errc=-19; exit
                         endif
@@ -7122,13 +7133,13 @@
                          endif
                         endif
                         if(associated(tens_entry)) then
-                         call tens_entry%unlock()
+                         !call tens_entry%unlock()
                          call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                         endif
                         cache_entries(i)%cache_entry=>NULL()
                        else
                         if(associated(tens_entry)) then
-                         call tens_entry%unlock()
+                         !call tens_entry%unlock()
                          call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                         endif
                         if(VERBOSE) then
