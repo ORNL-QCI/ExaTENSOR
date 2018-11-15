@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/14
+!REVISION: 2018/11/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -78,7 +78,7 @@
         integer(INTD), private:: CONS_OUT=6 !default console output
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
-        integer(INTD), private:: LOGGING=1  !logging mode
+        integer(INTD), private:: LOGGING=2  !logging mode
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WRK_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !Memory:
@@ -6229,6 +6229,12 @@
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-76; exit wloop; endif
               instr%timings%time_resourced=time_sys_sec()
               if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:OD]')
+              if(LOGGING.gt.1) then
+!$OMP CRITICAL (IO)
+               write(CONS_OUT,'("Memory usage (Bytes): Total = ",i13,": Buffer = ",i13)') host_ram_used,host_buf_used
+!$OMP END CRITICAL (IO)
+               flush(CONS_OUT)
+              endif
               if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources acquired for tensor instruction (deferred):")')
@@ -6367,6 +6373,12 @@
                 if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-46; exit wloop; endif
                 instr%timings%time_resourced=time_sys_sec()
                 if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:OK]')
+                if(LOGGING.gt.1) then
+!$OMP CRITICAL (IO)
+                 write(CONS_OUT,'("Memory usage (Bytes): Total = ",i13,": Buffer = ",i13)') host_ram_used,host_buf_used
+!$OMP END CRITICAL (IO)
+                 flush(CONS_OUT)
+                endif
                 if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources acquired for tensor instruction:")')
@@ -6518,6 +6530,12 @@
              call instr%set_status(DS_INSTR_RELEASED,ier)
             endif
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
+            if(LOGGING.gt.1) then
+!$OMP CRITICAL (IO)
+             write(CONS_OUT,'("Memory usage (Bytes): Total = ",i13,": Buffer = ",i13)') host_ram_used,host_buf_used
+!$OMP END CRITICAL (IO)
+             flush(CONS_OUT)
+            endif
             if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources released for tensor instruction:")')
@@ -8028,6 +8046,13 @@
 !Set the max number of OpenMP threads for the next parallel (computing) region:
          opl=get_omp_place_info(n) !get the place id and place width the current (Dispatcher) thread is in
          call omp_set_num_threads(n) !the next parallel region in TAL-SH can use up to n threads from this place
+         if(LOGGING.gt.0) then
+          n=omp_get_max_threads()
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("Multicore CPU executor width = ",i4)') n
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active); num_outstanding=0
          wloop: do while(active)

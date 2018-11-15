@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/14
+!REVISION: 2018/11/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -6140,7 +6140,7 @@
          endif
          if(VERBOSE.and.errc.ne.0) then
 !$OMP CRITICAL (IO)
-          write(CONS_OUT,'("#ERROR(TAVP-MNG:Collector.match_subinstr): Error ",i11)') errc !debug
+          write(CONS_OUT,'("#ERROR(TAVP-MNG:Collector.match_subinstr): Subinstruction ",i11,": Error ",i11)') subinstr_id,errc !debug
 !$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
