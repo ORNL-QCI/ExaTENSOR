@@ -6048,6 +6048,9 @@
 !the entry will not be destroyed, making it necessary to destroy it explicitly later.
 !If <list_pos> is present but the reference count is still positive, it will return nothing.
 !An optional subinstruction error code will propagate to the parent instruction.
+!Note that there can be situations when the subinstruction is already registered
+!with TAVP-MNG but has not yet been discovered by the TAVP-MNG:Collector unit,
+!in which case this function will simply return <matched>=FALSE with no error.
          implicit none
          logical:: matched                                  !out: matched or not
          class(tavp_mng_collector_t), intent(inout):: this  !inout: TAVP-MNG Collector
@@ -6132,8 +6135,10 @@
              endif
             endif
            else
-            if(errc.eq.GFC_NOT_FOUND) then; errc=-3; else; errc=-2; endif
+            if(errc.eq.GFC_NOT_FOUND) then; errc=0; else; errc=-3; endif
            endif
+          else
+           if(errc.ne.0) errc=-2
           endif
          else
           errc=-1
