@@ -29,6 +29,7 @@ export OMP_WAIT_POLICY=PASSIVE         #idle thread behavior
 
 #OpenMP thread binding:
 export OMP_PLACES_DEFAULT=threads                                  #default thread binding to CPU logical cores
+export OMP_PLACES_EOS={0},{2},{4},{6,8},{1:16:2},{10},{12},{14}    #Eos 16-core Intel Xeon thread binding (odd logical cores do computing)
 export OMP_PLACES_TITAN={0},{2},{4},{6,8},{1:8:2},{10},{12},{14}   #Titan 16-core AMD thread binding (odd logical cores do computing)
 export OMP_PLACES_POWER9={0},{2},{4},{6,8},{1:42:2},{10},{12},{14} #Summit 21-core Power9 socket thread binding (odd logical cores do computing)
 export OMP_PLACES_KNL={0},{2},{4},{6,8},{1:128:2},{10},{12},{14}   #Percival 64-core KNL thread binding (odd logical cores do computing)
@@ -38,6 +39,7 @@ export OMP_PROC_BIND=close,spread,spread #nest1: Functional threads (DSVU)
                                          #nest3: TAVP-WRK:Dispatcher:Executor spawns execution threads in CP-TAL kernels
 #MKL specific:
 export MKL_NUM_THREADS_DEFAULT=1                #keep consistent with chosen OMP_PLACES!
+export MKL_NUM_THREADS_EOS=16                   #keep consistent with chosen OMP_PLACES!
 export MKL_NUM_THREADS_TITAN=8                  #keep consistent with chosen OMP_PLACES!
 export MKL_NUM_THREADS_POWER9=42                #keep consistent with chosen OMP_PLACES!
 export MKL_NUM_THREADS_KNL=128                  #keep consistent with chosen OMP_PLACES!

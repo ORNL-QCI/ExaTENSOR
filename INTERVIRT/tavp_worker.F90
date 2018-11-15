@@ -96,8 +96,9 @@
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=65536                        !max number of tensor instructions in a bytecode envelope
  !Resourcer:
         real(8), parameter, private:: MAX_RESOURCER_ACTIVE_MEM_FRAC=7d-1 !fraction of Host RAM after which regular resourcing queue blocks and only deferred queue stays active
-        integer(INTD), private:: MAX_RESOURCER_INSTR=64  !max number of instructions during a single new resource allocation phase
-        real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3 !max time spent in a single new resource allocation phase
+        integer(INTD), private:: MAX_RESOURCER_INTAKE=256 !max number of instructions in Resourcer's main queue
+        integer(INTD), private:: MAX_RESOURCER_INSTR=64   !max number of instructions during a single new resource allocation phase before passing resourced instructions to Communicator
+        real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3  !max time spent in a single new resource allocation phase
  !Communicator:
         logical, private:: COMMUNICATOR_BLOCKING=.FALSE.        !switches between blocking and non-blocking communications
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=16 !max number of outstanding prefetches issued by Communicator
@@ -312,6 +313,7 @@
          type(list_iter_t), private:: def_list                        !iterator for <deferred_list>
          type(list_bi_t), private:: release_list                      !list of completed tensor instructions expecting resource release
          type(list_iter_t), private:: rls_list                        !iterator for <release_list>
+         integer(INTD), private:: num_active=0                        !number of active instructions in Resourcer
          contains
           procedure, public:: configure=>TAVPWRKResourcerConfigure                !configures TAVP-WRK resourcer
           procedure, public:: start=>TAVPWRKResourcerStart                        !starts TAVP-WRK resourcer
@@ -6178,6 +6180,8 @@
 !Set host RAM memory limit:
 !$OMP ATOMIC WRITE
          host_ram_limit=this%host_ram_size
+!Reset counters:
+         this%num_active=0
 !Initialize queues and ports:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-91
 !Initialize the staged list:
@@ -6277,15 +6281,19 @@
           if(ier.ne.GFC_IT_EMPTY.and.ier.ne.GFC_IT_DONE.and.errc.eq.0) then; errc=-71; exit wloop; endif !trap
           ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-70; exit wloop; endif
  !Get new instructions from Decoder (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-69; exit wloop; endif
-          ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-68; exit wloop; endif
-          if(DEBUG.gt.0.and.n.gt.0) then
+          if(this%num_active.lt.MAX_RESOURCER_INTAKE) then
+           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-69; exit wloop; endif
+           ier=this%flush_port(0,max_items=(MAX_RESOURCER_INTAKE-this%num_active),num_moved=n)
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-68; exit wloop; endif
+           this%num_active=this%num_active+n
+           if(DEBUG.gt.0.and.n.gt.0) then
 !$OMP CRITICAL (IO)
-           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," received ",i9," instructions from Decoder")')&
-           &impir,uid,n
+            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," received ",i9," instructions from Decoder")')&
+            &impir,uid,n
 !$OMP END CRITICAL (IO)
-           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset_back() !print all instructions
-           flush(CONS_OUT)
+            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset_back() !print all instructions
+            flush(CONS_OUT)
+           endif
           endif
  !Process the main queue (rename output tensor operands, check data dependencies, and acquire resources for input tensor operands):
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-67; exit wloop; endif
@@ -6445,6 +6453,7 @@
             if(this%stg_list%get_status().eq.GFC_IT_ACTIVE) then
              ier=tavp%communicator%load_port(0,this%stg_list,num_moved=n)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
+             this%num_active=this%num_active-n
              if(DEBUG.gt.0.and.n.gt.0) then
 !$OMP CRITICAL (IO)
               write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," passed ",i9," instructions to Communicator")')&
@@ -6466,6 +6475,7 @@
           if(this%stg_list%get_status().eq.GFC_IT_ACTIVE) then
            ier=tavp%communicator%load_port(0,this%stg_list,num_moved=n)
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
+           this%num_active=this%num_active-n
            if(DEBUG.gt.0.and.n.gt.0) then
 !$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," passed ",i9," instructions to Communicator")')&
