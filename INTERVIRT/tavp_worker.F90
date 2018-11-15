@@ -78,7 +78,7 @@
         integer(INTD), private:: CONS_OUT=6 !default console output
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
-        integer(INTD), private:: LOGGING=2  !logging mode
+        integer(INTD), private:: LOGGING=0  !logging mode
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WRK_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !Memory:
