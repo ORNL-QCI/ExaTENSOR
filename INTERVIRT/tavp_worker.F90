@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/16
+!REVISION: 2018/11/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -101,6 +101,7 @@
         real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3  !max time spent in a single new resource allocation phase
  !Communicator:
         logical, private:: COMMUNICATOR_BLOCKING=.FALSE.        !switches between blocking and non-blocking communications
+        logical, private:: COMMUNICATOR_REQUEST=.TRUE.          !switches between normal and request-based one-sided communication semantics
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=16 !max number of outstanding prefetches issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=8     !max number of outstanding uploads issued by Communicator
         real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
@@ -2677,13 +2678,27 @@
                      if(errc.eq.0.and.comm_stat.eq.DS_OPRND_NO_COMM) then
                       cptr=this%resource%get_mem_ptr(errc)
                       if(errc.eq.0) then
-                       call descr%get_data(cptr,errc,MPI_ASYNC_REQ)
-                       if(errc.eq.0.and.DEBUG.gt.0) then
-                        comm_stat=descr%get_comm_stat(errc,req)
+                       if(COMMUNICATOR_REQUEST) then
+                        call descr%get_data(cptr,errc,MPI_ASYNC_REQ)
+                        if(errc.eq.0.and.DEBUG.gt.1) then
+                         comm_stat=descr%get_comm_stat(errc,req)
 !$OMP CRITICAL (IO)
-                        write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Rget initiated with request = ",i12)') req
+                         write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Rget initiated with request = ",i12)') req
 !$OMP END CRITICAL (IO)
-                        flush(CONS_OUT)
+                         flush(CONS_OUT)
+                        endif
+                       else
+                        if(COMMUNICATOR_BLOCKING) then
+                         call descr%get_data(cptr,errc,MPI_ASYNC_NOT)
+                        else
+                         call descr%get_data(cptr,errc,MPI_ASYNC_NRM)
+                        endif
+                        if(errc.eq.0.and.DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
+                         write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Get initiated without request")')
+!$OMP END CRITICAL (IO)
+                         flush(CONS_OUT)
+                        endif
                        endif
                        if(errc.ne.0.and.errc.ne.TRY_LATER) then
                         if(VERBOSE) then
@@ -2779,13 +2794,27 @@
                     if(comm_stat.eq.DS_OPRND_NO_COMM) then
                      cptr=this%resource%get_mem_ptr(errc)
                      if(errc.eq.0) then
-                      call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
-                      if(errc.eq.0.and.DEBUG.gt.0) then
-                       comm_stat=descr%get_comm_stat(errc,req)
+                      if(COMMUNICATOR_REQUEST) then
+                       call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
+                       if(errc.eq.0.and.DEBUG.gt.1) then
+                        comm_stat=descr%get_comm_stat(errc,req)
 !$OMP CRITICAL (IO)
-                       write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated with request = ",i12)') req
+                        write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated with request = ",i12)') req
 !$OMP END CRITICAL (IO)
-                       flush(CONS_OUT)
+                        flush(CONS_OUT)
+                       endif
+                      else
+                       if(COMMUNICATOR_BLOCKING) then
+                        call descr%acc_data(cptr,errc,MPI_ASYNC_NOT)
+                       else
+                        call descr%acc_data(cptr,errc,MPI_ASYNC_NRM)
+                       endif
+                       if(errc.eq.0.and.DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
+                        write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated without request")')
+!$OMP END CRITICAL (IO)
+                        flush(CONS_OUT)
+                       endif
                       endif
                       if(errc.ne.0.and.errc.ne.TRY_LATER) then
                        if(VERBOSE) then
@@ -2872,23 +2901,44 @@
              if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
               if(descr%is_set(errc)) then
                if(errc.eq.0) then
-                if(tw) then
-                 if(DEBUG.gt.0) then
+                if(COMMUNICATOR_REQUEST) then
+                 if(tw) then
+                  if(DEBUG.gt.1) then
 !$OMP CRITICAL (IO)
-                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Waiting on MPI communication with request = ",i12)') req
+                   write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Waiting on MPI communication with request = ",i12)') req
 !$OMP END CRITICAL (IO)
-                  flush(CONS_OUT)
-                 endif
-                 call descr%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-10; endif
-                 if(DEBUG.gt.0) then
+                   flush(CONS_OUT)
+                  endif
+                  call descr%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-11; endif
+                  if(DEBUG.gt.1) then
 !$OMP CRITICAL (IO)
-                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Finished wait on MPI communication with request ",i12,'//&
-                  &'": Success = ",l1)') req,res
+                   write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Finished wait on MPI communication with request ",i12,'//&
+                   &'": Success = ",l1)') req,res
 !$OMP END CRITICAL (IO)
-                  flush(CONS_OUT)
+                   flush(CONS_OUT)
+                  endif
+                 else
+                  res=descr%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-10; endif
                  endif
                 else
-                 res=descr%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-9; endif
+                 if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
+                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Waiting on MPI communication without request")')
+!$OMP END CRITICAL (IO)
+                  flush(CONS_OUT)
+                 endif
+                 if(tw) then
+                  call descr%flush_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-9; endif
+                 else
+                  res=.TRUE.
+                 endif
+                 if(DEBUG.gt.1) then
+!$OMP CRITICAL (IO)
+                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Finished wait on MPI communication without request",'//&
+                  &'": Success = ",l1)') res
+!$OMP END CRITICAL (IO)
+                  flush(CONS_OUT)
+                 endif
                 endif
                 if(res) then
                  if(sts.eq.DS_OPRND_FETCHING) then
