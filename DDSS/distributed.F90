@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/22 (started 2015/03/18)
+!REVISION: 2018/11/24 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -100,7 +100,7 @@
  !Output:
         integer, private:: CONS_OUT=6     !default output for this module
         logical, private:: VERBOSE=.TRUE. !verbosity for errors
-        logical, private:: DEBUG=.FALSE.  !debugging mode
+        integer, private:: DEBUG=0        !debugging mode
  !Packing/unpacking:
         integer(INT_MPI), parameter, public:: ELEM_PACK_SIZE=max(8,max(C_SIZE_T,max(INT_ADDR,INT_COUNT))) !packing size for integers/logicals/reals/C_pointers/C_sizes
  !Data alignment:
@@ -146,7 +146,8 @@
          integer(INT_MPI), private:: RefCount !data transfer reference count (number of bound data descriptors): >=0
          integer(8), private:: LastSync       !data transfer ID for which the last unlock/flush was performed (>0|0:never_sync)
          contains
-          procedure, private:: init=>RankWinInit !initialize/clean a (rank,window) descriptor
+          procedure, private:: init=>RankWinInit        !initialize/clean a (rank,window) descriptor
+          procedure, private:: print_it=>RankWinPrintIt !prints
         end type RankWin_t
   !Rank/window linked list (active one-sided comms at origin):
         type, private:: RankWinList_t
@@ -170,7 +171,7 @@
          integer(INT_MPI), private:: Window            !MPI window handle
          integer(INT_MPI), private:: DispUnit=0        !MPI window displacement unit size in bytes
          integer(INT_MPI), private:: CommMPI           !MPI communicator the MPI window is associated with
-         logical, private:: Dynamic                    !.true. if the MPI window is dynamic, .false. otherwise
+         logical, private:: Dynamic                    !.TRUE. if the MPI window is dynamic, .FALSE. otherwise
          contains
           procedure, private:: clean=>WinMPIClean                 !clean MPI window info
           procedure, private:: WinMPIPackNew                      !packs the object into a packet (obj_pack_t)
@@ -281,9 +282,9 @@
         type, public:: PackCont_t
          integer(ELEM_PACK_SIZE), pointer, contiguous, private:: Packets(:)=>NULL() !packet container (0:max): packets(0) = NumPackets
          integer(INT_COUNT), private:: ffe=-1      !first free element in <packets(0:)> = active length of the container
-         logical, private:: Alloc=.false.          !TRUE: packets() array was allocated, FALSE: packets(:) array was associated to an external buffer
+         logical, private:: Alloc=.FALSE.          !TRUE: packets() array was allocated, FALSE: packets(:) array was associated to an external buffer
          integer(INT_MPI), private:: NumPackets=-1 !number of packets in the packet container
-         logical, private:: Marked=.false.         !tells whether individual packets are marked (tagged) or not
+         logical, private:: Marked=.FALSE.         !tells whether individual packets are marked (tagged) or not
          contains
           procedure, public:: clean=>PackContClean          !reset the data container to an empty state
           procedure, public:: reserve_mem=>PackContReserve  !reserve memory for the packet container (either allocate or external)
@@ -307,6 +308,7 @@
         public num_packs_in_container
  !RankWin_t:
         private RankWinInit
+        private RankWinPrintIt
  !RankWinList_t:
         private RankWinListClean
         private RankWinListTest
@@ -484,9 +486,9 @@
 
         npacks=int(pack_cont(0),INT_MPI) !properly convert the storing integer into the result
         if(npacks.lt.0) then !tagged packet container
-         npacks=-npacks; if(present(tagged)) tagged=.true.
+         npacks=-npacks; if(present(tagged)) tagged=.TRUE.
         else !tag-free packet container
-         if(present(tagged)) tagged=.false.
+         if(present(tagged)) tagged=.FALSE.
         endif
         return
         end function num_packs_in_container
@@ -530,6 +532,22 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine RankWinInit
+!---------------------------------------------------
+        subroutine RankWinPrintIt(this,ierr,dev_out)
+         implicit none
+         class(RankWin_t), intent(in):: this     !inout: (rank,window) descriptor
+         integer, intent(out), optional:: ierr   !out: error code
+         integer, intent(in), optional:: dev_out !in: output device id (6:screen, default)
+         integer:: errc,dev
+
+         errc=0
+         dev=6; if(present(dev_out)) dev=dev_out
+         write(dev,'("RankWin{",i11,1x,i4,1x,i2,": Ref = ",i4,"; Sync = ",i11,"}")')&
+         &this%Window,this%Rank,this%LockType,this%RefCount,this%LastSync
+         flush(dev)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine RankWinPrintIt
 !=============================================
         subroutine RankWinListClean(this,ierr)
 !Cleans the (rank,window) list (must be called before use).
@@ -539,11 +557,14 @@
         integer(INT_MPI):: i
 
         this%TransCount=0; this%TransSize=0d0
-        this%NumEntries=0; this%FirstFree=1; this%HashBin(:)=0
+        this%NumEntries=0; this%FirstFree=1; this%HashBin(:)=0 !setting .FirstFree to 1 means initialized
         this%PrevEntry(1)=0; do i=2,MAX_ONESIDED_REQS; this%PrevEntry(i)=i-1; enddo !linked list
         do i=1,MAX_ONESIDED_REQS-1; this%NextEntry(i)=i+1; enddo; this%NextEntry(MAX_ONESIDED_REQS)=0 !linked list
         do i=1,MAX_ONESIDED_REQS; call this%RankWins(i)%init(); enddo !init all entries to null
-        if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Clean)[",i7,"]: (rank,win)-list cleaned.")') impir
+        if(DEBUG.ge.2) then
+         write(jo,'("#DEBUG(distributed::RankWinList.Clean)[",i7,"]: (rank,win)-list cleaned.")') impir
+         flush(jo)
+        endif
         if(present(ierr)) ierr=0
         return
         end subroutine RankWinListClean
@@ -558,13 +579,13 @@
         class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
         integer(INT_MPI), intent(in):: rank              !in: MPI rank
         integer(INT_MPI), intent(in):: win               !in: MPI window handle
-        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        logical, intent(in), optional:: append           !in: if .true., a new entry will be appended if not found
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success) or TRY_LATER
+        logical, intent(in), optional:: append           !in: if .TRUE., a new entry will be appended if not found
         integer(INT_MPI):: i,j,m,n,errc
         logical:: apnd
 
         errc=0; RankWinListTest=0
-        if(present(append)) then; apnd=append; else; apnd=.false.; endif
+        if(present(append)) then; apnd=append; else; apnd=.FALSE.; endif
         if(rank.ge.0) then
          n=mod(rank,HASH_MOD); i=this%HashBin(n); m=0
          do while(i.ge.1.and.i.le.MAX_ONESIDED_REQS)
@@ -584,8 +605,11 @@
           endif
          enddo
          if(RankWinListTest.le.0.and.apnd) then !append if not found
-          if(DEBUG) write(jo,'("#DEBUG(distribiuted::RankWinList.Test)[",i7,"]: Registering new (rank,window) entry: "'//&
-                    &',i7,1x,i13,3x,i6,1x,i6)') impir,rank,win,this%NumEntries,this%FirstFree
+          if(DEBUG.ge.2) then
+           write(jo,'("#DEBUG(distribiuted::RankWinList.Test)[",i7,"]: Registering new (rank,window) entry: "'//&
+           &',i7,1x,i13,3x,i6,1x,i6)') impir,rank,win,this%NumEntries,this%FirstFree
+           flush(jo)
+          endif
           if(this%NumEntries.lt.MAX_ONESIDED_REQS) then
            j=this%FirstFree; this%FirstFree=this%NextEntry(j)
            this%PrevEntry(this%FirstFree)=0
@@ -600,8 +624,11 @@
            call this%RankWins(j)%init(rank,win,errc)
            if(errc.eq.0) then
             RankWinListTest=j
-            if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: New (rank,window) registered: ",i7,1x,i13)')&
-                      &impir,rank,win
+            if(DEBUG.ge.1) then
+             write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: New (rank,window) registered: ",i7,1x,i13)')&
+             &impir,rank,win
+             flush(jo)
+            endif
            else
             call this%delete(j); errc=1
            endif
@@ -633,11 +660,14 @@
           if(i.gt.0) this%NextEntry(i)=j
           if(j.gt.0) this%PrevEntry(j)=i
           if(this%HashBin(m).eq.entry_num) this%HashBin(m)=j
-          this%NextEntry(entry_num)=this%FirstFree
+          this%PrevEntry(entry_num)=0; this%NextEntry(entry_num)=this%FirstFree
           if(this%FirstFree.gt.0) this%PrevEntry(this%FirstFree)=entry_num
           this%FirstFree=entry_num; this%NumEntries=this%NumEntries-1
-          if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Del)[",i7,"]: (rank,window) deleted: ",i7,1x,i13)')&
-                    &impir,this%RankWins(entry_num)%Rank,this%RankWins(entry_num)%Window
+          if(DEBUG.ge.1) then
+           write(jo,'("#DEBUG(distributed::RankWinList.Del)[",i7,"]: (rank,window) deleted: ")',ADVANCE='NO') impir
+           call this%RankWins(entry_num)%print_it(dev_out=jo)
+           flush(jo)
+          endif
           call this%RankWins(entry_num)%init() !clean entry
          else
           errc=1 !empty entries cannot be deleted
@@ -668,10 +698,14 @@
            this%TransCount=this%TransCount+1
            n=data_type_size(dd%DataType)
            this%TransSize=this%TransSize+real(n,8)*real(dd%DataVol,8)
-           dd%TransID=this%TransCount*int(dir,8) !global transaction ID * data transfer sign
+           dd%TransID=this%TransCount*int(dir,8) !transfer id = global transaction ID * data transfer sign
            this%RankWins(rwe)%RefCount=this%RankWins(rwe)%RefCount+1
-           if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.NewTrans)[",i7,"]: New transfer: ",i7,1x,i13,1x,i5,1x,i13)')&
-                     &impir,this%RankWins(rwe)%Rank,this%RankWins(rwe)%Window,this%RankWins(rwe)%RefCount,dd%TransID
+           if(DEBUG.ge.1) then
+            write(jo,'("#DEBUG(distributed::RankWinList.NewTrans)[",i7,"]: New transfer ",i13,": ")',ADVANCE='NO')&
+            &impir,dd%TransID
+            call this%RankWins(rwe)%print_it(dev_out=jo)
+            flush(jo)
+           endif
           else
            errc=1
           endif
@@ -924,10 +958,13 @@
            if(errc.eq.0.and.flag) then
             this%WinMPI%DispUnit=int(attr,INT_MPI)
             this%WinMPI%CommMPI=comm_mpi
-            this%WinMPI%Dynamic=.true.
+            this%WinMPI%Dynamic=.TRUE.
             this%WinSize=0
-            if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Create)[",i7,"]: MPI window created: ",i11,1x,i11,1x,i2,1x,i11)')&
-                      &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
+            if(DEBUG.ge.2) then
+             write(jo,'("#DEBUG(distributed::DataWin.Create)[",i7,"]: MPI window created: ",i11,1x,i11,1x,i2,1x,i11)')&
+             &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
+             flush(jo)
+            endif
            else
             errc=1
            endif
@@ -955,12 +992,18 @@
         call MPI_BARRIER(this%WinMPI%CommMPI,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
          if(this%WinSize.eq.0) then !MPI window must be empty
-          if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window to destroy: ",i11,1x,i11,1x,i2,1x,i11)')&
-                    &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
+          if(DEBUG.ge.2) then
+           write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window to destroy: ",i11,1x,i11,1x,i2,1x,i11)')&
+           &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
+           flush(jo)
+          endif
           call MPI_WIN_FREE(this%WinMPI%Window,errc)
           if(errc.eq.0) then
-           if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window destroyed: ",i11,1x,i11,1x,i2,1x,i11)')&
-                     &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
+           if(DEBUG.ge.2) then
+            write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window destroyed: ",i11,1x,i11,1x,i2,1x,i11)')&
+            &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
+            flush(jo)
+           endif
            call this%clean(errc)
           else
            errc=1
@@ -996,8 +1039,11 @@
            call attach_buffer(r4_ptr,loc_size,errc)
            if(errc.eq.0) then
             this%WinSize=this%WinSize+loc_size
-            if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Attach)[",i7,"]: Buffer attached: ",i11,1x,i11,1x,i11)')&
-                      &impir,loc_size,this%WinMPI%Window,this%WinSize
+            if(DEBUG.ge.2) then
+             write(jo,'("#DEBUG(distributed::DataWin.Attach)[",i7,"]: Buffer attached: ",i11,1x,i11,1x,i11)')&
+             &impir,loc_size,this%WinMPI%Window,this%WinSize
+             flush(jo)
+            endif
            else
             errc=1
            endif
@@ -1047,8 +1093,11 @@
            call detach_buffer(r4_ptr,errc)
            if(errc.eq.0) then
             this%WinSize=this%WinSize-loc_size
-            if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Detach)[",i7,"]: Buffer detached: ",i11,1x,i11,1x,i11)')&
-                      &impir,loc_size,this%WinMPI%Window,this%WinSize
+            if(DEBUG.ge.2) then
+             write(jo,'("#DEBUG(distributed::DataWin.Detach)[",i7,"]: Buffer detached: ",i11,1x,i11,1x,i11)')&
+             &impir,loc_size,this%WinMPI%Window,this%WinSize
+             flush(jo)
+            endif
            else
             errc=1
            endif
@@ -1087,8 +1136,11 @@
         if(this%WinSize.ge.0) then !data window is initialized
          call MPI_WIN_SYNC(this%WinMPI%Window,errc)
          if(errc.eq.0) then
-          if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Sync)[",i7,"]: MPI window synced: ",i11,1x,i11)')&
-                    &impir,this%WinMPI%Window,this%WinSize
+          if(DEBUG.ge.2) then
+           write(jo,'("#DEBUG(distributed::DataWin.Sync)[",i7,"]: MPI window synced: ",i11,1x,i11)')&
+           &impir,this%WinMPI%Window,this%WinSize
+           flush(jo)
+          endif
          else
           errc=1
          endif
@@ -1127,8 +1179,11 @@
              this%NumWins=num_wins
              this%CommMPI=comm_mpi
              this%SpaceName=space_name(1:min(len_trim(space_name),DISTR_SPACE_NAME_LEN)) !alphabetic name for convenience
-             if(DEBUG)write(jo,'("#DEBUG(distributed::DistrSpace.Create)[",i7,"]: Distributed space created: ",i11,1x,i4,1x,A32)')&
-                      &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),32))
+             if(DEBUG.ge.2) then
+              write(jo,'("#DEBUG(distributed::DistrSpace.Create)[",i7,"]: Distributed space created: ",i11,1x,i4,1x,A32)')&
+              &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),32))
+              flush(jo)
+             endif
             else
              do i=num_wins,1,-1
               call this%DataWins(i)%destroy()
@@ -1174,9 +1229,11 @@
             if(errc.eq.0) then
              deallocate(this%DataWins,STAT=errc)
              if(errc.eq.0) then
-              if(DEBUG)&
-               &write(jo,'("#DEBUG(distributed::DistrSpace.Destroy)[",i7,"]: Distributed space destroyed: ",i11,1x,i4,1x,A32)')&
+              if(DEBUG.ge.2) then
+               write(jo,'("#DEBUG(distributed::DistrSpace.Destroy)[",i7,"]: Distributed space destroyed: ",i11,1x,i4,1x,A32)')&
                &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),32))
+               flush(jo)
+              endif
               this%NumWins=0
               this%CommMPI=MPI_COMM_NULL
               this%SpaceName=' '
@@ -1505,29 +1562,39 @@
 !Completes an MPI one-sided communication specified by a given data descriptor.
 !Other outstanding MPI communications on the same (rank,window) will be completed as well.
 !It is safe to flush the same (valid) data descriptor multiple times. However,
-!if the data descriptor was flushed the first time at the origin only (local=.true.),
+!if the data descriptor was flushed the first time at the origin only (local=.TRUE.),
 !one will no longer be able to request a full completion (both at origin and target).
 !In case of a one-sided synchronization error, the data request will still be marked
 !as pending, thus blocking the corresponding (rank,window) entry from release!
         implicit none
         class(DataDescr_t), intent(inout):: this         !inout: data descriptor
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        logical, intent(in), optional:: local            !in: if .true., the data is flushed only at the origin
+        logical, intent(in), optional:: local            !in: if .TRUE., the data is flushed only at the origin
         integer(INT_MPI):: rwe,errc
         type(RankWin_t), pointer:: rw_entry
         logical:: lcl
 
         errc=0
-        if(present(local)) then; lcl=local; else; lcl=.false.; endif !default is flushing both at the origin and target
+        if(present(local)) then; lcl=local; else; lcl=.FALSE.; endif !default is flushing both at the origin and target
         if(this%RankMPI.ge.0) then
          if(this%StatMPI.eq.MPI_STAT_PROGRESS_NRM.or.this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then !first flush
           rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc) !get the (rank,window) entry
           if(rwe.gt.0.and.errc.eq.0) then
            rw_entry=>RankWinRefs%RankWins(rwe)
+           if(DEBUG.ge.1) then
+            write(jo,'("#DEBUG(distributed::DataDescr.FlushData)[",i7,"]: Syncing transfer ",i13,": ")',ADVANCE='NO')&
+            &impir,this%TransID
+            call rw_entry%print_it(dev_out=jo)
+            flush(jo)
+           endif
            if(rw_entry%RefCount.gt.1) then !not the last reference to this (rank,window)
             if(lcl) then !complete at origin only
              if(abs(this%TransID).gt.rw_entry%LastSync) then
-              if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_FLUSH_LOCAL: ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+              if(DEBUG.ge.1) then
+               write(jo,'("#DEBUG[",i7,"]: WIN_FLUSH_LOCAL: ")',ADVANCE='NO') impir
+               call rw_entry%print_it(dev_out=jo)
+               flush(jo)
+              endif
               call MPI_WIN_FLUSH_LOCAL(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
              endif
              if(errc.eq.0) then
@@ -1538,7 +1605,11 @@
              endif
             else !complete at both origin and target
              if(abs(this%TransID).gt.rw_entry%LastSync) then
-              if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_FLUSH: ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+              if(DEBUG.ge.1) then
+               write(jo,'("#DEBUG[",i7,"]: WIN_FLUSH: ")',ADVANCE='NO') impir
+               call rw_entry%print_it(dev_out=jo)
+               flush(jo)
+              endif
               call MPI_WIN_FLUSH(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
              endif
              if(errc.eq.0) then
@@ -1548,11 +1619,13 @@
               this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=2
              endif
             endif
-           else !the last reference to this (rank,window)
-            if(abs(this%TransID).gt.rw_entry%LastSync) then
-             if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.flush): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
-             call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
+           else !the last reference to this (rank,window): Mandatory UNLOCK
+            if(DEBUG.ge.1) then
+             write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.flush): ")',ADVANCE='NO') impir
+             call rw_entry%print_it(dev_out=jo)
+             flush(jo)
             endif
+            call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
             if(errc.eq.0) then
              this%StatMPI=MPI_STAT_COMPLETED
              rw_entry%RefCount=rw_entry%RefCount-1
@@ -1592,7 +1665,10 @@
 
         errc=0
         if(this%RankMPI.ge.0) then
-         if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_SYNC: ",i11)') impir,this%WinMPI%Window !debug
+         if(DEBUG.ge.2) then
+          write(jo,'("#DEBUG[",i7,"]: WIN_SYNC: ",i11)') impir,this%WinMPI%Window !debug
+          flush(jo)
+         endif
          call MPI_WIN_SYNC(this%WinMPI%Window,errc)
          if(errc.ne.0) errc=1
         else
@@ -1613,7 +1689,7 @@
         type(RankWin_t), pointer:: rw_entry
         logical:: compl
 
-        errc=0; DataDescrTestData=.false.
+        errc=0; DataDescrTestData=.FALSE.
         if(this%RankMPI.ge.0) then
          if(this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then
           rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc) !get the (rank,window) entry
@@ -1621,13 +1697,17 @@
            rw_entry=>RankWinRefs%RankWins(rwe)
            if(rw_entry%RefCount.gt.0) then
             if(abs(this%TransID).gt.rw_entry%LastSync) then
-             if(DEBUG) write(jo,'("#DEBUG[",i7,"]: MPI_TEST: ",i7,1x,i11)') impir,this%RankMPI,this%WinMPI%Window !debug
+             if(DEBUG.ge.1) then
+              write(jo,'("#DEBUG[",i7,"]: MPI_TEST: ")',ADVANCE='NO') impir
+              call rw_entry%print_it(dev_out=jo)
+              flush(jo)
+             endif
              call MPI_TEST(this%ReqHandle,compl,mpi_stat,errc)
              if(errc.eq.0) then
               if(compl) then
                this%StatMPI=MPI_STAT_COMPLETED_ORIG
                rw_entry%RefCount=rw_entry%RefCount-1
-               DataDescrTestData=.true.
+               DataDescrTestData=.TRUE.
               endif
              else
               this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
@@ -1635,10 +1715,14 @@
             else
              this%StatMPI=MPI_STAT_COMPLETED_ORIG
              rw_entry%RefCount=rw_entry%RefCount-1
-             DataDescrTestData=.true.
+             DataDescrTestData=.TRUE.
             endif
             if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
-             if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.test): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+             if(DEBUG.ge.1) then
+              write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.test): ")',ADVANCE='NO') impir
+              call rw_entry%print_it(dev_out=jo)
+              flush(jo)
+             endif
              call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc); if(errc.ne.0) errc=2
              this%StatMPI=MPI_STAT_COMPLETED
              call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=3
@@ -1654,7 +1738,7 @@
            errc=5
           endif
          elseif(this%StatMPI.eq.MPI_STAT_COMPLETED.or.this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
-          DataDescrTestData=.true.
+          DataDescrTestData=.TRUE.
          else
           errc=6
          endif
@@ -1683,7 +1767,11 @@
            rw_entry=>RankWinRefs%RankWins(rwe)
            if(rw_entry%RefCount.gt.0) then
             if(abs(this%TransID).gt.rw_entry%LastSync) then
-             if(DEBUG) write(jo,'("#DEBUG[",i7,"]: MPI_WAIT: ",i7,1x,i11)') impir,this%RankMPI,this%WinMPI%Window !debug
+             if(DEBUG.ge.1) then
+              write(jo,'("#DEBUG[",i7,"]: MPI_WAIT: ")',ADVANCE='NO') impir
+              call rw_entry%print_it(dev_out=jo)
+              flush(jo)
+             endif
              call MPI_WAIT(this%ReqHandle,mpi_stat,errc)
              if(errc.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED_ORIG
@@ -1696,7 +1784,11 @@
              rw_entry%RefCount=rw_entry%RefCount-1
             endif
             if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
-             if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.wait): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+             if(DEBUG.ge.1) then
+              write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.wait): ")',ADVANCE='NO') impir
+              call rw_entry%print_it(dev_out=jo)
+              flush(jo)
+             endif
              call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc); if(errc.ne.0) errc=2
              this%StatMPI=MPI_STAT_COMPLETED
              call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=3
@@ -1747,7 +1839,7 @@
           if(this%RankMPI.ge.0) then
            if(this%StatMPI.eq.MPI_STAT_NONE.or.this%StatMPI.eq.MPI_STAT_COMPLETED.or.&
              &this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
-            rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc,append=.true.) !get the (rank,window) entry
+            rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc,append=.TRUE.) !get the (rank,window) entry
             if(errc.eq.0) then
              if(this%DataVol.gt.0) then
               if(.not.(asnc.eq.MPI_ASYNC_REQ.and.this%DataVol.gt.huge(asnc))) then
@@ -1818,7 +1910,11 @@
          type(RankWin_t), pointer:: rw_entry
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*READ_SIGN.lt.0) then !communication direction change
-          if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.get): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+          if(DEBUG.ge.1) then
+           write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.get): ")',ADVANCE='NO') impir
+           call rw_entry%print_it(dev_out=jo)
+           flush(jo)
+          endif
           call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=NO_LOCK
@@ -1828,7 +1924,11 @@
           endif
          endif
          if(jerr.eq.0.and.rw_entry%LockType.eq.NO_LOCK) then
-          if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_LOCK(.get): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+          if(DEBUG.ge.1) then
+           write(jo,'("#DEBUG[",i7,"]: WIN_LOCK(.get): ")',ADVANCE='NO') impir
+           call rw_entry%print_it(dev_out=jo)
+           flush(jo)
+          endif
           call MPI_WIN_LOCK(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*READ_SIGN
@@ -2000,7 +2100,7 @@
           if(this%RankMPI.ge.0) then
            if(this%StatMPI.eq.MPI_STAT_NONE.or.this%StatMPI.eq.MPI_STAT_COMPLETED.or.&
              &this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
-            rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc,append=.true.) !get the (rank,window) entry
+            rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc,append=.TRUE.) !get the (rank,window) entry
             if(errc.eq.0) then
              if(this%DataVol.gt.0) then
               if(.not.(asnc.eq.MPI_ASYNC_REQ.and.this%DataVol.gt.huge(asnc))) then
@@ -2071,7 +2171,11 @@
          type(RankWin_t), pointer:: rw_entry
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*WRITE_SIGN.lt.0) then !communication direction change
-          if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.acc): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+          if(DEBUG.ge.1) then
+           write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.acc): ")',ADVANCE='NO') impir
+           call rw_entry%print_it(dev_out=jo)
+           flush(jo)
+          endif
           call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=NO_LOCK
@@ -2081,7 +2185,11 @@
           endif
          endif
          if(jerr.eq.0.and.rw_entry%LockType.eq.NO_LOCK) then
-          if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_LOCK(.acc): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+          if(DEBUG.ge.1) then
+           write(jo,'("#DEBUG[",i7,"]: WIN_LOCK(.acc): ")',ADVANCE='NO') impir
+           call rw_entry%print_it(dev_out=jo)
+           flush(jo)
+          endif
           call MPI_WIN_LOCK(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*WRITE_SIGN
@@ -2459,7 +2567,7 @@
         write(devo,'('//sfmt(1:fl)//'"  Data volume (elements)  : ",i18)') this%DataVol
         write(devo,'('//sfmt(1:fl)//'"  Data type               : ",i18)') this%DataType
         call this%WinMPI%print_it(devo,sp+2)
-        write(devo,'('//sfmt(1:fl)//'"  Current transaction ID  : ",i18)') this%TransID
+        write(devo,'('//sfmt(1:fl)//'"  Current data transfer ID: ",i18)') this%TransID
         write(devo,'('//sfmt(1:fl)//'"  MPI status              : ",i18)') this%StatMPI
         write(devo,'('//sfmt(1:fl)//'"  MPI request handle      : ",i18)') this%ReqHandle
         return
@@ -2481,18 +2589,18 @@
          if(associated(this%Packet)) then
           if(this%Alloc) deallocate(this%Packet)
          endif
-         nullify(this%Packet); this%Alloc=.false.
+         nullify(this%Packet); this%Alloc=.FALSE.
          if(present(ext_buf)) then
           if(size(ext_buf).ge.vol) then
            l=lbound(ext_buf,1)
            this%Packet(0:vol-1)=>ext_buf(l:l+vol-1)
-           this%Alloc=.false.
+           this%Alloc=.FALSE.
           else
            errc=3
           endif
          else
           allocate(this%Packet(0:vol-1),STAT=i)
-          if(i.eq.0) then; this%Alloc=.true.; else; nullify(this%Packet); errc=2; endif
+          if(i.eq.0) then; this%Alloc=.TRUE.; else; nullify(this%Packet); errc=2; endif
          endif
          if(associated(this%Packet)) this%Packet(0)=0 !empty packet flag
         else
@@ -2584,7 +2692,7 @@
         errc=0
         if(associated(this%Packet)) then
          if(this%Alloc) deallocate(this%Packet)
-         nullify(this%Packet); this%Alloc=.false.
+         nullify(this%Packet); this%Alloc=.FALSE.
         else
          errc=-1
         endif
@@ -2603,7 +2711,7 @@
         integer(INT_MPI):: errc
         logical:: frc
 
-        frc=.false.; if(present(force)) frc=force
+        frc=.FALSE.; if(present(force)) frc=force
         errc=this%test()
         if(errc.ne.MPI_STAT_PROGRESS_REQ.or.frc) then
          call MPI_REQUEST_FREE(this%ReqHandle,errc)
@@ -2634,7 +2742,7 @@
         logical:: igo
 
         errc=0
-        igo=.false.; if(present(ignore_old)) igo=ignore_old
+        igo=.FALSE.; if(present(ignore_old)) igo=ignore_old
         if(this%ReqHandle.ne.MPI_REQUEST_NULL) then
          call MPI_WAIT(this%ReqHandle,this%MPIStat,errc)
          if(errc.eq.0) then
@@ -2677,7 +2785,7 @@
         logical:: igo,fin
 
         errc=0; msg_stat=MPI_STAT_PROGRESS_REQ
-        igo=.false.; if(present(ignore_old)) igo=ignore_old
+        igo=.FALSE.; if(present(ignore_old)) igo=ignore_old
         if(this%ReqHandle.ne.MPI_REQUEST_NULL) then
          call MPI_TEST(this%ReqHandle,fin,this%MPIStat,errc)
          if(errc.eq.0) then
@@ -2720,18 +2828,18 @@
         logical:: free_buf
 
         errc=0
-        free_buf=.true.; if(present(keep_buffer)) free_buf=.not.(keep_buffer.and.associated(this%Packets))
+        free_buf=.TRUE.; if(present(keep_buffer)) free_buf=.not.(keep_buffer.and.associated(this%Packets))
         if(free_buf) then
          if(associated(this%Packets).and.this%Alloc) deallocate(this%Packets)
          nullify(this%Packets)
          this%ffe=-1
-         this%Alloc=.false.
+         this%Alloc=.FALSE.
          this%NumPackets=-1 !buffer does not exist
-         this%Marked=.false.
+         this%Marked=.FALSE.
         else !keep the memory buffer
          this%ffe=1 !packets(0) is reserved to contain <NumPackets>
          this%NumPackets=0  !buffer exists but empty
-         this%Marked=.false.
+         this%Marked=.FALSE.
          this%Packets(0)=int(this%NumPackets,ELEM_PACK_SIZE)
         endif
         if(present(ierr)) ierr=errc
@@ -2755,7 +2863,7 @@
 
         errc=0
         if(buf_len.gt.0) then
-         if(present(resize_it)) then; rsz=resize_it; else; rsz=.false.; endif
+         if(present(resize_it)) then; rsz=resize_it; else; rsz=.FALSE.; endif
          if(this%NumPackets.le.0) then
           if(associated(this%Packets)) then
            if(rsz) then
@@ -2769,9 +2877,9 @@
             if(size(ext_buf).ge.buf_len) then
              this%Packets(0:buf_len-1)=>ext_buf(1:buf_len)
              this%ffe=1 !packets(0) is reserved to contain <NumPackets>
-             this%Alloc=.false.
+             this%Alloc=.FALSE.
              this%NumPackets=0
-             this%Marked=.false.
+             this%Marked=.FALSE.
             else
              errc=3 !exetrnal buffer is not large enough
             endif
@@ -2779,9 +2887,9 @@
             allocate(this%Packets(0:buf_len-1),STAT=erc)
             if(erc.eq.0) then
              this%ffe=1 !packets(0) is reserved to contain <NumPackets>
-             this%Alloc=.true.
+             this%Alloc=.TRUE.
              this%NumPackets=0
-             this%Marked=.false.
+             this%Marked=.FALSE.
             else
              nullify(this%Packets)
              call this%clean()
@@ -2840,10 +2948,10 @@
         errc=0
         if(associated(this%Packets)) then
          if(present(tag)) then
-          if(this%NumPackets.le.0) this%Marked=.true.
+          if(this%NumPackets.le.0) this%Marked=.TRUE.
           if(this%Marked) then; i=1; else; errc=1; endif
          else
-          if(this%NumPackets.le.0) this%Marked=.false.
+          if(this%NumPackets.le.0) this%Marked=.FALSE.
           if(.not.this%Marked) then; i=0; else; errc=2; endif
          endif
          if(errc.eq.0) then
@@ -2985,7 +3093,7 @@
            comm_hl%DataCont=>this
            if(present(sync)) then
             if(sync) then
-             call comm_hl%wait(errc,ignore_old=.true.)
+             call comm_hl%wait(errc,ignore_old=.TRUE.)
              if(errc.ne.0) errc=3 !synchronization failed: Communication is lost
             endif
            endif
@@ -3045,7 +3153,7 @@
         logical:: bcs
 
         errc=0
-        if(present(bcast)) then; bcs=bcast; else; bcs=.false.; endif
+        if(present(bcast)) then; bcs=bcast; else; bcs=.FALSE.; endif
         comm=GLOBAL_MPI_COMM; if(present(comm_mpi)) comm=comm_mpi
         if(present(send_rank)) then
          sx_rank=send_rank
@@ -3086,7 +3194,7 @@
             comm_hl%DataCont=>this
             if(present(sync)) then
              if(sync) then
-              call comm_hl%wait(errc,ignore_old=.true.)
+              call comm_hl%wait(errc,ignore_old=.TRUE.)
               if(errc.ne.0) errc=4 !synchronization failed: Communication is lost
              endif
             endif
@@ -3140,9 +3248,9 @@
          this%NumPackets=int(this%Packets(0),INT_MPI)
          if(this%NumPackets.lt.0) then !tagged container
           this%NumPackets=-this%NumPackets
-          this%Marked=.true.; k=1
+          this%Marked=.TRUE.; k=1
          else !tag-free container
-          this%Marked=.false.; k=0
+          this%Marked=.FALSE.; k=0
          endif
          this%ffe=1; m=ubound(this%Packets,1)
          do i=1,this%NumPackets
