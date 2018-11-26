@@ -638,7 +638,7 @@
         call MPI_Init_Thread(MPI_THREAD_MULTIPLE,mpi_th_provided,ierr)
         if(mpi_th_provided.eq.MPI_THREAD_MULTIPLE) then
          call test_exatensor()
-         call benchmark_exatensor()
+         !call benchmark_exatensor()
         else
          write(6,*) 'Your MPI library does not support MPI_THREAD_MULTIPLE! Change it!'
         endif

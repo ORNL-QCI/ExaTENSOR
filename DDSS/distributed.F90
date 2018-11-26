@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/24 (started 2015/03/18)
+!REVISION: 2018/11/25 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -100,7 +100,7 @@
  !Output:
         integer, private:: CONS_OUT=6     !default output for this module
         logical, private:: VERBOSE=.TRUE. !verbosity for errors
-        integer, private:: DEBUG=0        !debugging mode
+        integer, private:: DEBUG=1        !debugging mode
  !Packing/unpacking:
         integer(INT_MPI), parameter, public:: ELEM_PACK_SIZE=max(8,max(C_SIZE_T,max(INT_ADDR,INT_COUNT))) !packing size for integers/logicals/reals/C_pointers/C_sizes
  !Data alignment:
@@ -949,12 +949,12 @@
         integer(INT_ADDR):: attr
         logical:: flag
 
-        call MPI_BARRIER(comm_mpi,errc) !test the validity of the MPI communicator
+        call MPI_Barrier(comm_mpi,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
          if(this%WinSize.lt.0) then !uninitialized window
-          call MPI_WIN_CREATE_DYNAMIC(MPI_INFO_NULL,comm_mpi,this%WinMPI%Window,errc)
+          call MPI_Win_create_dynamic(MPI_INFO_NULL,comm_mpi,this%WinMPI%Window,errc)
           if(errc.eq.0) then
-           call MPI_WIN_GET_ATTR(this%WinMPI%Window,MPI_WIN_DISP_UNIT,attr,flag,errc)
+           call MPI_Win_get_attr(this%WinMPI%Window,MPI_WIN_DISP_UNIT,attr,flag,errc)
            if(errc.eq.0.and.flag) then
             this%WinMPI%DispUnit=int(attr,INT_MPI)
             this%WinMPI%CommMPI=comm_mpi
@@ -989,7 +989,7 @@
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
 
-        call MPI_BARRIER(this%WinMPI%CommMPI,errc) !test the validity of the MPI communicator
+        call MPI_Barrier(this%WinMPI%CommMPI,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
          if(this%WinSize.eq.0) then !MPI window must be empty
           if(DEBUG.ge.2) then
@@ -997,7 +997,7 @@
            &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
            flush(jo)
           endif
-          call MPI_WIN_FREE(this%WinMPI%Window,errc)
+          call MPI_Win_free(this%WinMPI%Window,errc)
           if(errc.eq.0) then
            if(DEBUG.ge.2) then
             write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window destroyed: ",i11,1x,i11,1x,i2,1x,i11)')&
@@ -1066,7 +1066,7 @@
          integer(INT_ADDR), intent(in):: bsize
          integer(INT_MPI), intent(out):: jerr
          jerr=0
-         call MPI_WIN_ATTACH(this%WinMPI%Window,r4_arr,bsize,jerr)
+         call MPI_Win_attach(this%WinMPI%Window,r4_arr,bsize,jerr)
          return
          end subroutine attach_buffer
 
@@ -1119,7 +1119,7 @@
          real(4), intent(in):: r4_arr(*) !`asynchronous attribute
          integer(INT_MPI), intent(out):: jerr
          jerr=0
-         call MPI_WIN_DETACH(this%WinMPI%Window,r4_arr,jerr)
+         call MPI_Win_detach(this%WinMPI%Window,r4_arr,jerr)
          return
          end subroutine detach_buffer
 
@@ -1134,7 +1134,7 @@
 
         errc=0
         if(this%WinSize.ge.0) then !data window is initialized
-         call MPI_WIN_SYNC(this%WinMPI%Window,errc)
+         call MPI_Win_sync(this%WinMPI%Window,errc)
          if(errc.eq.0) then
           if(DEBUG.ge.2) then
            write(jo,'("#DEBUG(distributed::DataWin.Sync)[",i7,"]: MPI window synced: ",i11,1x,i11)')&
@@ -1162,7 +1162,7 @@
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: i,errc
 
-        call MPI_BARRIER(comm_mpi,errc) !test the validity of the MPI communicator
+        call MPI_Barrier(comm_mpi,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
          if(RankWinRefs%FirstFree.lt.0) call RankWinRefs%clean() !init the (rank,win) list
          if(num_wins.gt.0) then
@@ -1201,7 +1201,7 @@
          else
           errc=4
          endif
-         call MPI_BARRIER(comm_mpi,errc)
+         call MPI_Barrier(comm_mpi,errc)
         else
          errc=5
         endif
@@ -1218,7 +1218,7 @@
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: i,j,errc
 
-        call MPI_BARRIER(this%CommMPI,errc) !test the validity of the MPI communicator
+        call MPI_Barrier(this%CommMPI,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
          if(this%NumWins.gt.0) then !initialized distributed memory space
           if(this%local_size(errc).eq.0) then !distributed memory space must be empty
@@ -1312,7 +1312,7 @@
          if(errc.eq.0.and.loc_size.gt.0) then
           call this%DataWins(m)%attach(loc_ptr,loc_size,errc)
           if(errc.eq.0) then
-           call MPI_COMM_RANK(this%CommMPI,my_rank,errc)
+           call MPI_Comm_rank(this%CommMPI,my_rank,errc)
            if(errc.eq.0) then
             call data_descr%init(my_rank,this%DataWins(m)%WinMPI,loc_ptr,data_type,data_vol,errc)
             if(errc.ne.0) then
@@ -1348,7 +1348,7 @@
 
         errc=0
         if(this%NumWins.gt.0) then !initialized distributed memory space
-         call MPI_COMM_RANK(this%CommMPI,my_rank,errc)
+         call MPI_Comm_rank(this%CommMPI,my_rank,errc)
          if(errc.eq.0) then
           if(data_descr%RankMPI.eq.my_rank) then
            loc_size=data_descr%DataVol*data_type_size(data_descr%DataType,errc) !data buffer size in bytes
@@ -1423,7 +1423,7 @@
             this%TransID=0 !0 means "never assigned a Transfer ID"
             this%StatMPI=MPI_STAT_NONE
             this%ReqHandle=MPI_REQUEST_NULL
-            call MPI_Get_Displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
+            call MPI_Get_displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
            else
             errc=2
            endif
@@ -1572,9 +1572,9 @@
         logical, intent(in), optional:: local            !in: if .TRUE., the data is flushed only at the origin
         integer(INT_MPI):: rwe,errc
         type(RankWin_t), pointer:: rw_entry
-        logical:: lcl
+        logical:: lcl,synced
 
-        errc=0
+        errc=0; synced=.FALSE.
         if(present(local)) then; lcl=local; else; lcl=.FALSE.; endif !default is flushing both at the origin and target
         if(this%RankMPI.ge.0) then
          if(this%StatMPI.eq.MPI_STAT_PROGRESS_NRM.or.this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then !first flush
@@ -1595,7 +1595,8 @@
                call rw_entry%print_it(dev_out=jo)
                flush(jo)
               endif
-              call MPI_WIN_FLUSH_LOCAL(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
+              call MPI_Win_flush_local(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
+              synced=(errc.eq.0)
              endif
              if(errc.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED_ORIG
@@ -1610,7 +1611,8 @@
                call rw_entry%print_it(dev_out=jo)
                flush(jo)
               endif
-              call MPI_WIN_FLUSH(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
+              call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
+              synced=(errc.eq.0)
              endif
              if(errc.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED
@@ -1625,7 +1627,8 @@
              call rw_entry%print_it(dev_out=jo)
              flush(jo)
             endif
-            call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
+            call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
+            synced=(errc.eq.0)
             if(errc.eq.0) then
              this%StatMPI=MPI_STAT_COMPLETED
              rw_entry%RefCount=rw_entry%RefCount-1
@@ -1633,14 +1636,16 @@
              this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=3
             endif
            endif
-           if(errc.eq.0) rw_entry%LastSync=RankWinRefs%TransCount !update the last sync event for this (rank,win)
-           if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
-            call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
-           elseif(rw_entry%RefCount.lt.0) then
-            if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.FlushData): Negative reference count: ",i12)')&
-                        &rw_entry%RefCount
-            errc=5
-            call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
+           if(errc.eq.0) then
+            if(synced) rw_entry%LastSync=RankWinRefs%TransCount !update the last sync event for this (rank,win)
+            if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
+             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
+            elseif(rw_entry%RefCount.lt.0) then
+             if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.FlushData): Negative reference count: ",i12)')&
+                         &rw_entry%RefCount
+             errc=5
+             call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
+            endif
            endif
            nullify(rw_entry)
           else
@@ -1669,7 +1674,7 @@
           write(jo,'("#DEBUG[",i7,"]: WIN_SYNC: ",i11)') impir,this%WinMPI%Window !debug
           flush(jo)
          endif
-         call MPI_WIN_SYNC(this%WinMPI%Window,errc)
+         call MPI_Win_sync(this%WinMPI%Window,errc)
          if(errc.ne.0) errc=1
         else
          errc=-1
@@ -1702,7 +1707,7 @@
               call rw_entry%print_it(dev_out=jo)
               flush(jo)
              endif
-             call MPI_TEST(this%ReqHandle,compl,mpi_stat,errc)
+             call MPI_Test(this%ReqHandle,compl,mpi_stat,errc)
              if(errc.eq.0) then
               if(compl) then
                this%StatMPI=MPI_STAT_COMPLETED_ORIG
@@ -1717,15 +1722,21 @@
              rw_entry%RefCount=rw_entry%RefCount-1
              DataDescrTestData=.TRUE.
             endif
-            if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
-             if(DEBUG.ge.1) then
-              write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.test): ")',ADVANCE='NO') impir
-              call rw_entry%print_it(dev_out=jo)
-              flush(jo)
+            if(errc.eq.0) then
+             if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
+              if(DEBUG.ge.1) then
+               write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.test): ")',ADVANCE='NO') impir
+               call rw_entry%print_it(dev_out=jo)
+               flush(jo)
+              endif
+              call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
+              if(errc.eq.0) then
+               this%StatMPI=MPI_STAT_COMPLETED
+               call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+              else
+               errc=3
+              endif
              endif
-             call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc); if(errc.ne.0) errc=2
-             this%StatMPI=MPI_STAT_COMPLETED
-             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=3
             endif
             nullify(rw_entry)
            else
@@ -1772,7 +1783,7 @@
               call rw_entry%print_it(dev_out=jo)
               flush(jo)
              endif
-             call MPI_WAIT(this%ReqHandle,mpi_stat,errc)
+             call MPI_Wait(this%ReqHandle,mpi_stat,errc)
              if(errc.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED_ORIG
               rw_entry%RefCount=rw_entry%RefCount-1
@@ -1783,15 +1794,21 @@
              this%StatMPI=MPI_STAT_COMPLETED_ORIG
              rw_entry%RefCount=rw_entry%RefCount-1
             endif
-            if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
-             if(DEBUG.ge.1) then
-              write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.wait): ")',ADVANCE='NO') impir
-              call rw_entry%print_it(dev_out=jo)
-              flush(jo)
+            if(errc.eq.0) then
+             if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
+              if(DEBUG.ge.1) then
+               write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.wait): ")',ADVANCE='NO') impir
+               call rw_entry%print_it(dev_out=jo)
+               flush(jo)
+              endif
+              call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
+              if(errc.eq.0) then
+               this%StatMPI=MPI_STAT_COMPLETED
+               call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+              else
+               errc=3
+              endif
              endif
-             call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc); if(errc.ne.0) errc=2
-             this%StatMPI=MPI_STAT_COMPLETED
-             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=3
             endif
             nullify(rw_entry)
            else
@@ -1845,6 +1862,11 @@
               if(.not.(asnc.eq.MPI_ASYNC_REQ.and.this%DataVol.gt.huge(asnc))) then
                call modify_lock(rwe,errc) !modify the (rank,window) lock status if needed
                if(errc.eq.0) then
+                if(DEBUG.ge.1) then
+                 write(jo,'("#DEBUG[",i7,"]: Get: ",i18,1x,i9,": ")',ADVANCE='NO') impir,this%Offset,this%DataVol
+                 call RankWinRefs%RankWins(rwe)%print_it(dev_out=jo)
+                 flush(jo)
+                endif
                 select case(this%DataType)
                 case(R4)
                  call c_f_pointer(loc_ptr,r4_ptr,(/this%DataVol/))
@@ -1908,6 +1930,7 @@
          integer(INT_MPI), intent(in):: rw
          integer(INT_MPI), intent(out):: jerr
          type(RankWin_t), pointer:: rw_entry
+
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*READ_SIGN.lt.0) then !communication direction change
           if(DEBUG.ge.1) then
@@ -1915,7 +1938,7 @@
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
-          call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
+          call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=NO_LOCK
            rw_entry%LastSync=RankWinRefs%TransCount
@@ -1929,7 +1952,7 @@
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
-          call MPI_WIN_LOCK(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
+          call MPI_Win_lock(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*READ_SIGN
           else
@@ -1946,14 +1969,15 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+
          jerr=0; jdts=data_type_size(R4)
          jdu=this%WinMPI%DispUnit
-         ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         ji=MAX_MPI_MSG_VOL
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
-           call MPI_GET(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,jtarg,jv,MPI_REAL4,this%WinMPI%Window,jerr)
+           call MPI_Get(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,jtarg,jv,MPI_REAL4,this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -1963,7 +1987,7 @@
           endif
          else !request-handle
           jv=this%DataVol
-          call MPI_RGET(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,this%ReqHandle,jerr)
+          call MPI_Rget(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -1979,14 +2003,15 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+
          jerr=0; jdts=data_type_size(R8)
          jdu=this%WinMPI%DispUnit
-         ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         ji=MAX_MPI_MSG_VOL
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
-           call MPI_GET(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,jtarg,jv,MPI_REAL8,this%WinMPI%Window,jerr)
+           call MPI_Get(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,jtarg,jv,MPI_REAL8,this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -1996,7 +2021,7 @@
           endif
          else !request-handle
           jv=this%DataVol
-          call MPI_RGET(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,this%ReqHandle,jerr)
+          call MPI_Rget(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2012,14 +2037,15 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+
          jerr=0; jdts=data_type_size(C4)
          jdu=this%WinMPI%DispUnit
-         ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         ji=MAX_MPI_MSG_VOL
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
-           call MPI_GET(c4_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,jtarg,jv,MPI_COMPLEX8,this%WinMPI%Window,jerr)
+           call MPI_Get(c4_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,jtarg,jv,MPI_COMPLEX8,this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -2029,7 +2055,7 @@
           endif
          else !request-handle
           jv=this%DataVol
-          call MPI_RGET(c4_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,this%ReqHandle,jerr)
+          call MPI_Rget(c4_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2045,14 +2071,15 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+
          jerr=0; jdts=data_type_size(C8)
          jdu=this%WinMPI%DispUnit
-         ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         ji=MAX_MPI_MSG_VOL
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
-           call MPI_GET(c8_arr(js:js+jv-1),jv,MPI_COMPLEX16,this%RankMPI,jtarg,jv,MPI_COMPLEX16,this%WinMPI%Window,jerr)
+           call MPI_Get(c8_arr(js:js+jv-1),jv,MPI_COMPLEX16,this%RankMPI,jtarg,jv,MPI_COMPLEX16,this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -2062,7 +2089,7 @@
           endif
          else !request-handle
           jv=this%DataVol
-          call MPI_RGET(c8_arr,jv,MPI_COMPLEX16,this%RankMPI,this%Offset,jv,MPI_COMPLEX16,this%WinMPI%Window,this%ReqHandle,jerr)
+          call MPI_Rget(c8_arr,jv,MPI_COMPLEX16,this%RankMPI,this%Offset,jv,MPI_COMPLEX16,this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2106,6 +2133,11 @@
               if(.not.(asnc.eq.MPI_ASYNC_REQ.and.this%DataVol.gt.huge(asnc))) then
                call modify_lock(rwe,errc) !modify the (rank,window) lock status if needed
                if(errc.eq.0) then
+                if(DEBUG.ge.1) then
+                 write(jo,'("#DEBUG[",i7,"]: Accumulate: ",i18,1x,i9,": ")',ADVANCE='NO') impir,this%Offset,this%DataVol
+                 call RankWinRefs%RankWins(rwe)%print_it(dev_out=jo)
+                 flush(jo)
+                endif
                 select case(this%DataType)
                 case(R4)
                  call c_f_pointer(loc_ptr,r4_ptr,(/this%DataVol/))
@@ -2169,6 +2201,7 @@
          integer(INT_MPI), intent(in):: rw
          integer(INT_MPI), intent(out):: jerr
          type(RankWin_t), pointer:: rw_entry
+
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*WRITE_SIGN.lt.0) then !communication direction change
           if(DEBUG.ge.1) then
@@ -2176,7 +2209,7 @@
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
-          call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
+          call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=NO_LOCK
            rw_entry%LastSync=RankWinRefs%TransCount
@@ -2190,7 +2223,7 @@
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
-          call MPI_WIN_LOCK(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
+          call MPI_Win_lock(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*WRITE_SIGN
           else
@@ -2207,14 +2240,15 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+
          jerr=0; jdts=data_type_size(R4)
          jdu=this%WinMPI%DispUnit
-         ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         ji=MAX_MPI_MSG_VOL
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
-           call MPI_ACCUMULATE(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,jtarg,jv,MPI_REAL4,MPI_SUM,&
+           call MPI_Accumulate(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,jtarg,jv,MPI_REAL4,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
@@ -2225,7 +2259,7 @@
           endif
          else !request-handle
           jv=this%DataVol
-          call MPI_RACCUMULATE(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,MPI_SUM,&
+          call MPI_Raccumulate(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
@@ -2242,14 +2276,15 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+
          jerr=0; jdts=data_type_size(R8)
          jdu=this%WinMPI%DispUnit
-         ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         ji=MAX_MPI_MSG_VOL
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
-           call MPI_ACCUMULATE(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,jtarg,jv,MPI_REAL8,MPI_SUM,&
+           call MPI_Accumulate(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,jtarg,jv,MPI_REAL8,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
@@ -2260,7 +2295,7 @@
           endif
          else !request-handle
           jv=this%DataVol
-          call MPI_RACCUMULATE(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,MPI_SUM,&
+          call MPI_Raccumulate(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
@@ -2277,14 +2312,15 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+
          jerr=0; jdts=data_type_size(C4)
          jdu=this%WinMPI%DispUnit
-         ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         ji=MAX_MPI_MSG_VOL
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
-           call MPI_ACCUMULATE(c4_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,jtarg,jv,MPI_COMPLEX8,MPI_SUM,&
+           call MPI_Accumulate(c4_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,jtarg,jv,MPI_COMPLEX8,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
@@ -2295,7 +2331,7 @@
           endif
          else !request-handle
           jv=this%DataVol
-          call MPI_RACCUMULATE(c4_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,MPI_SUM,&
+          call MPI_Raccumulate(c4_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
@@ -2312,14 +2348,15 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+
          jerr=0; jdts=data_type_size(C8)
          jdu=this%WinMPI%DispUnit
-         ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         ji=MAX_MPI_MSG_VOL
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
-           call MPI_ACCUMULATE(c8_arr(js:js+jv-1),jv,MPI_COMPLEX16,this%RankMPI,jtarg,jv,MPI_COMPLEX16,MPI_SUM,&
+           call MPI_Accumulate(c8_arr(js:js+jv-1),jv,MPI_COMPLEX16,this%RankMPI,jtarg,jv,MPI_COMPLEX16,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
@@ -2330,7 +2367,7 @@
           endif
          else !request-handle
           jv=this%DataVol
-          call MPI_RACCUMULATE(c8_arr,jv,MPI_COMPLEX16,this%RankMPI,this%Offset,jv,MPI_COMPLEX16,MPI_SUM,&
+          call MPI_Raccumulate(c8_arr,jv,MPI_COMPLEX16,this%RankMPI,this%Offset,jv,MPI_COMPLEX16,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
@@ -2714,7 +2751,7 @@
         frc=.FALSE.; if(present(force)) frc=force
         errc=this%test()
         if(errc.ne.MPI_STAT_PROGRESS_REQ.or.frc) then
-         call MPI_REQUEST_FREE(this%ReqHandle,errc)
+         call MPI_Request_free(this%ReqHandle,errc)
          this%ReqHandle=MPI_REQUEST_NULL
          this%LastReq=MPI_REQUEST_NULL
          this%MPIRank=-1
@@ -2744,7 +2781,7 @@
         errc=0
         igo=.FALSE.; if(present(ignore_old)) igo=ignore_old
         if(this%ReqHandle.ne.MPI_REQUEST_NULL) then
-         call MPI_WAIT(this%ReqHandle,this%MPIStat,errc)
+         call MPI_Wait(this%ReqHandle,this%MPIStat,errc)
          if(errc.eq.0) then
           this%LastReq=this%ReqHandle
           this%ReqHandle=MPI_REQUEST_NULL
@@ -2787,7 +2824,7 @@
         errc=0; msg_stat=MPI_STAT_PROGRESS_REQ
         igo=.FALSE.; if(present(ignore_old)) igo=ignore_old
         if(this%ReqHandle.ne.MPI_REQUEST_NULL) then
-         call MPI_TEST(this%ReqHandle,fin,this%MPIStat,errc)
+         call MPI_Test(this%ReqHandle,fin,this%MPIStat,errc)
          if(errc.eq.0) then
           if(fin) then !completed
            this%LastReq=this%ReqHandle
@@ -3058,7 +3095,7 @@
          if(comm.eq.GLOBAL_MPI_COMM) then
           comm_sz=impis
          else
-          call MPI_COMM_SIZE(comm,comm_sz,errc)
+          call MPI_Comm_size(comm,comm_sz,errc)
          endif
          if(errc.eq.0) then
           if(rx_rank.lt.0.or.rx_rank.ge.comm_sz) errc=1 !invalid reciever MPI rank
@@ -3070,8 +3107,8 @@
          if(comm.eq.GLOBAL_MPI_COMM) then
           comm_sz=impis; proc_rank=impir
          else
-          call MPI_COMM_SIZE(comm,comm_sz,errc)
-          call MPI_COMM_RANK(comm,proc_rank,errc)
+          call MPI_Comm_size(comm,comm_sz,errc)
+          call MPI_Comm_rank(comm,proc_rank,errc)
          endif
         endif
         if(errc.eq.0) then
@@ -3098,7 +3135,7 @@
             endif
            endif
           else
-           call MPI_REQUEST_FREE(comm_hl%ReqHandle,errc)
+           call MPI_Request_free(comm_hl%ReqHandle,errc)
            comm_hl%ReqHandle=MPI_REQUEST_NULL
            errc=4 !MPI sending failed
           endif
@@ -3116,7 +3153,7 @@
           integer(INT_MPI), intent(out):: jerr
           integer(INT_MPI):: data_typ
           jerr=get_mpi_int_datatype(ELEM_PACK_SIZE,data_typ)
-          if(jerr.eq.0) call MPI_ISEND(msg,int(this%ffe),data_typ,rx_rank,ctag,comm,comm_hl%ReqHandle,jerr)
+          if(jerr.eq.0) call MPI_Isend(msg,int(this%ffe),data_typ,rx_rank,ctag,comm,comm_hl%ReqHandle,jerr)
           return
          end subroutine send_message
 
@@ -3125,7 +3162,7 @@
           integer(INT_MPI), intent(out):: jerr
           integer(INT_MPI):: data_typ
           jerr=get_mpi_int_datatype(ELEM_PACK_SIZE,data_typ)
-          if(jerr.eq.0) call MPI_IBCAST(msg,int(this%ffe),data_typ,proc_rank,comm,comm_hl%ReqHandle,jerr)
+          if(jerr.eq.0) call MPI_Ibcast(msg,int(this%ffe),data_typ,proc_rank,comm,comm_hl%ReqHandle,jerr)
           return
          end subroutine broadcast_message
 
@@ -3160,7 +3197,7 @@
          if(comm.eq.GLOBAL_MPI_COMM) then
           comm_sz=impis
          else
-          call MPI_COMM_SIZE(comm,comm_sz,errc)
+          call MPI_Comm_size(comm,comm_sz,errc)
          endif
          if(errc.eq.0) then
           if(sx_rank.lt.0.or.sx_rank.ge.comm_sz) errc=1 !invalid sender MPI rank
@@ -3199,7 +3236,7 @@
              endif
             endif
            else
-            call MPI_REQUEST_FREE(comm_hl%ReqHandle,errc)
+            call MPI_Request_free(comm_hl%ReqHandle,errc)
             comm_hl%ReqHandle=MPI_REQUEST_NULL
             errc=5 !MPI sending failed
            endif
@@ -3220,7 +3257,7 @@
           integer(INT_MPI), intent(out):: jerr
           integer(INT_MPI):: data_typ
           jerr=get_mpi_int_datatype(ELEM_PACK_SIZE,data_typ)
-          if(jerr.eq.0) call MPI_IRECV(msg,buf_vol,data_typ,sx_rank,ctag,comm,comm_hl%ReqHandle,jerr)
+          if(jerr.eq.0) call MPI_Irecv(msg,buf_vol,data_typ,sx_rank,ctag,comm,comm_hl%ReqHandle,jerr)
           return
          end subroutine receive_message
 
@@ -3229,7 +3266,7 @@
           integer(INT_MPI), intent(out):: jerr
           integer(INT_MPI):: data_typ
           jerr=get_mpi_int_datatype(ELEM_PACK_SIZE,data_typ)
-          if(jerr.eq.0) call MPI_IBCAST(msg,buf_vol,data_typ,sx_rank,comm,comm_hl%ReqHandle,jerr)
+          if(jerr.eq.0) call MPI_Ibcast(msg,buf_vol,data_typ,sx_rank,comm,comm_hl%ReqHandle,jerr)
           return
          end subroutine broadcast_message
 
