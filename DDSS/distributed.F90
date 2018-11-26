@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/25 (started 2015/03/18)
+!REVISION: 2018/11/26 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -625,8 +625,8 @@
            if(errc.eq.0) then
             RankWinListTest=j
             if(DEBUG.ge.1) then
-             write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: New (rank,window) registered: ",i7,1x,i13)')&
-             &impir,rank,win
+             write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: New (window,rank) registered: ",i13,1x,i7)')&
+             &impir,win,rank
              flush(jo)
             endif
            else
@@ -664,7 +664,7 @@
           if(this%FirstFree.gt.0) this%PrevEntry(this%FirstFree)=entry_num
           this%FirstFree=entry_num; this%NumEntries=this%NumEntries-1
           if(DEBUG.ge.1) then
-           write(jo,'("#DEBUG(distributed::RankWinList.Del)[",i7,"]: (rank,window) deleted: ")',ADVANCE='NO') impir
+           write(jo,'("#DEBUG(distributed::RankWinList.Del)[",i7,"]: (window,rank) deleted: ")',ADVANCE='NO') impir
            call this%RankWins(entry_num)%print_it(dev_out=jo)
            flush(jo)
           endif
@@ -1026,8 +1026,8 @@
         type(C_PTR), intent(in):: loc_ptr                !in: C pointer to the local data buffer
         integer(INT_ADDR), intent(in):: loc_size         !in: size of the local data buffer in bytes: Must be multiple of DDSS_BUFFER_ALIGN
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI):: errc
-        integer(INT_ADDR):: vol
+        integer(INT_MPI):: errc,ier
+        integer(INT_ADDR):: vol,disp
         real(4), pointer, contiguous:: r4_ptr(:) !the (arbitrary) data will be mapped as a real(4) array
 
         errc=0
@@ -1039,9 +1039,10 @@
            call attach_buffer(r4_ptr,loc_size,errc)
            if(errc.eq.0) then
             this%WinSize=this%WinSize+loc_size
-            if(DEBUG.ge.2) then
-             write(jo,'("#DEBUG(distributed::DataWin.Attach)[",i7,"]: Buffer attached: ",i11,1x,i11,1x,i11)')&
-             &impir,loc_size,this%WinMPI%Window,this%WinSize
+            if(DEBUG.ge.1) then
+             call MPI_Get_displacement(loc_ptr,disp,ier); if(ier.ne.0) disp=-666
+             write(jo,'("#DEBUG(distributed::DataWin.Attach)[",i7,"]: Buffer attached: ",i11,1x,i11,1x,i13,": ",i18)')&
+             &impir,loc_size,this%WinMPI%Window,this%WinSize,disp
              flush(jo)
             endif
            else
@@ -1093,8 +1094,8 @@
            call detach_buffer(r4_ptr,errc)
            if(errc.eq.0) then
             this%WinSize=this%WinSize-loc_size
-            if(DEBUG.ge.2) then
-             write(jo,'("#DEBUG(distributed::DataWin.Detach)[",i7,"]: Buffer detached: ",i11,1x,i11,1x,i11)')&
+            if(DEBUG.ge.1) then
+             write(jo,'("#DEBUG(distributed::DataWin.Detach)[",i7,"]: Buffer detached: ",i11,1x,i11,1x,i13)')&
              &impir,loc_size,this%WinMPI%Window,this%WinSize
              flush(jo)
             endif
