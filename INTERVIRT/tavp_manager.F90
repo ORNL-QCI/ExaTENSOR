@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/15
+!REVISION: 2018/11/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2484,6 +2484,7 @@
          type(list_iter_t):: dumpi
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
+         call dil_set_thread_id(thid)
          if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder started as DSVU # ",i2," (thread ",i2,"): Listening to ",i11,1x,i6)')&
@@ -3104,6 +3105,7 @@
          class(*), pointer:: uptr
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
+         call dil_set_thread_id(thid)
          if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer started as DSVU # ",i2," (thread ",i2,"): Reporting to ",i11,1x,i6)')&
@@ -3322,6 +3324,7 @@
          type(comm_handle_t):: comm_hl
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
+         call dil_set_thread_id(thid)
          if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2," (thread ",i2,"): Recv/Send = ",i6,"/",i6)')&
@@ -3865,6 +3868,7 @@
          class(*), pointer:: uptr
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
+         call dil_set_thread_id(thid)
          if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
@@ -4929,6 +4933,7 @@
          class(*), pointer:: uptr
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
+         call dil_set_thread_id(thid)
          if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,'//&
@@ -5551,6 +5556,7 @@
          class(tavp_mng_t), pointer:: tavp
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
+         call dil_set_thread_id(thid)
          if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid
@@ -5705,6 +5711,7 @@
          type(list_pos_t):: list_pos
 
          errc=0; thid=omp_get_thread_num(); uid=this%get_id()
+         call dil_set_thread_id(thid)
          if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector started as DSVU # ",i2," (thread ",i2,")")') impir,uid,thid

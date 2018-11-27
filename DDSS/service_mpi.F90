@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/08
+!REVISION: 2018/11/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -91,8 +91,10 @@
         integer(INT_MPI), protected:: impir !global MPI rank of the process [0..impis-1] (set by runtime)
         integer(INT_MPI), protected:: mpi_thread_provided !level of multithreaded MPI support provided (set by runtime)
         integer(C_INT), protected:: max_threads=1         !max number of threads per MPI process (set during runtime)
+        integer(C_INT), protected:: thread_id=0           !OpenMP thread id (set during runtime)
         integer(C_INT), protected:: mpi_procs_per_node=0  !number of MPI processes per node (set by ENVIRONMENT), 0 means undefined
         integer(C_INT), protected:: mpi_proc_id_on_node=0 !internal process ID within a node: [0..mpi_procs_per_node-1] (set during runtime)
+!$OMP THREADPRIVATE(thread_id)
  !Accelerators:
   !NVidia GPU:
         integer(C_INT), protected:: gpus_found=0               !total number of NVidia GPUs found on the node (set during runtime)
@@ -128,12 +130,13 @@
          end subroutine MPI_Get_Displacement
         end interface
 !Visibility:
+        public MPI_Get_Displacement
         public dil_process_start
         public dil_process_finish
         public dil_global_process_id
         public dil_global_comm_size
         public dil_global_comm_barrier
-        public MPI_Get_Displacement
+        public dil_set_thread_id
         public file_handle
 #ifndef NO_OMP
         public lock_file
@@ -438,6 +441,14 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine dil_global_comm_barrier
+!---------------------------------------
+        subroutine dil_set_thread_id(id)
+         implicit none
+         integer(INT_MPI), intent(in):: id
+
+         thread_id=id
+         return
+        end subroutine dil_set_thread_id
 !----------------------------------------
         subroutine gpu_nvidia_probe(ierr) !SERIAL
 !This subroutine distributes GPUs available on a node among the MPI processes running

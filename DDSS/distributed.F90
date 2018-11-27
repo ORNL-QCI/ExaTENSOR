@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/26 (started 2015/03/18)
+!REVISION: 2018/11/27 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -85,7 +85,8 @@
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI & dil_basic
         use pack_prim
-!       Depends on stsubs.F90, timers.F90, extern_names.F90 in some procedures
+        use timers
+!       Depends on stsubs.F90, extern_names.F90 in some procedures
         implicit none
         private
 !EXPOSE some <service_mpi>:
@@ -101,6 +102,8 @@
         integer, private:: CONS_OUT=6     !default output for this module
         logical, private:: VERBOSE=.TRUE. !verbosity for errors
         integer, private:: DEBUG=1        !debugging mode
+ !MPI errors:
+        logical, private:: DDSS_MPI_ERR_FATAL=.TRUE. !if .TRUE., MPI errors will cause termination
  !Packing/unpacking:
         integer(INT_MPI), parameter, public:: ELEM_PACK_SIZE=max(8,max(C_SIZE_T,max(INT_ADDR,INT_COUNT))) !packing size for integers/logicals/reals/C_pointers/C_sizes
  !Data alignment:
@@ -404,7 +407,7 @@
         case(NO_TYPE)
          data_type_size=0
         case default
-         if(VERBOSE) write(CONS_OUT,'("#ERROR(distributed::data_type_size): Unknown data type: ",i11)') data_type
+         if(VERBOSE) write(CONS_OUT,'("#ERROR(distributed:data_type_size): Unknown data type: ",i11)') data_type
          errc=1; data_type_size=-1
         end select
         if(errc.eq.0) then
@@ -412,7 +415,7 @@
           data_type_size=data_type_size/8 !convert bits to bytes
           if(mod(data_type_size,DDSS_DATA_TYPE_ALIGN).ne.0) errc=2 !data type size must be a multiple of DDSS_DATA_TYPE_ALIGN
          else
-          if(VERBOSE) write(CONS_OUT,'("#ERROR(distributed::data_type_size): Fractional type size detected: ",i11)') data_type_size
+          if(VERBOSE) write(CONS_OUT,'("#ERROR(distributed:data_type_size): Fractional type size detected: ",i11)') data_type_size
           errc=3 !fractional data type size is not allowed
          endif
         endif
@@ -542,7 +545,7 @@
 
          errc=0
          dev=6; if(present(dev_out)) dev=dev_out
-         write(dev,'("RankWin{",i11,1x,i4,1x,i2,": Ref = ",i4,"; Sync = ",i11,"}")')&
+         write(dev,'("WinRank{",i13,1x,i5,1x,"{",i2,"}: Ref = ",i4,"; Sync = ",i11,"}")')&
          &this%Window,this%Rank,this%LockType,this%RefCount,this%LastSync
          flush(dev)
          if(present(ierr)) ierr=errc
@@ -562,7 +565,7 @@
         do i=1,MAX_ONESIDED_REQS-1; this%NextEntry(i)=i+1; enddo; this%NextEntry(MAX_ONESIDED_REQS)=0 !linked list
         do i=1,MAX_ONESIDED_REQS; call this%RankWins(i)%init(); enddo !init all entries to null
         if(DEBUG.ge.2) then
-         write(jo,'("#DEBUG(distributed::RankWinList.Clean)[",i7,"]: (rank,win)-list cleaned.")') impir
+         write(jo,'("#DEBUG(distributed:RankWinList.Clean)[",i7,"]: (rank,win)-list cleaned.")') impir
          flush(jo)
         endif
         if(present(ierr)) ierr=0
@@ -605,8 +608,8 @@
           endif
          enddo
          if(DEBUG.ge.1.and.RankWinListTest.gt.0) then
-          write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: Existing (window,rank) entry found: ",i5,": ",i13,1x,i7)')&
-          &impir,RankWinListTest,win,rank
+          write(jo,'("#DEBUG(distributed:RankWinList.Test)[",i5,":",i3,"]: Existing (window,rank) found: ",i5,": ",i13,1x,i7)')&
+          &impir,thread_id,RankWinListTest,win,rank
           flush(jo)
          endif
          if(RankWinListTest.le.0.and.apnd) then !append if not found
@@ -630,8 +633,8 @@
            if(errc.eq.0) then
             RankWinListTest=j
             if(DEBUG.ge.1) then
-             write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: New (window,rank) registered: ",i5,": ",i13,1x,i7)')&
-             &impir,RankWinListTest,win,rank
+             write(jo,'("#DEBUG(distributed:RankWinList.Test)[",i5,":",i3,"]: New (window,rank) registered: ",i5,": ",i13,1x,i7)')&
+             &impir,thread_id,RankWinListTest,win,rank
              flush(jo)
             endif
            else
@@ -669,8 +672,8 @@
           if(this%FirstFree.gt.0) this%PrevEntry(this%FirstFree)=entry_num
           this%FirstFree=entry_num; this%NumEntries=this%NumEntries-1
           if(DEBUG.ge.1) then
-           write(jo,'("#DEBUG(distributed::RankWinList.Del)[",i7,"]: (window,rank) entry ",i5," deleted: ")',ADVANCE='NO')&
-           &impir,entry_num
+           write(jo,'("#DEBUG(distributed:RankWinList.Del)[",i5,":",i3,"]: (window,rank) entry ",i5," deleted: ")',ADVANCE='NO')&
+           &impir,thread_id,entry_num
            call this%RankWins(entry_num)%print_it(dev_out=jo)
            flush(jo)
           endif
@@ -707,8 +710,8 @@
            dd%TransID=this%TransCount*int(dir,8) !transfer id = global transaction ID * data transfer sign
            this%RankWins(rwe)%RefCount=this%RankWins(rwe)%RefCount+1
            if(DEBUG.ge.1) then
-            write(jo,'("#DEBUG(distributed::RankWinList.NewTrans)[",i7,"]: New transfer ",i13,": ")',ADVANCE='NO')&
-            &impir,dd%TransID
+            write(jo,'("#DEBUG(distributed:RankWinList.NewTrans)[",i5,":",i3,"]: New transfer ",i13,": ")',ADVANCE='NO')&
+            &impir,thread_id,dd%TransID
             call this%RankWins(rwe)%print_it(dev_out=jo)
             flush(jo)
            endif
@@ -719,7 +722,7 @@
           errc=2
          endif
         else
-         if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::RankWinList.NewTrans): Max int8 MPI message count exceeded!")')
+         if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed:RankWinList.NewTrans): Max int8 MPI message count exceeded!")')
          errc=3
          call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
         endif
@@ -967,7 +970,7 @@
             this%WinMPI%Dynamic=.TRUE.
             this%WinSize=0
             if(DEBUG.ge.2) then
-             write(jo,'("#DEBUG(distributed::DataWin.Create)[",i7,"]: MPI window created: ",i11,1x,i11,1x,i2,1x,i11)')&
+             write(jo,'("#DEBUG(distributed:DataWin.Create)[",i7,"]: MPI window created: ",i11,1x,i11,1x,i2,1x,i11)')&
              &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
              flush(jo)
             endif
@@ -999,14 +1002,14 @@
         if(errc.eq.0) then
          if(this%WinSize.eq.0) then !MPI window must be empty
           if(DEBUG.ge.2) then
-           write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window to destroy: ",i11,1x,i11,1x,i2,1x,i11)')&
+           write(jo,'("#DEBUG(distributed:DataWin.Destroy)[",i7,"]: MPI window to destroy: ",i11,1x,i11,1x,i2,1x,i11)')&
            &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
            flush(jo)
           endif
           call MPI_Win_free(this%WinMPI%Window,errc)
           if(errc.eq.0) then
            if(DEBUG.ge.2) then
-            write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window destroyed: ",i11,1x,i11,1x,i2,1x,i11)')&
+            write(jo,'("#DEBUG(distributed:DataWin.Destroy)[",i7,"]: MPI window destroyed: ",i11,1x,i11,1x,i2,1x,i11)')&
             &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
             flush(jo)
            endif
@@ -1046,9 +1049,9 @@
            if(errc.eq.0) then
             this%WinSize=this%WinSize+loc_size
             if(DEBUG.ge.1) then
-             call MPI_Get_displacement(loc_ptr,disp,ier); if(ier.ne.0) disp=-666
-             write(jo,'("#DEBUG(distributed::DataWin.Attach)[",i7,"]: Buffer attached: ",i11,1x,i11,1x,i13,": ",i18)')&
-             &impir,loc_size,this%WinMPI%Window,this%WinSize,disp
+             call MPI_Get_Displacement(loc_ptr,disp,ier); if(ier.ne.0) disp=-666
+             write(jo,'("#DEBUG(distributed:DataWin.Attach)[",i5,":",i3,"]: Buffer attached: ",i11,1x,i11,1x,i13,": ",i18)')&
+             &impir,thread_id,loc_size,this%WinMPI%Window,this%WinSize,disp
              flush(jo)
             endif
            else
@@ -1101,8 +1104,8 @@
            if(errc.eq.0) then
             this%WinSize=this%WinSize-loc_size
             if(DEBUG.ge.1) then
-             write(jo,'("#DEBUG(distributed::DataWin.Detach)[",i7,"]: Buffer detached: ",i11,1x,i11,1x,i13)')&
-             &impir,loc_size,this%WinMPI%Window,this%WinSize
+             write(jo,'("#DEBUG(distributed:DataWin.Detach)[",i5,":",i3,"]: Buffer detached: ",i11,1x,i11,1x,i13)')&
+             &impir,thread_id,loc_size,this%WinMPI%Window,this%WinSize
              flush(jo)
             endif
            else
@@ -1144,7 +1147,7 @@
          call MPI_Win_sync(this%WinMPI%Window,errc)
          if(errc.eq.0) then
           if(DEBUG.ge.2) then
-           write(jo,'("#DEBUG(distributed::DataWin.Sync)[",i7,"]: MPI window synced: ",i11,1x,i11)')&
+           write(jo,'("#DEBUG(distributed:DataWin.Sync)[",i7,"]: MPI window synced: ",i11,1x,i11)')&
            &impir,this%WinMPI%Window,this%WinSize
            flush(jo)
           endif
@@ -1187,7 +1190,7 @@
              this%CommMPI=comm_mpi
              this%SpaceName=space_name(1:min(len_trim(space_name),DISTR_SPACE_NAME_LEN)) !alphabetic name for convenience
              if(DEBUG.ge.2) then
-              write(jo,'("#DEBUG(distributed::DistrSpace.Create)[",i7,"]: Distributed space created: ",i11,1x,i4,1x,A32)')&
+              write(jo,'("#DEBUG(distributed:DistrSpace.Create)[",i7,"]: Distributed space created: ",i11,1x,i4,1x,A32)')&
               &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),32))
               flush(jo)
              endif
@@ -1237,7 +1240,7 @@
              deallocate(this%DataWins,STAT=errc)
              if(errc.eq.0) then
               if(DEBUG.ge.2) then
-               write(jo,'("#DEBUG(distributed::DistrSpace.Destroy)[",i7,"]: Distributed space destroyed: ",i11,1x,i4,1x,A32)')&
+               write(jo,'("#DEBUG(distributed:DistrSpace.Destroy)[",i7,"]: Distributed space destroyed: ",i11,1x,i4,1x,A32)')&
                &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),32))
                flush(jo)
               endif
@@ -1430,7 +1433,7 @@
             this%TransID=0 !0 means "never assigned a Transfer ID"
             this%StatMPI=MPI_STAT_NONE
             this%ReqHandle=MPI_REQUEST_NULL
-            call MPI_Get_displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
+            call MPI_Get_Displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
            else
             errc=2
            endif
@@ -1589,8 +1592,8 @@
           if(rwe.gt.0.and.errc.eq.0) then
            rw_entry=>RankWinRefs%RankWins(rwe)
            if(DEBUG.ge.1) then
-            write(jo,'("#DEBUG(distributed::DataDescr.FlushData)[",i7,"]: Syncing transfer ",i13,": ")',ADVANCE='NO')&
-            &impir,this%TransID
+            write(jo,'("#DEBUG(distributed:DataDescr.FlushData)[",i5,":",i3,"]: Syncing transfer ",i13,": ")',ADVANCE='NO')&
+            &impir,thread_id,this%TransID
             call rw_entry%print_it(dev_out=jo)
             flush(jo)
            endif
@@ -1598,12 +1601,17 @@
             if(lcl) then !complete at origin only
              if(abs(this%TransID).gt.rw_entry%LastSync) then
               if(DEBUG.ge.1) then
-               write(jo,'("#DEBUG[",i7,"]: WIN_FLUSH_LOCAL: ")',ADVANCE='NO') impir
+               write(jo,'("#DEBUG(distributed:DataDescr.FlushData)[",i5,":",i3,"]: WIN_FLUSH_LOCAL: ")',ADVANCE='NO')&
+               &impir,thread_id
                call rw_entry%print_it(dev_out=jo)
                flush(jo)
               endif
               call MPI_Win_flush_local(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
-              synced=(errc.eq.0)
+              if(errc.ne.0.and.DDSS_MPI_ERR_FATAL) then
+               call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_flush_local failed!')
+              else
+               synced=(errc.eq.0)
+              endif
              endif
              if(errc.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED_ORIG
@@ -1614,12 +1622,16 @@
             else !complete at both origin and target
              if(abs(this%TransID).gt.rw_entry%LastSync) then
               if(DEBUG.ge.1) then
-               write(jo,'("#DEBUG[",i7,"]: WIN_FLUSH: ")',ADVANCE='NO') impir
+               write(jo,'("#DEBUG(distributed:DataDescr.FlushData)[",i5,":",i3,"]: WIN_FLUSH: ")',ADVANCE='NO') impir,thread_id
                call rw_entry%print_it(dev_out=jo)
                flush(jo)
               endif
               call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
-              synced=(errc.eq.0)
+              if(errc.ne.0.and.DDSS_MPI_ERR_FATAL) then
+               call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_flush failed!')
+              else
+               synced=(errc.eq.0)
+              endif
              endif
              if(errc.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED
@@ -1630,12 +1642,17 @@
             endif
            else !the last reference to this (rank,window): Mandatory UNLOCK
             if(DEBUG.ge.1) then
-             write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.flush): ")',ADVANCE='NO') impir
+             write(jo,'("#DEBUG(distributed.DataDescr.FlushData)[",i5,":",i3,"]: WIN_UNLOCK(.flush): ")',ADVANCE='NO')&
+             &impir,thread_id
              call rw_entry%print_it(dev_out=jo)
              flush(jo)
             endif
             call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
-            synced=(errc.eq.0)
+            if(errc.ne.0.and.DDSS_MPI_ERR_FATAL) then
+             call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_unlock failed!')
+            else
+             synced=(errc.eq.0)
+            endif
             if(errc.eq.0) then
              this%StatMPI=MPI_STAT_COMPLETED
              rw_entry%RefCount=rw_entry%RefCount-1
@@ -1649,7 +1666,7 @@
              nullify(rw_entry)
              call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
             elseif(rw_entry%RefCount.lt.0) then
-             if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.FlushData): Negative reference count: ",i12)')&
+             if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed:DataDescr.FlushData): Negative reference count: ",i12)')&
                          &rw_entry%RefCount
              nullify(rw_entry)
              errc=5
@@ -1712,7 +1729,7 @@
            if(rw_entry%RefCount.gt.0) then
             if(abs(this%TransID).gt.rw_entry%LastSync) then
              if(DEBUG.ge.1) then
-              write(jo,'("#DEBUG[",i7,"]: MPI_TEST: ")',ADVANCE='NO') impir
+              write(jo,'("#DEBUG(distributed:DataDescr.TestData)[",i5,":",i3,"]: MPI_TEST: ")',ADVANCE='NO') impir,thread_id
               call rw_entry%print_it(dev_out=jo)
               flush(jo)
              endif
@@ -1734,7 +1751,8 @@
             if(errc.eq.0) then
              if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
               if(DEBUG.ge.1) then
-               write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.test): ")',ADVANCE='NO') impir
+               write(jo,'("#DEBUG(distributed:DataDescr.TestData)[",i5,":",i3,"]: WIN_UNLOCK(.test): ")',ADVANCE='NO')&
+               &impir,thread_id
                call rw_entry%print_it(dev_out=jo)
                flush(jo)
               endif
@@ -1744,13 +1762,14 @@
                nullify(rw_entry)
                call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
               else
+               if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.TestData): MPI_Win_unlock failed!')
                errc=3
               endif
              endif
             endif
             if(associated(rw_entry)) nullify(rw_entry)
            else
-            if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.TestData): Invalid reference count: ",i12)')&
+            if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed:DataDescr.TestData): Invalid reference count: ",i12)')&
                         &rw_entry%RefCount
             nullify(rw_entry)
             errc=4
@@ -1790,7 +1809,7 @@
            if(rw_entry%RefCount.gt.0) then
             if(abs(this%TransID).gt.rw_entry%LastSync) then
              if(DEBUG.ge.1) then
-              write(jo,'("#DEBUG[",i7,"]: MPI_WAIT: ")',ADVANCE='NO') impir
+              write(jo,'("#DEBUG(distributed:DataDescr.WaitData)[",i5,":",i3,"]: MPI_WAIT: ")',ADVANCE='NO') impir,thread_id
               call rw_entry%print_it(dev_out=jo)
               flush(jo)
              endif
@@ -1808,7 +1827,8 @@
             if(errc.eq.0) then
              if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
               if(DEBUG.ge.1) then
-               write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.wait): ")',ADVANCE='NO') impir
+               write(jo,'("#DEBUG(distributed:DataDescr.WaitData)[",i5,":",i3,"]: WIN_UNLOCK(.wait): ")',ADVANCE='NO')&
+               &impir,thread_id
                call rw_entry%print_it(dev_out=jo)
                flush(jo)
               endif
@@ -1818,13 +1838,14 @@
                nullify(rw_entry)
                call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
               else
+               if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.WaitData): MPI_Win_unlock failed!')
                errc=3
               endif
              endif
             endif
             if(associated(rw_entry)) nullify(rw_entry)
            else
-            if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.WaitData): Invalid reference count: ",i12)')&
+            if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed:DataDescr.WaitData): Invalid reference count: ",i12)')&
                         &rw_entry%RefCount
             errc=4
             nullify(rw_entry)
@@ -1876,7 +1897,8 @@
                call modify_lock(rwe,errc) !modify the (rank,window) lock status if needed
                if(errc.eq.0) then
                 if(DEBUG.ge.1) then
-                 write(jo,'("#DEBUG[",i7,"]: Get: ",i18,1x,i9,": ")',ADVANCE='NO') impir,this%Offset,this%DataVol
+                 write(jo,'("#DEBUG(distributed:DataDescr.GetData)[",i5,":",i3,"]: Get: ",i18,1x,i9,": ")',ADVANCE='NO')&
+                 &impir,thread_id,this%Offset,this%DataVol
                  call RankWinRefs%RankWins(rwe)%print_it(dev_out=jo)
                  flush(jo)
                 endif
@@ -1947,7 +1969,7 @@
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*READ_SIGN.lt.0) then !communication direction change
           if(DEBUG.ge.1) then
-           write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.get): ")',ADVANCE='NO') impir
+           write(jo,'("#DEBUG(distributed:DataDescr.GetData)[",i5,":",i3,"]: WIN_UNLOCK(.get): ")',ADVANCE='NO') impir,thread_id
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
@@ -1956,12 +1978,13 @@
            rw_entry%LockType=NO_LOCK
            rw_entry%LastSync=RankWinRefs%TransCount
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Win_unlock failed!')
            jerr=1
           endif
          endif
          if(jerr.eq.0.and.rw_entry%LockType.eq.NO_LOCK) then
           if(DEBUG.ge.1) then
-           write(jo,'("#DEBUG[",i7,"]: WIN_LOCK(.get): ")',ADVANCE='NO') impir
+           write(jo,'("#DEBUG(distributed:DataDescr.GetData)[",i5,":",i3,"]: WIN_LOCK(.get): ")',ADVANCE='NO') impir,thread_id
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
@@ -1969,6 +1992,7 @@
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*READ_SIGN
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Win_lock failed!')
            jerr=2
           endif
          endif
@@ -1991,7 +2015,10 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call MPI_Get(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,jtarg,jv,MPI_REAL4,this%WinMPI%Window,jerr)
-           if(jerr.ne.0) exit
+           if(jerr.ne.0) then
+            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
+            exit
+           endif
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
@@ -2004,6 +2031,7 @@
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Rget failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
           endif
          endif
@@ -2025,7 +2053,10 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call MPI_Get(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,jtarg,jv,MPI_REAL8,this%WinMPI%Window,jerr)
-           if(jerr.ne.0) exit
+           if(jerr.ne.0) then
+            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
+            exit
+           endif
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
@@ -2038,6 +2069,7 @@
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Rget failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
           endif
          endif
@@ -2059,7 +2091,10 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call MPI_Get(c4_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,jtarg,jv,MPI_COMPLEX8,this%WinMPI%Window,jerr)
-           if(jerr.ne.0) exit
+           if(jerr.ne.0) then
+            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
+            exit
+           endif
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
@@ -2072,6 +2107,7 @@
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Rget failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
           endif
          endif
@@ -2093,7 +2129,10 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call MPI_Get(c8_arr(js:js+jv-1),jv,MPI_COMPLEX16,this%RankMPI,jtarg,jv,MPI_COMPLEX16,this%WinMPI%Window,jerr)
-           if(jerr.ne.0) exit
+           if(jerr.ne.0) then
+            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
+            exit
+           endif
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
@@ -2106,6 +2145,7 @@
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Rget failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
           endif
          endif
@@ -2147,7 +2187,8 @@
                call modify_lock(rwe,errc) !modify the (rank,window) lock status if needed
                if(errc.eq.0) then
                 if(DEBUG.ge.1) then
-                 write(jo,'("#DEBUG[",i7,"]: Accumulate: ",i18,1x,i9,": ")',ADVANCE='NO') impir,this%Offset,this%DataVol
+                 write(jo,'("#DEBUG(distributed:DataDescr.AccData)[",i5,":",i3,"]: Accumulate: ",i18,1x,i9,": ")',ADVANCE='NO')&
+                 &impir,thread_id,this%Offset,this%DataVol
                  call RankWinRefs%RankWins(rwe)%print_it(dev_out=jo)
                  flush(jo)
                 endif
@@ -2218,7 +2259,7 @@
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*WRITE_SIGN.lt.0) then !communication direction change
           if(DEBUG.ge.1) then
-           write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.acc): ")',ADVANCE='NO') impir
+           write(jo,'("#DEBUG(distributed:DataDescr.AccData)[",i5,":",i3,"]: WIN_UNLOCK(.acc): ")',ADVANCE='NO') impir,thread_id
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
@@ -2227,12 +2268,13 @@
            rw_entry%LockType=NO_LOCK
            rw_entry%LastSync=RankWinRefs%TransCount
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_unlock failed!')
            jerr=1
           endif
          endif
          if(jerr.eq.0.and.rw_entry%LockType.eq.NO_LOCK) then
           if(DEBUG.ge.1) then
-           write(jo,'("#DEBUG[",i7,"]: WIN_LOCK(.acc): ")',ADVANCE='NO') impir
+           write(jo,'("#DEBUG(distributed:DataDescr.AccData)[",i5,":",i3,"]: WIN_LOCK(.acc): ")',ADVANCE='NO') impir,thread_id
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
@@ -2240,6 +2282,7 @@
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*WRITE_SIGN
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_lock failed!')
            jerr=2
           endif
          endif
@@ -2263,7 +2306,10 @@
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call MPI_Accumulate(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,jtarg,jv,MPI_REAL4,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
-           if(jerr.ne.0) exit
+           if(jerr.ne.0) then
+            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
+            exit
+           endif
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
@@ -2277,6 +2323,7 @@
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Raccumulate failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
           endif
          endif
@@ -2299,7 +2346,10 @@
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call MPI_Accumulate(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,jtarg,jv,MPI_REAL8,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
-           if(jerr.ne.0) exit
+           if(jerr.ne.0) then
+            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
+            exit
+           endif
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
@@ -2313,6 +2363,7 @@
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Raccumulate failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
           endif
          endif
@@ -2335,7 +2386,10 @@
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call MPI_Accumulate(c4_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,jtarg,jv,MPI_COMPLEX8,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
-           if(jerr.ne.0) exit
+           if(jerr.ne.0) then
+            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
+            exit
+           endif
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
@@ -2349,6 +2403,7 @@
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Raccumulate failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
           endif
          endif
@@ -2371,7 +2426,10 @@
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call MPI_Accumulate(c8_arr(js:js+jv-1),jv,MPI_COMPLEX16,this%RankMPI,jtarg,jv,MPI_COMPLEX16,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
-           if(jerr.ne.0) exit
+           if(jerr.ne.0) then
+            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
+            exit
+           endif
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
@@ -2385,6 +2443,7 @@
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Raccumulate failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
           endif
          endif
@@ -2783,7 +2842,6 @@
 !It is safe to wait upon completion of the same message twice and more,
 !unless <ignore_old>=TRUE. In the latter case, the message is assumed
 !never waited upon completion before.
-        use timers, only: thread_wtime
         implicit none
         class(CommHandle_t), intent(inout):: this        !inout: communication handle
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
@@ -2825,7 +2883,6 @@
 ! # MPI_STAT_PROGRESS_REQ: Communication is still in progress (with a request handle);
 ! # MPI_STAT_COMPLETED_ORIG: Communication has completed locally (MPI P2P semantics);
 !A negative return status indicates an error.
-        use timers, only: thread_wtime
         implicit none
         integer(INT_MPI):: msg_stat                      !out: message status
         class(CommHandle_t), intent(inout):: this        !inout: communication handle
@@ -3090,7 +3147,6 @@
 !the DEFAULT_MPI_TAG will be used as the P2P message tag. Note that
 !in case of broadcast all other participating processes must call
 !the corresponding receive method!
-        use timers, only: thread_wtime
         implicit none
         class(PackCont_t), intent(in), target:: this       !in: non-empty data packet container
         type(CommHandle_t), intent(inout):: comm_hl        !out: communication handle
@@ -3189,7 +3245,6 @@
 !If <bcast> is TRUE, a broadcast from <send_rank> is assumed. If <sync> is TRUE,
 !the receive will be completed here, otherwise one will need to test
 !the communication handle <comm_hl> for completion later.
-        use timers, only: thread_wtime
         implicit none
         class(PackCont_t), intent(inout), target:: this    !in: data packet container
         type(CommHandle_t), intent(inout):: comm_hl        !out: communication handle
