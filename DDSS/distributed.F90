@@ -604,6 +604,11 @@
            exit
           endif
          enddo
+         if(DEBUG.ge.1.and.RankWinListTest.gt.0) then
+          write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: Existing (window,rank) entry found: ",i5,": ",i13,1x,i7)')&
+          &impir,RankWinListTest,win,rank
+          flush(jo)
+         endif
          if(RankWinListTest.le.0.and.apnd) then !append if not found
           if(DEBUG.ge.2) then
            write(jo,'("#DEBUG(distribiuted::RankWinList.Test)[",i7,"]: Registering new (rank,window) entry: "'//&
@@ -625,8 +630,8 @@
            if(errc.eq.0) then
             RankWinListTest=j
             if(DEBUG.ge.1) then
-             write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: New (window,rank) registered: ",i13,1x,i7)')&
-             &impir,win,rank
+             write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: New (window,rank) registered: ",i5,": ",i13,1x,i7)')&
+             &impir,RankWinListTest,win,rank
              flush(jo)
             endif
            else
@@ -664,7 +669,8 @@
           if(this%FirstFree.gt.0) this%PrevEntry(this%FirstFree)=entry_num
           this%FirstFree=entry_num; this%NumEntries=this%NumEntries-1
           if(DEBUG.ge.1) then
-           write(jo,'("#DEBUG(distributed::RankWinList.Del)[",i7,"]: (window,rank) deleted: ")',ADVANCE='NO') impir
+           write(jo,'("#DEBUG(distributed::RankWinList.Del)[",i7,"]: (window,rank) entry ",i5," deleted: ")',ADVANCE='NO')&
+           &impir,entry_num
            call this%RankWins(entry_num)%print_it(dev_out=jo)
            flush(jo)
           endif
@@ -1640,15 +1646,17 @@
            if(errc.eq.0) then
             if(synced) rw_entry%LastSync=RankWinRefs%TransCount !update the last sync event for this (rank,win)
             if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
+             nullify(rw_entry)
              call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
             elseif(rw_entry%RefCount.lt.0) then
              if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.FlushData): Negative reference count: ",i12)')&
                          &rw_entry%RefCount
+             nullify(rw_entry)
              errc=5
              call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
             endif
            endif
-           nullify(rw_entry)
+           if(associated(rw_entry)) nullify(rw_entry)
           else
            errc=6
           endif
@@ -1733,16 +1741,18 @@
               call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
               if(errc.eq.0) then
                this%StatMPI=MPI_STAT_COMPLETED
+               nullify(rw_entry)
                call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
               else
                errc=3
               endif
              endif
             endif
-            nullify(rw_entry)
+            if(associated(rw_entry)) nullify(rw_entry)
            else
             if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.TestData): Invalid reference count: ",i12)')&
                         &rw_entry%RefCount
+            nullify(rw_entry)
             errc=4
             call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
            endif
@@ -1805,17 +1815,19 @@
               call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
               if(errc.eq.0) then
                this%StatMPI=MPI_STAT_COMPLETED
+               nullify(rw_entry)
                call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
               else
                errc=3
               endif
              endif
             endif
-            nullify(rw_entry)
+            if(associated(rw_entry)) nullify(rw_entry)
            else
             if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.WaitData): Invalid reference count: ",i12)')&
                         &rw_entry%RefCount
             errc=4
+            nullify(rw_entry)
             call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
            endif
           else
