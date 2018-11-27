@@ -100,7 +100,7 @@
         integer(INTD), private:: MAX_RESOURCER_INSTR=64   !max number of instructions during a single new resource allocation phase before passing resourced instructions to Communicator
         real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3  !max time spent in a single new resource allocation phase
  !Communicator:
-        logical, private:: COMMUNICATOR_REQUEST=.TRUE.          !switches between normal and request-based one-sided communication semantics
+        logical, private:: COMMUNICATOR_REQUEST=.FALSE.         !switches between normal and request-based one-sided communication semantics
         logical, private:: COMMUNICATOR_BLOCKING=.FALSE.        !switches between blocking and non-blocking one-sided communication semantics
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=16 !max number of outstanding prefetches issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=8     !max number of outstanding uploads issued by Communicator
@@ -2661,7 +2661,7 @@
 
          if(this%is_active(errc)) then
           if(errc.eq.0) then
-           call this%lock()
+           call this%lock() !`This lock includes blocking communication time
            if(this%is_located(errc,remote=remot)) then
             if(errc.eq.0) then
              if(remot) then
@@ -2690,6 +2690,7 @@
                        else
                         if(COMMUNICATOR_BLOCKING) then
                          call descr%get_data(cptr,errc,MPI_ASYNC_NOT)
+                         if(associated(this%cache_entry)) call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
                         else
                          call descr%get_data(cptr,errc,MPI_ASYNC_NRM)
                         endif
@@ -2777,7 +2778,7 @@
 
          if(this%is_active(errc)) then
           if(errc.eq.0) then
-           call this%lock()
+           call this%lock() !`This lock includes blocking communication time
            temporary=this%is_temporary(errc,accumulator=accumulator)
            if(errc.eq.0) then
             if(.not.(temporary.and.(.not.accumulator))) then !non-accumulator temporary tensors do not carry DDSS descriptors and do not require upload
@@ -2806,6 +2807,8 @@
                       else
                        if(COMMUNICATOR_BLOCKING) then
                         call descr%acc_data(cptr,errc,MPI_ASYNC_NOT)
+                        if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                        call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-13 !local buffer has been accumulated, thus must be reset to zero
                        else
                         call descr%acc_data(cptr,errc,MPI_ASYNC_NRM)
                        endif
@@ -2927,11 +2930,7 @@
 !$OMP END CRITICAL (IO)
                   flush(CONS_OUT)
                  endif
-                 if(tw) then
-                  call descr%flush_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-9; endif
-                 else
-                  res=.TRUE.
-                 endif
+                 call descr%flush_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-9; endif
                  if(DEBUG.gt.1) then
 !$OMP CRITICAL (IO)
                   write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Finished wait on MPI communication without request",'//&
@@ -2993,15 +2992,16 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (can be empty)
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-         logical:: delivered
+!        logical:: delivered
 
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock()
            if(associated(this%resource)) then
             if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
-             delivered=this%sync(errc,wait=.TRUE.)
-             if((.not.delivered).or.(errc.ne.0)) errc=-5
+             !delivered=this%sync(errc,wait=.TRUE.) !`Impossible to complete communication by another thread
+             !if((.not.delivered).or.(errc.ne.0)) errc=-5
+             errc=-5
             endif
             if(errc.eq.0) then
              if(associated(this%cache_entry)) then
@@ -3030,13 +3030,14 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,ier
-         logical:: delivered
+!        logical:: delivered
 
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
-            delivered=this%sync(errc,wait=.TRUE.)
-            if((.not.delivered).or.(errc.ne.0)) errc=-4
+            !delivered=this%sync(errc,wait=.TRUE.) !`Impossible to complete communication by another thread
+            !if((.not.delivered).or.(errc.ne.0)) errc=-4
+            errc=-4
            endif
            this%talsh_tens=>NULL()
            call this%release_rsc(ier); if(ier.ne.0.and.errc.eq.0) errc=-3

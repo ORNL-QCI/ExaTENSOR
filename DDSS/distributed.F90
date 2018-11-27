@@ -101,9 +101,9 @@
  !Output:
         integer, private:: CONS_OUT=6     !default output for this module
         logical, private:: VERBOSE=.TRUE. !verbosity for errors
-        integer, private:: DEBUG=1        !debugging mode
+        integer, private:: DEBUG=0        !debugging mode
  !MPI errors:
-        logical, private:: DDSS_MPI_ERR_FATAL=.TRUE. !if .TRUE., MPI errors will cause termination
+        logical, private:: DDSS_MPI_ERR_FATAL=.TRUE. !if .TRUE., MPI errors will cause termination, otherwise just error code
  !Packing/unpacking:
         integer(INT_MPI), parameter, public:: ELEM_PACK_SIZE=max(8,max(C_SIZE_T,max(INT_ADDR,INT_COUNT))) !packing size for integers/logicals/reals/C_pointers/C_sizes
  !Data alignment:
@@ -1642,7 +1642,7 @@
             endif
            else !the last reference to this (rank,window): Mandatory UNLOCK
             if(DEBUG.ge.1) then
-             write(jo,'("#DEBUG(distributed.DataDescr.FlushData)[",i5,":",i3,"]: WIN_UNLOCK(.flush): ")',ADVANCE='NO')&
+             write(jo,'("#DEBUG(distributed:DataDescr.FlushData)[",i5,":",i3,"]: WIN_UNLOCK(.flush): ")',ADVANCE='NO')&
              &impir,thread_id
              call rw_entry%print_it(dev_out=jo)
              flush(jo)
