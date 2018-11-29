@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/14
+!REVISION: 2018/11/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -242,7 +242,7 @@
          integer(INTD), private:: use_count=0                   !use count: Number of active pointers to this tensor cache entry explicitly returned by the tensor cache
          integer(INTD), private:: read_write_count=0            !read/write count: Number of issued tensor instructions which refer to this tensor cache entry as input (positive) or output (negative)
          integer(INTD), private:: read_write_def_count=0        !deferred read/write count: Number of deferred tensor instructions which refer to this tensor cache entry as input (positive) or output (negative)
-         integer(INTD), private:: temp_count=0                  !temporary count: Number of temporary tensors stemmed from this tensor cache entry (used for output rename)
+         integer(INTD), private:: temp_count=0                  !temporary count: Number of temporary tensors stemmed from this tensor cache entry used for output rename for persistent tensors OR number of active accumulates for accumulator tensors
          logical, private:: up_to_date=.FALSE.                  !up-to-date flag (TRUE means the tensor is defined, that is, neither undefined nor being updated)
          logical, private:: persistent=.FALSE.                  !persistency flag (persistent cache entries can only be evicted via an explicit TENS_DESTROY)
 #ifndef NO_OMP
@@ -270,7 +270,8 @@
           procedure, public:: reset_rw_counter=>TensCacheEntryResetRwCounter  !resets the read/write access counter
           procedure, public:: reset_rw_counters=>TensCacheEntryResetRwCounters!resets the read/write access counter by providing both new read and write counters separately
           procedure, public:: reset_temp_count=>TensCacheEntryResetTempCount  !resets the temporary count to zero
-          procedure, public:: incr_temp_count=>TensCacheEntryIncrTempCount    !increments the temporary count (cannot be decremented, unless reset to zero)
+          procedure, public:: incr_temp_count=>TensCacheEntryIncrTempCount    !increments the temporary count
+          procedure, public:: decr_temp_count=>TensCacheEntryDecrTempCount    !decrements the temporary count
           procedure, public:: get_temp_count=>TensCacheEntryGetTempCount      !returns the current temporary count
           procedure, public:: set_up_to_date=>TensCacheEntrySetUpToDate       !sets/resets the up-to-date status
           procedure, public:: is_up_to_date=>TensCacheEntryIsUpToDate         !returns whether or not the cache entry data is up-to-date
@@ -441,6 +442,7 @@
         private TensCacheEntryResetRwCounters
         private TensCacheEntryResetTempCount
         private TensCacheEntryIncrTempCount
+        private TensCacheEntryDecrTempCount
         private TensCacheEntryGetTempCount
         private TensCacheEntrySetUpToDate
         private TensCacheEntryIsUpToDate
@@ -1513,6 +1515,16 @@
          this%temp_count=this%temp_count+1
          return
         end subroutine TensCacheEntryIncrTempCount
+!---------------------------------------------------
+        subroutine TensCacheEntryDecrTempCount(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+
+!!!$OMP ATOMIC UPDATE SEQ_CST
+!$OMP ATOMIC UPDATE
+         this%temp_count=this%temp_count-1
+         return
+        end subroutine TensCacheEntryDecrTempCount
 !--------------------------------------------------------------
         function TensCacheEntryGetTempCount(this) result(count)
          implicit none
