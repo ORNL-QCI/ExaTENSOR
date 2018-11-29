@@ -35,9 +35,9 @@ export OMP_PLACES_TITAN="{1},{3},{5},{7,9},{0:8:2},{11},{13},{15}"   #Titan 16-c
 export OMP_PLACES_POWER9="{1},{3},{5},{7,9},{0:84:2},{11},{13},{15}" #Summit 21-core Power9 socket thread binding (even logical cores do computing)
 export OMP_PLACES_KNL="{1},{3},{5},{7,9},{0:128:2},{11},{13},{15}"   #Percival 64-core KNL thread binding (even logical cores do computing)
 export OMP_PLACES=$OMP_PLACES_DEFAULT
-export OMP_PROC_BIND=close,spread,spread #nest1: Functional threads (DSVU)
-                                         #nest2: TAVP-WRK:Dispatcher spawns coarse-grain executors
-                                         #nest3: TAVP-WRK:Dispatcher:Executor spawns execution threads in CP-TAL kernels
+export OMP_PROC_BIND="close,spread,spread" #nest1: Functional threads (DSVU)
+                                           #nest2: TAVP-WRK:Dispatcher spawns coarse-grain executors
+                                           #nest3: TAVP-WRK:Dispatcher:Executor spawns execution threads in CP-TAL kernels
 #MKL specific:
 export MKL_NUM_THREADS_DEFAULT=1                #keep consistent with chosen OMP_PLACES!
 export MKL_NUM_THREADS_EOS=16                   #keep consistent with chosen OMP_PLACES!
