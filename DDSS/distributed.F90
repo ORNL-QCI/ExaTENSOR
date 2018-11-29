@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/27 (started 2015/03/18)
+!REVISION: 2018/11/29 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2815,7 +2815,7 @@
 !case the handle will be cleaned anyways.
         implicit none
         class(CommHandle_t), intent(inout):: this        !inout: communication handle
-        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success) or TRY_LATER
         logical, intent(in), optional:: force            !in: if TRUE, cleaning will be enforced
         integer(INT_MPI):: errc
         logical:: frc
@@ -2961,7 +2961,7 @@
         implicit none
         class(PackCont_t), intent(inout):: this                             !inout: data packet container
         integer(INT_MPI), intent(in):: buf_len                              !in: buffer length (in integers of kind ELEM_PACK_SIZE)
-        integer(INT_MPI), intent(inout), optional:: ierr                    !out: error code (0:success)
+        integer(INT_MPI), intent(inout), optional:: ierr                    !out: error code (0:success) or TRY_LATER
         integer(ELEM_PACK_SIZE), target, contiguous, optional:: ext_buf(1:) !in: external buffer
         logical, intent(in), optional:: resize_it                           !in: if TRUE, a previously allocated/associated buffer will be released
         integer(INT_MPI):: errc
