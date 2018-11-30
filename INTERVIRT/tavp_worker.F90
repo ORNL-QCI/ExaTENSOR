@@ -389,10 +389,11 @@
          integer(INTD), allocatable, public:: amd_list(:)               !list of available AMD GPU
          integer(INTD), allocatable, public:: mic_list(:)               !list of available INTEL MIC
         end type tavp_wrk_dispatcher_conf_t
- !TAVP-WRK:
+ !TAVP-WRK (order of DSVU matters):
         type, extends(dsvp_t), public:: tavp_wrk_t
          type(tens_cache_t), private:: tens_cache                 !tensor argument cache (SHARED RESOURCE!)
          type(DistrSpace_t), private:: addr_space                 !global (distributed) address space
+         integer(INTD), private:: channel_in=0                    !channel number the current TAVP is viewed as from its manager's point
          type(tavp_wrk_decoder_t), private:: decoder              !DSVU: decodes incoming tensor instructions from the manager
          type(tavp_wrk_retirer_t), private:: retirer              !DSVU: retires processed tensor instructions and sends them back to the manager
          type(tavp_wrk_resourcer_t), private:: resourcer          !DSVU: allocates local resources for tensor instructions (only for defined tensor operands)
@@ -5249,7 +5250,7 @@
          implicit none
          class(tavp_wrk_decoder_t), intent(inout):: this !inout: TAVP-WRK decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid,num_packets,opcode,sts,port_id,i,j,uid
+         integer(INTD):: errc,ier,thid,num_packets,opcode,sts,port_id,i,j,uid,channel
          logical:: active,stopping,new
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
@@ -5273,11 +5274,11 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-48
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-49
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-47
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-48
 !Initialize the control list:
-         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-46
+         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-47
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -5286,22 +5287,23 @@
 !$OMP ATOMIC UPDATE
           tavp%units_active=tavp%units_active+1
 !$OMP FLUSH
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-45
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-46
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-44
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-45
          endif
 !Initialize the tensor cache dump list iterator:
-         ier=dumpi%init(dump_cache); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-43
+         ier=dumpi%init(dump_cache); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-44
 !Work loop:
          active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
           if(.not.stopping) then
  !Receive new bytecode (if posted):
-           call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-42; exit wloop; endif
+           call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-43; exit wloop; endif
            new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,tag=TAVP_DISPATCH_TAG,comm=this%source_comm)
-           if(ier.ne.0.and.errc.eq.0) then; errc=-41; exit wloop; endif
+           if(ier.ne.0.and.errc.eq.0) then; errc=-42; exit wloop; endif
            if(new) then !new bytecode is available
-            call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-40; exit wloop; endif
+            call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-41; exit wloop; endif
+            channel=this%bytecode%get_tag(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-40; exit wloop; endif
             num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-39; exit wloop; endif
             if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
@@ -5311,6 +5313,8 @@
              flush(CONS_OUT)
             endif
             if(num_packets.gt.0) then
+!$OMP ATOMIC WRITE
+             tavp%channel_in=channel
  !Decode new bytecode:
              ier=this%ctrl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
              ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-37; exit wloop; endif
@@ -5837,7 +5841,7 @@
          implicit none
          class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid,i,l,n,opcode,sts,errcode,nce,num_processed,uid
+         integer(INTD):: errc,ier,thid,i,l,n,opcode,sts,errcode,nce,num_processed,uid,channel
          logical:: active,stopping,pending,evicted
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
@@ -5860,9 +5864,9 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-36
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-37
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-36
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -5871,16 +5875,16 @@
 !$OMP ATOMIC UPDATE
           tavp%units_active=tavp%units_active+1
 !$OMP FLUSH
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-34
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-33
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-34
          endif
 !Work loop:
          active=((errc.eq.0).and.(this%retire_comm.ne.MPI_COMM_NULL)); stopping=(.not.active); pending=.FALSE.
          wloop: do while(active)
  !Get new instructions from Resourcer (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
-          ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-33; exit wloop; endif
+          ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
 !$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer unit ",i2," received ",i6," instructions from Resourcer")')&
@@ -5891,36 +5895,36 @@
           endif
  !Test full completion and encode the retired tensor instructions into bytecode:
           num_processed=0; pending=.FALSE.
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
           if(this%iqueue%get_status(ier).eq.GFC_IT_ACTIVE) then
            do while(ier.eq.GFC_SUCCESS.and.num_processed.lt.MAX_RETIRER_BATCH)
-            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
+            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
             tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-28; exit wloop; endif !trap
-            sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
-            if(sts.lt.DS_INSTR_RELEASED.and.errc.eq.0) then; errc=-26; exit wloop; endif !trap
-            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
+            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-29; exit wloop; endif !trap
+            sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
+            if(sts.lt.DS_INSTR_RELEASED.and.errc.eq.0) then; errc=-27; exit wloop; endif !trap
+            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
             if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
-             if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE.and.errc.eq.0) then; errc=-24; exit wloop; endif !trap: TENS_ACCUMULATE is a local TAVP-WRK instruction
+             if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE.and.errc.eq.0) then; errc=-25; exit wloop; endif !trap: TENS_ACCUMULATE is a local TAVP-WRK instruction
              if(sts.eq.DS_INSTR_RELEASED) then
               if(this%test_completion(tens_instr,ier)) then !test completion of substituted tensor instructions
                if(ier.eq.0) then
                 sts=DS_INSTR_RETIRED
-                call tens_instr%set_status(sts,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
+                call tens_instr%set_status(sts,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
                else
-                if(errc.eq.0) then; errc=-22; exit wloop; endif
+                if(errc.eq.0) then; errc=-23; exit wloop; endif
                endif
               else
-               if(ier.ne.0.and.errc.eq.0) then; errc=-21; exit wloop; endif
+               if(ier.ne.0.and.errc.eq.0) then; errc=-22; exit wloop; endif
                pending=.TRUE.
               endif
              endif
              if(sts.eq.DS_INSTR_RETIRED) then
               tens_instr%timings%time_retired=time_sys_sec()
               call this%bytecode%acquire_packet(instr_packet,ier,preclean=.TRUE.)
-              if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
-              call this%encode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-19; exit wloop; endif
-              call this%bytecode%seal_packet(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
+              if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+              call this%encode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-20; exit wloop; endif
+              call this%bytecode%seal_packet(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
               num_processed=num_processed+1
               call tavp%incr_rtrd_instr_counter(); if(errcode.ne.DSVP_SUCCESS) call tavp%incr_fail_instr_counter()
               if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[RETIRER:OUT]')
@@ -5940,12 +5944,15 @@
             endif
             ier=this%iqueue%next()
            enddo
-           if(ier.ne.GFC_SUCCESS.and.ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-17; exit wloop; endif !trap
+           if(ier.ne.GFC_SUCCESS.and.ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-18; exit wloop; endif !trap
            pending=(pending.or.(num_processed.ge.MAX_RETIRER_BATCH))
           endif
  !Send the retired bytecode back to the manager:
           if(this%bytecode%get_num_packets().gt.0) then
-           call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
+           call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
+!$OMP ATOMIC READ
+           channel=tavp%channel_in
+           call this%bytecode%set_tag(channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-16; exit wloop; endif
            call this%bytecode%send(this%retire_rank,comm_hl,ier,tag=TAVP_COLLECT_TAG,comm=this%retire_comm)
            if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
            call comm_hl%wait(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
