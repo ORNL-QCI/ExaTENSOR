@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/29
+!REVISION: 2018/11/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -5116,6 +5116,26 @@
 !Release queues:
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-3
 !Deallocate dispatched instruction counters:
+         do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+          if(this%dispatch_count(i).ne.0) then
+           if(VERBOSE) then
+!$OMP CRITICAL (IO)
+            write(CONS_OUT,'("#WARNING(TAVP-MNG:Dispatcher.shutdown): Non-zero dispatch counter for channel ",i4,": ",i11)')&
+            &i,this%dispatch_count(i)
+!$OMP END CRITICAL (IO)
+            flush(CONS_OUT)
+           endif
+          endif
+          if(this%issue_count(i).ne.0) then
+           if(VERBOSE) then
+!$OMP CRITICAL (IO)
+            write(CONS_OUT,'("#WARNING(TAVP-MNG:Dispatcher.shutdown): Non-zero issue counter for channel ",i4,": ",i11)')&
+            &i,this%issue_count(i)
+!$OMP END CRITICAL (IO)
+            flush(CONS_OUT)
+           endif
+          endif
+         enddo
          if(allocated(this%dispatch_flops)) deallocate(this%dispatch_flops)
          if(allocated(this%issue_count)) deallocate(this%issue_count)
          if(allocated(this%dispatch_count)) deallocate(this%dispatch_count)
@@ -5363,6 +5383,9 @@
             call this%bytecode(channel)%seal_packet(errc)
             if(errc.eq.PACK_SUCCESS) then
  !Update dispatch stats:
+             if(.not.(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST)) then !not a tensor instruction (will not be retired from the lower TAVP level)
+              call this%update_issue_count(channel,-1_INTL) !balance the issue counter instantly as this instruction will not come back from the lower TAVP level
+             endif
              call this%update_dispatch_count(channel,1_INTL) !update current instruction dispatch count for this channel
              call this%update_dispatch_flops(channel,tens_instr%get_flops(errc)) !update current Flop count for this channel `This counter needs to be decremented by cDecoder
              if(errc.ne.0) errc=-4
