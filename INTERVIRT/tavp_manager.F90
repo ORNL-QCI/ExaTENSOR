@@ -128,7 +128,8 @@
         integer(INTD), private:: MAX_DECOMPOSE_CHLD_INSTR=16384 !max number of created child instructions in the decomposition phase
         real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3      !max time (sec) before passing instructions to Dispatcher
  !Dispatcher:
-        logical, private:: DISPATCH_RANDOM=.TRUE.               !if TRUE the round-robin dispatch will be replaced by the random dispatch
+        logical, private:: DISPATCH_RANDOM=.FALSE.              !activates random dispatch for affinity-less tensor instructions
+        logical, private:: DISPATCH_BALANCE=.TRUE.              !activates load-balanced dispatch for affinity-less tensor instructions (DISPATCH_RANDOM must be off)
         integer(INTD), private:: MAX_ISSUE_INSTR=1024           !max number of tensor instructions in the bytecode issued to a child node
         integer(INTD), private:: MIN_ISSUE_INSTR=128            !min number of tensor instructions being currently processed by a child node
  !Collector:
@@ -4939,8 +4940,8 @@
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid,i,n,opcode,sts,iec,channel,uid
-         logical:: active,stopping,synced
+         integer(INTD):: errc,ier,thid,i,n,opcode,sts,iec,channel,alt_channel,uid
+         logical:: active,stopping,synced,defer
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
          class(tens_instr_t), pointer:: tens_instr
@@ -4960,41 +4961,41 @@
          allocate(this%bytecode(this%num_ranks),this%comm_hl(this%num_ranks),STAT=ier)
          if(ier.eq.0) then
           do i=1,this%num_ranks
-           call this%bytecode(i)%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-29
+           call this%bytecode(i)%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-34
           enddo
           do i=1,this%num_ranks
-           call this%comm_hl(i)%clean(ier); if(ier.ne.0.and.errc.eq.0) errc=-28
+           call this%comm_hl(i)%clean(ier); if(ier.ne.0.and.errc.eq.0) errc=-33
           enddo
          else
-          if(errc.eq.0) errc=-27
+          if(errc.eq.0) errc=-32
          endif
 !Allocate dispatched instruction counters:
          allocate(this%dispatch_count(this%num_ranks),this%issue_count(this%num_ranks),this%dispatch_flops(this%num_ranks),STAT=ier)
          if(ier.eq.0) then
           this%dispatch_count(:)=0; this%issue_count(:)=0; this%dispatch_flops(:)=0d0
          else
-          if(errc.eq.0) errc=-26
+          if(errc.eq.0) errc=-31
          endif
 !Reset the next channel for the round-robin dispatch:
          this%next_channel=1 !channels: [1:this%num_ranks]
 !Initialize queues:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-25
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-30
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-24
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-29
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-23
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-28
          endif
 !Check whether this TAVP-MNG is at the bottom of the TAVP-MNG hierarchy:
-         this%tavp_is_bottom=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-22
+         this%tavp_is_bottom=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-27
 !Work loop:
          active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
  !Receive newly created child subinstructions from Decomposer into port 0:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
-          ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
+          ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
 !$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher unit ",i2," received ",i9," instructions from Decomposer")')&
@@ -5004,18 +5005,19 @@
            flush(CONS_OUT)
           endif
  !Dispatch/encode the instructions into the bytecode buffers and issue bytecode to the child TAVPs:
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
+          defer=.FALSE.
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
           ier=this%iqueue%get_status()
           dloop: do while(ier.eq.GFC_IT_ACTIVE)
   !Extract an instruction:
-           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-17; exit wloop; endif !trap
-           sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
-           if((sts.ne.DS_INSTR_READY_TO_EXEC.or.iec.ne.DSVP_SUCCESS).and.errc.eq.0) then; errc=-15; exit wloop; endif !trap
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-22; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+           if((sts.ne.DS_INSTR_READY_TO_EXEC.or.iec.ne.DSVP_SUCCESS).and.errc.eq.0) then; errc=-20; exit wloop; endif !trap
            call tens_instr%set_status(DS_INSTR_NEW,ier,iec) !reset the instruction status to NEW before dispatching to the lower level
-           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
            if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Dispatcher): A new instruction is dispatched:")')
@@ -5025,12 +5027,39 @@
            endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
   !Encode a tensor instruction and dispatch it to the appropriate channel:
-            channel=this%map_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
+            channel=this%map_instr(tens_instr,ier,alt_channel); if(ier.ne.0.and.errc.eq.0) then; errc=-17; exit wloop; endif
             if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
-             errc=-11; exit wloop !trap
+             errc=-16; exit wloop !trap
             endif
-            call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
+            if(this%issue_count(channel).lt.MAX_ISSUE_INSTR*2) then !check whether the primary channel is full
+             call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-15; exit wloop; endif
+            else !try an alternative dispatch channel, if any
+             channel=alt_channel
+             if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
+              errc=-14; exit wloop !trap
+             endif
+             if(this%issue_count(channel).lt.MAX_ISSUE_INSTR*2) then !check whether the alternative channel is full
+              call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
+             else !defer tensor instruction if both channels are full
+              defer=.TRUE.
+              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,iec)
+              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
+              ier=this%iqueue%next()
+              if(ier.eq.GFC_NO_MOVE) then
+               ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
+              endif
+              ier=this%iqueue%get_status()
+              cycle dloop
+             endif
+            endif
            else !auxiliary/control instruction
+  !Test whether there have been deferred tensor instructions (if yes, try to dispatch them again before any CTRL/AUX instruction may follow):
+            if(defer) then
+             defer=.FALSE.
+             ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
+             ier=this%iqueue%get_status()
+             cycle dloop
+            endif
   !Encode an auxiliary/control instruction and dispatch it to all channels:
             do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
              call this%dispatch(tens_instr,i,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-9; exit wloop; endif
@@ -5068,9 +5097,12 @@
            ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
   !Issue (send) the bytecode to the child TAVPs:
            do i=1,this%num_ranks !loop over dispatch channels
-            n=this%bytecode(i)%get_num_packets(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
-            if(n.gt.0) then
-             if(n.ge.MAX_ISSUE_INSTR.or.this%issue_count(i).le.MIN_ISSUE_INSTR.or.this%iqueue%get_status().eq.GFC_IT_EMPTY) then
+!            n=this%bytecode(i)%get_num_packets(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
+!            if(n.gt.0) then
+!             if(n.ge.MAX_ISSUE_INSTR.or.this%issue_count(i).le.MIN_ISSUE_INSTR.or.this%iqueue%get_status().eq.GFC_IT_EMPTY) then
+            if(this%dispatch_count(i).gt.0) then
+             if(this%dispatch_count(i).ge.MAX_ISSUE_INSTR.or.this%issue_count(i).le.MIN_ISSUE_INSTR.or.&
+               &this%iqueue%get_status().eq.GFC_IT_EMPTY) then
               call this%issue(i,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-5; exit wloop; endif
              endif
             endif
@@ -5179,21 +5211,22 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDispatcherEncode
-!-------------------------------------------------------------------------------
-        function TAVPMNGDispatcherMapInstr(this,tens_instr,ierr) result(channel)
+!-------------------------------------------------------------------------------------------
+        function TAVPMNGDispatcherMapInstr(this,tens_instr,ierr,alt_channel) result(channel)
 !Maps a tensor instruction to a specific lower-level (child) TAVP,
 !based on the tensor argument locality and load imbalance.
          implicit none
-         integer(INTD):: channel                            !out: channel: TAVP id can be retrieved from this.dispatch_rank(channel)
+         integer(INTD):: channel                            !out: primary dispatch channel: TAVP id can be retrieved from this.dispatch_rank(channel)
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          class(tens_instr_t), intent(in):: tens_instr       !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(out), optional:: alt_channel !out: alternative dispatch channel (can be the same as the primary channel)
          integer(INTD):: errc,i,num_args
          class(ds_oprnd_t), pointer:: tens_oprnd
          integer(INTD):: owner_ids(0:MAX_TENSOR_OPERANDS-1)
          class(DataDescr_t), pointer:: descr
 
-         channel=-1 !negative value means undefined
+         channel=-1; alt_channel=-1 !negative value means undefined
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            num_args=tens_instr%get_num_operands(errc)
@@ -5240,7 +5273,7 @@
             endif
  !Decide which dispatch channel to map the instruction to:
             if(errc.eq.0.and.num_args.gt.0) then
-             channel=map_by_arg_order(errc); if(errc.ne.0) errc=-4
+             channel=map_by_arg_order(alt_channel,errc); if(errc.ne.0) errc=-4
             endif
            else
             errc=-3
@@ -5256,16 +5289,24 @@
 
         contains
 
-         function map_by_arg_order(jerr) result(chnl)
+         function map_by_arg_order(alt,jerr) result(chnl)
           !Selects the dispatch channel by argument locality with argument priority 0,1,2,3,...
           implicit none
-          integer(INTD):: chnl              !out: dispatch channel
+          integer(INTD):: chnl              !out: primary dispatch channel
+          integer(INTD), intent(out):: alt  !out: alternative dispatch channel
           integer(INTD), intent(out):: jerr !out: error code
           integer(INTD):: ja,jj
+          integer(INTL):: min_instr
           logical:: jf
 
-          jerr=0; chnl=-1
-          aloop: do ja=0,num_args-1
+          jerr=0; chnl=-1; alt=-1
+ !Determine the alternative channel first (based on dispatch load balancing):
+          alt=lbound(this%dispatch_rank,1); min_instr=this%dispatch_count(alt)
+          do jj=lbound(this%dispatch_rank,1)+1,ubound(this%dispatch_rank,1)
+           if(this%dispatch_count(jj).lt.min_instr) then; alt=jj; min_instr=this%dispatch_count(jj); endif
+          enddo
+ !Determine the primary channel based on the tensor argument affinity:
+          aloop: do ja=0,num_args-1 !tensor arguments have affinity priority from 0 to the last argument (0 is normally the destination argument)
            do jj=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
             if(owner_ids(ja).eq.this%dispatch_rank(jj)) then; chnl=jj; exit aloop; endif
            enddo
@@ -5274,7 +5315,11 @@
            if(DISPATCH_RANDOM) then
             chnl=map_by_random(jerr)
            else
-            chnl=map_by_round(jerr)
+            if(DISPATCH_BALANCE) then
+             chnl=alt
+            else
+             chnl=map_by_round(jerr)
+            endif
            endif
           endif
           return
