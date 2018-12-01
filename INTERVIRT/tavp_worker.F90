@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/29
+!REVISION: 2018/12/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -8139,9 +8139,9 @@
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher started as DSVU # ",i2,'//&
           &'" (thread ",i2,"): Host buffer size (B) = ",i15)') impir,uid,thid,this%host_buf_size
 !$OMP END CRITICAL (IO)
-          call print_omp_place_info(dev_out=CONS_OUT)
           flush(CONS_OUT)
          endif
+         call print_omp_place_info(dev_out=CONS_OUT)
 !Initialize queues and ports:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-40
 !Initialize the issued instruction queue:
@@ -8419,7 +8419,7 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: defined tensor instruction ready to be issued
          integer(INTD), intent(out), optional:: ierr        !out: error code, includes TRY_LATER
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id to issue the tensor instruction to
-         integer(INTD):: errc,ier,opcode
+         integer(INTD):: errc,ier,opcode,devid
          procedure(tavp_wrk_dispatch_proc_i), pointer:: iproc
 
          errc=0; ier=0
@@ -8432,7 +8432,12 @@
              if(present(dev_id)) then
               call iproc(this,tens_instr,ier,dev_id)
              else
-              call iproc(this,tens_instr,ier)
+              devid=map_tensor_instruction(errc)
+              if(errc.eq.0) then
+               call iproc(this,tens_instr,ier,devid)
+              else
+               errc=-6
+              endif
              endif
              if(ier.ne.0) then
               if(ier.eq.TRY_LATER) then; errc=ier; else; errc=-5; endif
@@ -8458,6 +8463,22 @@
          endif
          if(present(ierr)) ierr=errc
          return
+
+         contains
+
+          function map_tensor_instruction(jerr) result(dev)
+           integer(INTD):: dev               !out: flat device id
+           integer(INTD), intent(out):: jerr !out: error code
+
+           jerr=0; dev=-1
+           if(opcode.eq.TAVP_INSTR_TENS_CONTRACT) then
+            dev=talsh_flat_dev_id(DEV_HOST,0) !`Fix
+           else
+            dev=talsh_flat_dev_id(DEV_HOST,0)
+           endif
+           return
+          end function map_tensor_instruction
+
         end subroutine TAVPWRKDispatcherIssueInstr
 !---------------------------------------------------------------------------------
         function TAVPWRKDispatcherSyncInstr(this,tens_instr,ierr,wait) result(res)

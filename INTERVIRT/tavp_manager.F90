@@ -328,9 +328,9 @@
           procedure, public:: dispatch=>TAVPMNGDispatcherDispatch    !dispatches a DS instruction to a specific lower-level TAVP bytecode buffer
           procedure, public:: issue=>TAVPMNGDispatcherIssue          !issues (sends) instructions bytecode to a lower-level TAVP (async)
           procedure, public:: sync_issue=>TAVPMNGDispatcherSyncIssue !synchronizes asynchronous instruction bytecode issue to lower-level TAVPs
-          procedure, public:: update_issue_count=>TAVPMNGUpdateIssueCount !updates the current instruction issue count
-          procedure, public:: update_dispatch_count=>TAVPMNGUpdateDispatchCount !updates the current instruction dispatch count
-          procedure, public:: update_dispatch_flops=>TAVPMNGUpdateDispatchFlops !updates the current instruction dispatch Flop count
+          procedure, public:: update_issue_count=>TAVPMNGDispatcherUpdateIssueCount       !updates the current instruction issue count
+          procedure, public:: update_dispatch_count=>TAVPMNGDispatcherUpdateDispatchCount !updates the current instruction dispatch count
+          procedure, public:: update_dispatch_flops=>TAVPMNGDispatcherUpdateDispatchFlops !updates the current instruction dispatch Flop count
         end type tavp_mng_dispatcher_t
  !TAVP-MNG dispatcher configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_dispatcher_conf_t
@@ -510,9 +510,9 @@
         private TAVPMNGDispatcherDispatch
         private TAVPMNGDispatcherIssue
         private TAVPMNGDispatcherSyncIssue
-        private TAVPMNGUpdateIssueCount
-        private TAVPMNGUpdateDispatchCount
-        private TAVPMNGUpdateDispatchFlops
+        private TAVPMNGDispatcherUpdateIssueCount
+        private TAVPMNGDispatcherUpdateDispatchCount
+        private TAVPMNGDispatcherUpdateDispatchFlops
  !tavp_mng_replicator_t:
         private TAVPMNGReplicatorConfigure
         private TAVPMNGReplicatorStart
@@ -5577,8 +5577,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TAVPMNGDispatcherSyncIssue
-!------------------------------------------------------------------
-        subroutine TAVPMNGUpdateIssueCount(this,channel,delta,ierr)
+!----------------------------------------------------------------------------
+        subroutine TAVPMNGDispatcherUpdateIssueCount(this,channel,delta,ierr)
 !Updates the current instruction issue count.
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispatcher DSVU
@@ -5597,9 +5597,9 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TAVPMNGUpdateIssueCount
-!---------------------------------------------------------------------
-        subroutine TAVPMNGUpdateDispatchCount(this,channel,delta,ierr)
+        end subroutine TAVPMNGDispatcherUpdateIssueCount
+!-------------------------------------------------------------------------------
+        subroutine TAVPMNGDispatcherUpdateDispatchCount(this,channel,delta,ierr)
 !Updates the current instruction dispatch count.
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispatcher DSVU
@@ -5618,9 +5618,9 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TAVPMNGUpdateDispatchCount
-!---------------------------------------------------------------------
-        subroutine TAVPMNGUpdateDispatchFlops(this,channel,delta,ierr)
+        end subroutine TAVPMNGDispatcherUpdateDispatchCount
+!-------------------------------------------------------------------------------
+        subroutine TAVPMNGDispatcherUpdateDispatchFlops(this,channel,delta,ierr)
 !Updates the current instruction dispatch Flop count.
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispatcher DSVU
@@ -5639,7 +5639,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TAVPMNGUpdateDispatchFlops
+        end subroutine TAVPMNGDispatcherUpdateDispatchFlops
 ![tavp_mng_replicator_t]=====================================
         subroutine TAVPMNGReplicatorConfigure(this,conf,ierr)
 !Configures this DSVU.
