@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/30
+!REVISION: 2018/12/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -130,7 +130,7 @@
  !Dispatcher:
         logical, private:: DISPATCH_RANDOM=.FALSE.              !activates random dispatch for affinity-less tensor instructions
         logical, private:: DISPATCH_BALANCE=.TRUE.              !activates load-balanced dispatch for affinity-less tensor instructions (DISPATCH_RANDOM must be off)
-        integer(INTD), private:: MAX_ISSUE_INSTR=1024           !max number of tensor instructions in the bytecode issued to a child node
+        integer(INTD), private:: MAX_ISSUE_INSTR=512            !max number of tensor instructions in the bytecode issued to a child node
         integer(INTD), private:: MIN_ISSUE_INSTR=128            !min number of tensor instructions being currently processed by a child node
  !Collector:
         integer(INTD), private:: MAX_COLLECT_INSTR=8192         !max number of active tensor (sub-)instructions in the collection phase
@@ -5031,14 +5031,14 @@
             if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
              errc=-16; exit wloop !trap
             endif
-            if(this%issue_count(channel).lt.MAX_ISSUE_INSTR*2) then !check whether the primary channel is full
+            if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the primary channel is full
              call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-15; exit wloop; endif
             else !try an alternative dispatch channel, if any
              channel=alt_channel
              if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
               errc=-14; exit wloop !trap
              endif
-             if(this%issue_count(channel).lt.MAX_ISSUE_INSTR*2) then !check whether the alternative channel is full
+             if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the alternative channel is full
               call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
              else !defer tensor instruction if both channels are full
               defer=.TRUE.
@@ -5101,7 +5101,8 @@
 !            if(n.gt.0) then
 !             if(n.ge.MAX_ISSUE_INSTR.or.this%issue_count(i).le.MIN_ISSUE_INSTR.or.this%iqueue%get_status().eq.GFC_IT_EMPTY) then
             if(this%dispatch_count(i).gt.0) then
-             if(this%dispatch_count(i).ge.MAX_ISSUE_INSTR.or.this%issue_count(i).le.MIN_ISSUE_INSTR.or.&
+             if(this%dispatch_count(i).ge.MAX_ISSUE_INSTR.or.&
+               &(this%dispatch_count(i).ge.MIN_ISSUE_INSTR.and.this%issue_count(i).le.MIN_ISSUE_INSTR).or.&
                &this%iqueue%get_status().eq.GFC_IT_EMPTY) then
               call this%issue(i,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-5; exit wloop; endif
              endif
