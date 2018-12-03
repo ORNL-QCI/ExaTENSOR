@@ -1889,7 +1889,16 @@
                if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_read_count(),jerr)
                if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_write_count(),jerr)
                if(jerr.eq.0) call tensor%pack(instr_packet,jerr)
-               if(jerr.ne.0) then; jerr=-4; exit; endif
+               if(jerr.ne.0) then
+                if(VERBOSE) then
+!$OMP CRITICAL (IO)
+                 write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_instr_t.encode)[",i6,"]: TENS_CONTRACT: tens_rcrsv_t.pack error ",i11)')&
+                 &impir,jerr
+!$OMP END CRITICAL (IO)
+                 flush(CONS_OUT)
+                endif
+                jerr=-4; exit
+               endif
                tensor=>NULL()
               else
                tensor=>NULL(); call oprnd%unlock(); jerr=-3; exit
@@ -1912,7 +1921,7 @@
           endif
           if(jerr.ne.0.and.VERBOSE) then
 !$OMP CRITICAL (IO)
-           write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_instr_t.encode)[",i5,"]: TENS_CONTRACT instruction encoding error ",i11)')&
+           write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_instr_t.encode)[",i6,"]: TENS_CONTRACT instruction encoding error ",i11)')&
            &impir,jerr
 !$OMP END CRITICAL (IO)
            flush(CONS_OUT)
