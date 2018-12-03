@@ -116,6 +116,7 @@
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
+        integer(INTL), parameter, private:: MIN_BYTECODE_SPACE=16384                        !min required space (bytes) in the bytecode buffer
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=65536                        !max number of tensor instructions in a bytecode envelope
  !Locator:
         integer(INTD), private:: MAX_LOCATE_NEW_INSTR=4096  !max number of new tensor instructions per bytecode envelope in the locating cycle
@@ -5395,7 +5396,8 @@
          class(tens_instr_t), target, intent(inout):: tens_instr !in: defined tensor instruction
          integer(INTD), intent(in):: channel                     !in: dispatch channel: offset in this.bytecode(1:max)
          integer(INTD), intent(out), optional:: ierr             !out: error code
-         integer(INTD):: errc,opcode,i,n,home,pid
+         integer(INTD):: errc,opcode,i,n,home,pid,max_packs,num_packs
+         integer(INTL):: capacity,length
          type(obj_pack_t):: instr_packet
          integer(INTD), pointer:: out_oprs(:)
          class(ds_oprnd_t), pointer:: oprnd
@@ -5452,6 +5454,20 @@
          endif
          if(errc.eq.0) then
  !Encode and dispatch the tensor instruction to the corresponding bytecode channel:
+          max_packs=this%bytecode(channel)%get_max_packets()
+          num_packs=this%bytecode(channel)%get_num_packets()
+          capacity=this%bytecode(channel)%get_capacity()
+          length=this%bytecode(channel)%get_length()
+          if(num_packs.eq.max_packs.or.(capacity-length).lt.MIN_BYTECODE_SPACE) then
+           if(VERBOSE) then
+!$OMP CRITICAL (IO)
+            write(CONS_OUT,'("#WARNING(TAVP-MNG:Dispatcher.dispatch)[",i6,"]: Channel ",i3,'//&
+            &'" is running out of bytecode buffer capacity: ",i11,1x,i11,3x,i7,1x,i7)')&
+            &impir,channel,capacity,length,max_packs,num_packs
+!$OMP END CRITICAL (IO)
+            flush(CONS_OUT)
+           endif
+          endif
           call this%bytecode(channel)%acquire_packet(instr_packet,errc,preclean=.TRUE.)
           if(errc.eq.PACK_SUCCESS) then
            call this%encode(tens_instr,instr_packet,errc)
