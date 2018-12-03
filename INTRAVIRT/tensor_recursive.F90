@@ -1725,6 +1725,7 @@
          if(errc.ne.TEREC_SUCCESS.and.VERBOSE) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#ERROR(tensor_recursive:tens_signature_t.pack): Error ",i11)') errc
+          write(CONS_OUT,'("Current packet capacity and length: ",i13,1x,i13)') packet%get_capacity(),packet%get_length()
 !$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
@@ -2266,6 +2267,7 @@
          if(errc.ne.TEREC_SUCCESS.and.VERBOSE) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#ERROR(tensor_recursive:tens_shape_t.pack): Error ",i11)') errc
+          write(CONS_OUT,'("Current packet capacity and length: ",i13,1x,i13)') packet%get_capacity(),packet%get_length()
 !$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
@@ -3848,6 +3850,7 @@
          if(errc.ne.TEREC_SUCCESS.and.VERBOSE) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#ERROR(tensor_recursive:tens_layout_fdims_t.pack): Error ",i11)') errc
+          write(CONS_OUT,'("Current packet capacity and length: ",i13,1x,i13)') packet%get_capacity(),packet%get_length()
 !$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
@@ -4096,6 +4099,7 @@
          if(errc.ne.TEREC_SUCCESS.and.VERBOSE) then
 !$OMP CRITICAL (IO)
           write(CONS_OUT,'("#ERROR(tensor_recursive:tens_body_t.pack): Error ",i11)') errc
+          write(CONS_OUT,'("Current packet capacity and length: ",i13,1x,i13)') packet%get_capacity(),packet%get_length()
 !$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
