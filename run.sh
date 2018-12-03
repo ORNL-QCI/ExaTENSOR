@@ -8,9 +8,9 @@ export QF_PATH=/home/dima/src/ExaTensor #full path to ExaTENSOR root directory
 export QF_NUM_PROCS=4             #total number of MPI processes
 export QF_PROCS_PER_NODE=4        #number of MPI processes per logical node (logical nodes are created by node resource isolation)
 export QF_CORES_PER_PROCESS=1     #number of physical CPU cores per MPI process (no less than 1)
-export QF_MEM_PER_PROCESS=1024    #host RAM memory limit per MPI process in MB
+export QF_MEM_PER_PROCESS=512     #host RAM memory limit per MPI process in MB
 export QF_NVMEM_PER_PROCESS=0     #non-volatile memory limit per MPI process in MB
-export QF_HOST_BUFFER_SIZE=512    #host buffer size per MPI process in MB (must be less than QF_MEM_PER_PROCESS)
+export QF_HOST_BUFFER_SIZE=256    #host buffer size per MPI process in MB (must be less than QF_MEM_PER_PROCESS)
 export QF_GPUS_PER_PROCESS=0      #number of discrete NVIDIA GPU's per MPI process (optional)
 export QF_MICS_PER_PROCESS=0      #number of discrete Intel Xeon Phi's per MPI process (optional)
 export QF_AMDS_PER_PROCESS=0      #number of discrete AMD GPU's per MPI process (optional)
@@ -30,10 +30,10 @@ export OMP_WAIT_POLICY=PASSIVE         #idle thread behavior
 
 #OpenMP thread binding:
 export OMP_PLACES_DEFAULT=threads                                    #default thread binding to CPU logical cores
-export OMP_PLACES_EOS="{1},{3},{5},{7,9},{0:16:2},{11},{13},{15}"    #Eos 16-core Intel Xeon thread binding (even logical cores do computing)
-export OMP_PLACES_TITAN="{1},{3},{5},{7,9},{0:8:2},{11},{13},{15}"   #Titan 16-core AMD thread binding (even logical cores do computing)
-export OMP_PLACES_POWER9="{1},{3},{5},{7,9},{0:84:2},{11},{13},{15}" #Summit 21-core Power9 socket thread binding (even logical cores do computing)
-export OMP_PLACES_KNL="{1},{3},{5},{7,9},{0:128:2},{11},{13},{15}"   #Percival 64-core KNL thread binding (even logical cores do computing)
+export OMP_PLACES_EOS="{1},{3},{5},{7,9},{0:16:2},{11},{13},{15}"    #Eos 16-core hyperthreaded Intel Xeon thread binding (even logical cores do computing)
+export OMP_PLACES_TITAN="{1},{3},{5},{7,9},{0:8:2},{11},{13},{15}"   #Titan 16-core 8-FPU AMD thread binding (even logical cores do computing)
+export OMP_PLACES_POWER9="{1},{3},{5},{7,9},{0:42:2},{11},{13},{15}" #Summit 21-core SMT4 Power9 socket thread binding (even logical cores do computing)
+export OMP_PLACES_KNL="{1},{3},{5},{7,9},{0:128:2},{11},{13},{15}"   #Percival 64-core SMT4 KNL thread binding (even logical cores do computing)
 export OMP_PLACES=$OMP_PLACES_DEFAULT
 export OMP_PROC_BIND="close,spread,spread" #nest1: Functional threads (DSVU)
                                            #nest2: TAVP-WRK:Dispatcher spawns coarse-grain executors

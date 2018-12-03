@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/02
+!REVISION: 2018/12/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -115,9 +115,9 @@
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Bytecode:
-        integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
-        integer(INTL), parameter, private:: MIN_BYTECODE_SPACE=16384                        !min required space (bytes) in the bytecode buffer
-        integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=65536                        !max number of tensor instructions in a bytecode envelope
+        integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=64_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
+        integer(INTL), parameter, private:: MIN_BYTECODE_SPACE=1_INTL*(1024_INTL*1024_INTL) !min required free space (bytes) in the bytecode buffer (to check for potential overflow)
+        integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=16384                        !max number of tensor instructions in a bytecode envelope
  !Locator:
         integer(INTD), private:: MAX_LOCATE_NEW_INSTR=4096  !max number of new tensor instructions per bytecode envelope in the locating cycle
         integer(INTD), private:: MAX_LOCATE_DEF_INSTR=1024  !max number of deferred tensor instructions per bytecode envelope in the locating cycle
@@ -131,7 +131,7 @@
  !Dispatcher:
         logical, private:: DISPATCH_RANDOM=.FALSE.              !activates random dispatch for affinity-less tensor instructions
         logical, private:: DISPATCH_BALANCE=.TRUE.              !activates load-balanced dispatch for affinity-less tensor instructions (DISPATCH_RANDOM must be off)
-        integer(INTD), private:: MAX_ISSUE_INSTR=512            !max number of tensor instructions in the bytecode issued to a child node
+        integer(INTD), private:: MAX_ISSUE_INSTR=256            !max number of tensor instructions in the bytecode issued to a child node
         integer(INTD), private:: MIN_ISSUE_INSTR=128            !min number of tensor instructions being currently processed by a child node
  !Collector:
         integer(INTD), private:: MAX_COLLECT_INSTR=8192         !max number of active tensor (sub-)instructions in the collection phase
