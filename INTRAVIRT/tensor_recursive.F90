@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/12
+!REVISION: 2018/12/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1722,6 +1722,12 @@
          else
           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
          endif
+         if(errc.ne.TEREC_SUCCESS.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(tensor_recursive:tens_signature_t.pack): Error ",i11)') errc
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignaturePack
@@ -2256,6 +2262,12 @@
           endif
          else
           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(errc.ne.TEREC_SUCCESS.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(tensor_recursive:tens_shape_t.pack): Error ",i11)') errc
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -2833,6 +2845,12 @@
           endif
          else
           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(errc.ne.TEREC_SUCCESS.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(tensor_recursive:tens_header_t.pack): Error ",i11)') errc
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -3827,6 +3845,12 @@
          integer(INTD):: errc
 
          call this%pack_base(packet,errc)
+         if(errc.ne.TEREC_SUCCESS.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(tensor_recursive:tens_layout_fdims_t.pack): Error ",i11)') errc
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensLayoutFdimsPack
@@ -4068,6 +4092,12 @@
           enddo
           if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
           i=lit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(errc.ne.TEREC_SUCCESS.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(tensor_recursive:tens_body_t.pack): Error ",i11)') errc
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
