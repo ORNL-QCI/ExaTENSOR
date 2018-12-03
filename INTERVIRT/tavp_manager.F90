@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/01
+!REVISION: 2018/12/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1785,6 +1785,13 @@
           else
            jerr=-1
           endif
+          if(jerr.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+           write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_instr_t.encode)[",i5,"]: TENS_CREATE/DESTROY instruction encoding error ",i11)')&
+           &impir,jerr
+!$OMP END CRITICAL (IO)
+           flush(CONS_OUT)
+          endif
           return
          end subroutine encode_instr_tens_create_destroy
 
@@ -1839,6 +1846,13 @@
            tens_trans_ctrl=>NULL()
           else
            jerr=-1
+          endif
+          if(jerr.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+           write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_instr_t.encode)[",i5,"]: TENS_TRANSFORM instruction encoding error ",i11)')&
+           &impir,jerr
+!$OMP END CRITICAL (IO)
+           flush(CONS_OUT)
           endif
           return
          end subroutine encode_instr_tens_transform
@@ -1895,6 +1909,13 @@
            tens_contr_ctrl=>NULL()
           else
            jerr=-1
+          endif
+          if(jerr.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+           write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_instr_t.encode)[",i5,"]: TENS_CONTRACT instruction encoding error ",i11)')&
+           &impir,jerr
+!$OMP END CRITICAL (IO)
+           flush(CONS_OUT)
           endif
           return
          end subroutine encode_instr_tens_contract
