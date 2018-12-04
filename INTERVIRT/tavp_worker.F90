@@ -88,8 +88,8 @@
  !Tensor initialization during creation:
         logical, parameter, private:: TAVP_WRK_ZERO_ON_CREATE=.TRUE. !if TRUE, tensors will be initialized to zero during creation
  !Elementary tensor instruction granularity classification:
-        real(8), protected:: TAVP_WRK_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
-        real(8), protected:: TAVP_WRK_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
+        real(8), protected:: TAVP_WRK_FLOPS_HEAVY=1d11  !minimal number of Flops to consider the operation as heavy-cost
+        real(8), protected:: TAVP_WRK_FLOPS_MEDIUM=1d9  !minimal number of Flops to consider the operation as medium-cost
         real(8), protected:: TAVP_WRK_COST_TO_SIZE=1d2  !minimal cost (Flops) to size (Words) ratio to consider the operation arithmetically intensive
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=64_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
@@ -306,7 +306,7 @@
  !TAVP-WRK resourcer:
         type, extends(ds_unit_t), private:: tavp_wrk_resourcer_t
          integer(INTD), public:: num_ports=2                          !number of ports: Port 0 <- Decoder (Tens,Ctrl,Aux), Port 1 <- Communicator (Tens)
-         integer(INTL), private:: host_ram_size=TAVP_WRK_MIN_HOST_MEM !size of the usable Host RAM memory in bytes
+         integer(INTL), private:: host_ram_size=TAVP_WRK_MIN_HOST_MEM*1048576_INTL !size of the usable Host RAM memory in bytes
          integer(INTL), private:: nvram_size=0_INTL                   !size of the usable NVRAM memory (if any) in bytes
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()    !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: staged_list                       !list of staged instructions ready for subsequent processing
@@ -366,9 +366,12 @@
          integer(INTD), public:: num_ports=1                                    !number of ports: Port 0 <- Communicator (Tens,Ctrl,Aux)
          integer(INTL), private:: host_buf_size=TAVP_WRK_HOST_BUF_SIZE          !size of the pinned Host argument buffer
          integer(INTD), private:: host_arg_max=0                                !max number of tensor arguments in the pinned Host argument buffer
-         integer(INTD), allocatable, private:: gpu_list(:)                      !list of available NVIDIA GPU
-         integer(INTD), allocatable, private:: amd_list(:)                      !list of available AMD GPU
-         integer(INTD), allocatable, private:: mic_list(:)                      !list of available INTEL MIC
+         integer(INTD), allocatable, private:: gpu_list(:)                      !list [1..max ] of available NVIDIA GPU (device numeration from 0)
+         integer(INTD), allocatable, private:: amd_list(:)                      !list [1..max ] of available AMD GPU (device numeration from 0)
+         integer(INTD), allocatable, private:: mic_list(:)                      !list [1..max ] of available INTEL MIC (device numeration from 0)
+         real(8), allocatable, private:: gpu_flops(:)                           !current number of Flops issued to each enumerated GPU device
+         real(8), allocatable, private:: amd_flops(:)                           !current number of Flops issued to each enumerated AMD device
+         real(8), allocatable, private:: mic_flops(:)                           !current number of Flops issued to each enumerated MIC device
          type(tavp_wrk_dispatch_proc_t), private:: microcode(0:TAVP_ISA_SIZE-1) !instruction execution microcode bindings
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()              !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: issued_list                                 !list of issued tensor instructions
@@ -385,9 +388,9 @@
  !TAVP-WRK dispatcher configuration:
         type, extends(dsv_conf_t), private:: tavp_wrk_dispatcher_conf_t
          integer(INTL), public:: host_buf_size                          !size of the pinned Host argument buffer
-         integer(INTD), allocatable, public:: gpu_list(:)               !list of available NVIDIA GPU
-         integer(INTD), allocatable, public:: amd_list(:)               !list of available AMD GPU
-         integer(INTD), allocatable, public:: mic_list(:)               !list of available INTEL MIC
+         integer(INTD), allocatable, public:: gpu_list(:)               !list [1..max] of available NVIDIA GPU (device numeration from 0)
+         integer(INTD), allocatable, public:: amd_list(:)               !list [1..max] of available AMD GPU (device numeration from 0)
+         integer(INTD), allocatable, public:: mic_list(:)               !list [1..max] of available INTEL MIC (device numeration from 0)
         end type tavp_wrk_dispatcher_conf_t
  !TAVP-WRK (order of DSVU matters):
         type, extends(dsvp_t), public:: tavp_wrk_t
@@ -416,9 +419,9 @@
          integer(INTL), public:: host_buf_size              !pinned Host argument buffer size in bytes
          integer(INTL), public:: nvram_size                 !size of the usable NVRAM memory (if any) in bytes
          integer(INTD), public:: num_mpi_windows            !number of dynamic MPI windows per global addressing space
-         integer(INTD), allocatable, public:: gpu_list(:)   !list of the accesible NVIDIA GPU devices
-         integer(INTD), allocatable, public:: amd_list(:)   !list of the accesible AMD GPU devices
-         integer(INTD), allocatable, public:: mic_list(:)   !list of the accesible Intel MIC devices
+         integer(INTD), allocatable, public:: gpu_list(:)   !list [1..max] of the accesible NVIDIA GPU devices (device numeration from 0)
+         integer(INTD), allocatable, public:: amd_list(:)   !list [1..max] of the accesible AMD GPU devices (device numeration from 0)
+         integer(INTD), allocatable, public:: mic_list(:)   !list [1..max] of the accesible Intel MIC devices (device numeration from 0)
         end type tavp_wrk_conf_t
 !INTERFACES:
         abstract interface
@@ -433,7 +436,7 @@
         end interface
 !GLOBAL DATA:
  !Memory usage:
-        integer(INTL), protected:: host_ram_limit=0 !host RAM memory limit in bytes for the current TAVP-WRK (set by Resourcer)
+        integer(INTL), protected:: host_ram_limit=0 !host RAM memory limit (bytes) for the current TAVP-WRK (set by Resourcer)
         integer(INTL), protected:: host_ram_used=0  !host RAM memory (bytes) currently in use for storing tensor data (includes host buffer memory)
         integer(INTL), protected:: host_buf_used=0  !pinned host buffer memory (bytes) currently in use for storing tensor data
 !VISIBILITY:
@@ -4144,7 +4147,6 @@
              if(errc.eq.0) flops=dsqrt(tvol)*2d0 !factor of 2 because of additions (along with multiplications)
             case default
              !`Implement Flop counting for other relevant tensor instructions
-             flops=1d0 !default (but meaningless) value
             end select
            else
             errc=-3
@@ -8151,7 +8153,16 @@
 !Initialize the numerical computing runtime (TAL-SH) and set up tensor argument cache:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
-          ier=talsh_init(this%host_buf_size,this%host_arg_max,this%gpu_list,this%mic_list,this%amd_list)
+          if(allocated(this%gpu_list)) then
+           allocate(this%gpu_flops(size(this%gpu_list))); this%gpu_flops(:)=0d0
+          endif
+          if(allocated(this%amd_list)) then
+           allocate(this%amd_flops(size(this%amd_list))); this%amd_flops(:)=0d0
+          endif
+          if(allocated(this%mic_list)) then
+           allocate(this%mic_flops(size(this%mic_list))); this%mic_flops(:)=0d0
+          endif
+          ier=talsh_init(this%host_buf_size,this%host_arg_max,this%gpu_list,this%mic_list,this%amd_list) !`gpu_list, mic_list, amd_list are not allocated in the absence of these accelerators
           if(ier.eq.TALSH_SUCCESS) then
 !$OMP ATOMIC WRITE
            tavp%talsh_in_use=.TRUE.
@@ -8174,7 +8185,7 @@
          if(LOGGING.gt.0) then
           n=omp_get_max_threads()
 !$OMP CRITICAL (IO)
-          write(CONS_OUT,'("Multicore CPU executor width = ",i4)') n
+          write(CONS_OUT,'("#MSG(TAVP-WRK:Dispatcher): Multicore CPU executor width = ",i5)') n
 !$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
@@ -8267,7 +8278,7 @@
            if(ier.ne.0.and.errc.eq.0) then
             if(VERBOSE) then
 !$OMP CRITICAL (IO)
-             write(CONS_OUT,'("#ERROR(TAVP-WRK:Dispatcher): Failed to complete tensor instruction:")')
+             write(CONS_OUT,'("#ERROR(TAVP-WRK:Dispatcher): Failed to complete tensor instruction with error ",i11,":")') ier
 !$OMP END CRITICAL (IO)
              call tens_instr%print_it(dev_id=CONS_OUT)
              flush(CONS_OUT)
@@ -8353,7 +8364,7 @@
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid,uid
+         integer(INTD):: errc,ier,thid,uid,i
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
          logical:: talsh_on
@@ -8372,9 +8383,14 @@
 !$OMP ATOMIC READ
           talsh_on=tavp%talsh_in_use !wait until Resourcer releases TAL-SH
          enddo
+         if(VERBOSE) ier=talsh_stats()
          ier=talsh_shutdown(); if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-8
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
+!Deallocate device counters:
+         if(allocated(this%mic_flops)) deallocate(this%mic_flops)
+         if(allocated(this%amd_flops)) deallocate(this%amd_flops)
+         if(allocated(this%gpu_flops)) deallocate(this%gpu_flops)
 !Deactivate the completed list:
          ier=this%cml_list%reset()
          if(ier.eq.GFC_SUCCESS) then
@@ -8415,32 +8431,47 @@
         subroutine TAVPWRKDispatcherIssueInstr(this,tens_instr,ierr,dev_id)
 !Issues the given tensor instruction to a specific compute device (or default).
          implicit none
-         class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK Dispatcher
-         class(tens_instr_t), intent(inout):: tens_instr    !inout: defined tensor instruction ready to be issued
-         integer(INTD), intent(out), optional:: ierr        !out: error code, includes TRY_LATER
-         integer(INTD), intent(in), optional:: dev_id       !in: flat device id to issue the tensor instruction to
-         integer(INTD):: errc,ier,opcode,devid
+         class(tavp_wrk_dispatcher_t), target, intent(inout):: this !inout: TAVP-WRK Dispatcher
+         class(tens_instr_t), intent(inout):: tens_instr            !inout: defined tensor instruction ready to be issued
+         integer(INTD), intent(out), optional:: ierr                !out: error code, includes TRY_LATER
+         integer(INTD), intent(in), optional:: dev_id               !in: flat device id to issue the tensor instruction to
+         integer(INTD):: errc,ier,opcode,devid,dev_kind,dev_num
          procedure(tavp_wrk_dispatch_proc_i), pointer:: iproc
+         real(8):: flops,words,arint
 
          errc=0; ier=0
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            opcode=tens_instr%get_code(errc)
            if(errc.eq.DSVP_SUCCESS) then
-            iproc=>this%microcode(opcode)%instr_proc
-            if(associated(iproc)) then
-             if(present(dev_id)) then
-              call iproc(this,tens_instr,ier,dev_id)
-             else
-              devid=map_tensor_instruction(errc)
-              if(errc.eq.0) then
-               call iproc(this,tens_instr,ier,devid)
+            flops=tens_instr%get_flops(errc,arint,words)
+            if(errc.eq.0) then
+             iproc=>this%microcode(opcode)%instr_proc
+             if(associated(iproc)) then
+              if(present(dev_id)) then
+               dev_num=talsh_kind_dev_id(dev_id,dev_kind)
+               call iproc(this,tens_instr,ier,dev_id)
               else
-               errc=-6
+               devid=map_tensor_instruction(dev_kind,dev_num)
+               call iproc(this,tens_instr,ier,devid)
               endif
-             endif
-             if(ier.ne.0) then
-              if(ier.eq.TRY_LATER) then; errc=ier; else; errc=-5; endif
+              if(ier.eq.0) then
+               select case(dev_kind)
+               case(DEV_HOST)
+               case(DEV_NVIDIA_GPU)
+                this%gpu_flops(dev_num)=this%gpu_flops(dev_num)+flops
+               case(DEV_INTEL_MIC)
+                this%mic_flops(dev_num)=this%mic_flops(dev_num)+flops
+               case(DEV_AMD_GPU)
+                this%amd_flops(dev_num)=this%amd_flops(dev_num)+flops
+               case default
+                errc=-7
+               end select
+              else
+               if(ier.eq.TRY_LATER) then; errc=ier; else; errc=-6; endif
+              endif
+             else
+              errc=-5
              endif
             else
              errc=-4
@@ -8466,16 +8497,39 @@
 
          contains
 
-          function map_tensor_instruction(jerr) result(dev)
+          function map_tensor_instruction(devk,devn) result(dev)
            integer(INTD):: dev               !out: flat device id
-           integer(INTD), intent(out):: jerr !out: error code
+           integer(INTD), intent(out):: devk !out: device kind
+           integer(INTD), intent(out):: devn !out: device number within its kind [0..max]
+           integer(INTD), pointer:: dev_list(:)
+           real(8), pointer:: curr_load(:)
+           integer(INTD):: jj
+           real(8):: min_load
 
-           jerr=0; dev=-1
+           devk=DEV_HOST; devn=0 !defaults to (multicore) HOST
            if(opcode.eq.TAVP_INSTR_TENS_CONTRACT) then
-            dev=talsh_flat_dev_id(DEV_HOST,0) !`Fix
-           else
-            dev=talsh_flat_dev_id(DEV_HOST,0)
+            if(flops.ge.TAVP_WRK_FLOPS_HEAVY.and.arint.ge.TAVP_WRK_COST_TO_SIZE) then
+             dev_list=>NULL(); curr_load=>NULL()
+             if(allocated(this%gpu_flops)) then
+              devk=DEV_NVIDIA_GPU; dev_list=>this%gpu_list; curr_load=>this%gpu_flops
+             elseif(allocated(this%mic_flops)) then
+              devk=DEV_INTEL_MIC; dev_list=>this%mic_list; curr_load=>this%mic_flops
+             elseif(allocated(this%amd_flops)) then
+              devk=DEV_AMD_GPU; dev_list=>this%amd_list; curr_load=>this%amd_flops
+             endif
+             if(associated(dev_list).and.associated(curr_load)) then
+              jj=lbound(dev_list,1); devn=dev_list(jj); min_load=curr_load(jj)
+              do jj=lbound(dev_list,1)+1,ubound(dev_list,1)
+               if(curr_load(jj).lt.min_load) then
+                devn=dev_list(jj); min_load=curr_load(jj)
+               endif
+              enddo
+             else
+              devk=DEV_HOST
+             endif
+            endif
            endif
+           dev=talsh_flat_dev_id(devk,devn)
            return
           end function map_tensor_instruction
 
@@ -8491,10 +8545,11 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
          logical, intent(in), optional:: wait               !in: WAIT or TEST (defaults to WAIT)
-         integer(INTD):: errc,ier,sts,ans,i,n
+         integer(INTD):: errc,ier,sts,ans,i,n,dev_kind,dev_num
          integer(INTD), pointer:: out_oprs(:)
          class(ds_oprnd_t), pointer:: oprnd
          logical:: wt
+         real(8):: flops
 
          errc=0; res=.FALSE.
          if(talsh_task_status(tens_instr%talsh_task).eq.TALSH_TASK_EMPTY) then
@@ -8506,10 +8561,37 @@
            res=(errc.eq.TALSH_SUCCESS.and.(sts.eq.TALSH_TASK_COMPLETED.or.sts.eq.TALSH_TASK_ERROR))
           else !TEST
            ans=talsh_task_complete(tens_instr%talsh_task,sts,errc)
-           res=(ans.eq.YEP.and.errc.eq.TALSH_SUCCESS)
+           res=(errc.eq.TALSH_SUCCESS.and.ans.eq.YEP)
+          endif
+          if(res) then
+           flops=tens_instr%get_flops(ier)
+           if(ier.eq.0) then
+            dev_num=talsh_task_dev_id(tens_instr%talsh_task,dev_kind)
+            select case(dev_kind)
+            case(DEV_HOST)
+            case(DEV_NVIDIA_GPU)
+             this%gpu_flops(dev_num)=this%gpu_flops(dev_num)-flops
+            case(DEV_INTEL_MIC)
+             this%mic_flops(dev_num)=this%mic_flops(dev_num)-flops
+            case(DEV_AMD_GPU)
+             this%amd_flops(dev_num)=this%amd_flops(dev_num)-flops
+            case default
+             if(VERBOSE) then
+!$OMP CRITICAL (IO)
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:Dispatcher.sync_instr): Invalid device id: ",i11,1x,i11)') dev_kind,dev_num
+!$OMP END CRITICAL (IO)
+              flush(CONS_OUT)
+             endif
+             errc=-6
+            end select
+           else
+            errc=-5
+           endif
+          else
+           if(errc.ne.TALSH_SUCCESS) errc=-4
           endif
          endif
-         if(res) then
+         if(errc.eq.0.and.res) then
           if(sts.eq.TALSH_TASK_COMPLETED) then
            call tens_instr%set_status(DS_INSTR_COMPLETED,ier,DSVP_SUCCESS)
            out_oprs(0:)=>tens_instr%get_output_operands(errc,n)
@@ -8518,16 +8600,14 @@
              oprnd=>tens_instr%get_operand(out_oprs(i),errc); if(errc.ne.0) exit
              select type(oprnd); class is(tens_oprnd_t); call oprnd%set_up_to_date(.TRUE.); end select
             enddo
-            if(errc.ne.0) errc=-4
+            if(errc.ne.0) errc=-3
            else
-            errc=-3
+            errc=-2
            endif
           else
            call tens_instr%set_status(DS_INSTR_COMPLETED,ier,TAVP_ERR_EXC_FAILURE)
           endif
-          if(ier.ne.0.and.errc.eq.0) errc=-2
-         else
-          if(errc.ne.TALSH_SUCCESS) errc=-1
+          if(ier.ne.0.and.errc.eq.0) errc=-1
          endif
          if(present(ierr)) ierr=errc
          return

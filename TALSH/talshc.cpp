@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2018/09/21
+REVISION: 2018/12/03
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1690,6 +1690,7 @@ int talshTaskDevId(talsh_task_t * talsh_task, int * dev_kind)
  if(talsh_task == NULL) return DEV_NULL;
  errc=talshTaskStatus(talsh_task);
  if(errc == TALSH_FAILURE || errc == TALSH_TASK_EMPTY) return DEV_NULL;
+ if(dev_kind != NULL) *dev_kind=talsh_task->dev_kind;
  switch(talsh_task->dev_kind){
   case DEV_HOST:
    devid=0; //Host is always single
@@ -1720,9 +1721,7 @@ int talshTaskDevId(talsh_task_t * talsh_task, int * dev_kind)
    return DEV_NULL;
  }
  if(devid < 0) return DEV_NULL;
- if(dev_kind != NULL){
-  *dev_kind=talsh_task->dev_kind;
- }else{
+ if(dev_kind == NULL){
   devid=talshFlatDevId(talsh_task->dev_kind,devid); //convert to flat device id
   if(devid < 0 || devid >= DEV_MAX) devid=DEV_NULL;
  }

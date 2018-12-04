@@ -328,7 +328,7 @@
          character(64):: qppn
          ier=0; mpi_procs_per_node=0; mpi_proc_id_on_node=0
 !QF_PROCS_PER_NODE:
-         qppn=' '; call get_environment_variable("QF_PROCS_PER_NODE",qppn)
+         qppn=' '; call get_environment_variable('QF_PROCS_PER_NODE',qppn)
          j0=len_trim(qppn)
          if(j0.gt.0) then
           mpi_procs_per_node=icharnum(j0,qppn(1:j0))
@@ -460,6 +460,7 @@
 ! - gpu_count - number of consecutive GPU IDs assigned to the current MPI process;
 ! - ierr - error code (0:Success).
         use extern_names
+        use stsubs, only: icharnum
         implicit none
         integer, intent(inout):: ierr
         integer i,j,k,l,m,n
@@ -545,7 +546,9 @@
 !This subroutine distributes GPUs available on a node among the MPI processes residing on that node.
 !It assumes that MPI processes are launched on each node consecutively!
          integer, intent(inout):: ier
-         integer j0
+         character(64):: jstr
+         integer:: j0,jn
+
          ier=0
          if(mpi_procs_per_node.gt.0) then
           j0=mod(gpus_found,mpi_procs_per_node)
@@ -554,6 +557,12 @@
            gpu_start=gpu_start+mpi_proc_id_on_node; gpu_count=gpu_count+1
           else
            gpu_start=gpu_start+j0
+          endif
+          jstr=' '; call get_environment_variable('QF_GPUS_PER_PROCESS',jstr)
+          j0=len_trim(jstr)
+          if(j0.gt.0) then
+           jn=icharnum(j0,jstr(1:j0))
+           if(jn.lt.gpu_count) gpu_count=jn
           endif
          else
           gpu_start=0; gpu_count=0; ier=1 !mpi_procs_per_node has not been specified

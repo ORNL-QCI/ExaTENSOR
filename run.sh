@@ -1,3 +1,5 @@
+#!/bin/bash
+
 #ExaTENSOR run script:
 #It is crucial to launch MPI processes consecutively within a node
 #if multiple MPI processes reside on the same node. In this case
