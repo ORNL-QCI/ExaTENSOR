@@ -449,6 +449,7 @@
          implicit none
          integer(INTL), parameter:: TEST_SPACE_DIM=64
          integer(INTD), parameter:: BRANCHING_FACTOR=4
+         integer(INTD), parameter:: TENSOR_DATA_KIND=EXA_DATA_KIND_R4
          type(color_symmetry_t):: basis_symmetry(1:TEST_SPACE_DIM)
          type(subspace_basis_t):: basis
          class(h_space_t), pointer:: ao_space
@@ -504,28 +505,28 @@
   !etens (scalar):
            write(6,'("Creating scalar etens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_create(etens,'etens',EXA_DATA_KIND_R8)
+           ierr=exatns_tensor_create(etens,'etens',TENSOR_DATA_KIND)
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
   !dtens:
            write(6,'("Creating tensor dtens over a hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_create(dtens,'dtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
+           ierr=exatns_tensor_create(dtens,'dtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),TENSOR_DATA_KIND)
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
   !ltens:
            write(6,'("Creating tensor ltens over a hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_create(ltens,'ltens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
+           ierr=exatns_tensor_create(ltens,'ltens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),TENSOR_DATA_KIND)
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
   !rtens:
            write(6,'("Creating tensor rtens over a hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_create(rtens,'rtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
+           ierr=exatns_tensor_create(rtens,'rtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),TENSOR_DATA_KIND)
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)

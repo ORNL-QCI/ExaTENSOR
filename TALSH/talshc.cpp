@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2018/12/03
+REVISION: 2018/12/04
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1963,6 +1963,8 @@ int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, d
 void talshTaskPrint(const talsh_task_t * talsh_task)
 /** Prints TAL-SH task info. **/
 {
+ printf("\n#MESSAGE: Printing TAL-SH task info:\n");
+ printf(" Device kind %d: Error %d\n",talsh_task->dev_kind,talsh_task->task_error);
  if(talsh_task != NULL){
   switch(talsh_task->dev_kind){
    case DEV_HOST:
@@ -1983,6 +1985,7 @@ void talshTaskPrint(const talsh_task_t * talsh_task)
     break;
   }
  }
+ printf("#END MESSAGE\n");
  return;
 }
 

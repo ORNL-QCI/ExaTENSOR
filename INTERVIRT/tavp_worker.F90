@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/03
+!REVISION: 2018/12/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -108,6 +108,7 @@
         real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
  !Dispatcher:
         integer(INTD), private:: MAX_DISPATCHER_INTAKE=64       !max number of instructions taken from the port at a time
+        logical, private:: ACCELERATOR_ONLY=.TRUE.              !debug switch: if TRUE, all tensor contractions will be executed on accelerators
  !Retirer:
         integer(INTD), private:: MAX_RETIRER_BATCH=32           !max size of the retired instruction batch
 !TYPES:
@@ -369,9 +370,9 @@
          integer(INTD), allocatable, private:: gpu_list(:)                      !list [1..max ] of available NVIDIA GPU (device numeration from 0)
          integer(INTD), allocatable, private:: amd_list(:)                      !list [1..max ] of available AMD GPU (device numeration from 0)
          integer(INTD), allocatable, private:: mic_list(:)                      !list [1..max ] of available INTEL MIC (device numeration from 0)
-         real(8), allocatable, private:: gpu_flops(:)                           !current number of Flops issued to each enumerated GPU device
-         real(8), allocatable, private:: amd_flops(:)                           !current number of Flops issued to each enumerated AMD device
-         real(8), allocatable, private:: mic_flops(:)                           !current number of Flops issued to each enumerated MIC device
+         real(8), private:: gpu_flops(0:MAX_GPUS_PER_NODE-1)                    !current number of Flops issued to each enumerated GPU device
+         real(8), private:: mic_flops(0:MAX_MICS_PER_NODE-1)                    !current number of Flops issued to each enumerated MIC device
+         real(8), private:: amd_flops(0:MAX_AMDS_PER_NODE-1)                    !current number of Flops issued to each enumerated AMD device
          type(tavp_wrk_dispatch_proc_t), private:: microcode(0:TAVP_ISA_SIZE-1) !instruction execution microcode bindings
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()              !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: issued_list                                 !list of issued tensor instructions
@@ -8153,15 +8154,9 @@
 !Initialize the numerical computing runtime (TAL-SH) and set up tensor argument cache:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
-          if(allocated(this%gpu_list)) then
-           allocate(this%gpu_flops(size(this%gpu_list))); this%gpu_flops(:)=0d0
-          endif
-          if(allocated(this%amd_list)) then
-           allocate(this%amd_flops(size(this%amd_list))); this%amd_flops(:)=0d0
-          endif
-          if(allocated(this%mic_list)) then
-           allocate(this%mic_flops(size(this%mic_list))); this%mic_flops(:)=0d0
-          endif
+          this%gpu_flops(:)=0d0
+          this%mic_flops(:)=0d0
+          this%amd_flops(:)=0d0
           ier=talsh_init(this%host_buf_size,this%host_arg_max,this%gpu_list,this%mic_list,this%amd_list) !`gpu_list, mic_list, amd_list are not allocated in the absence of these accelerators
           if(ier.eq.TALSH_SUCCESS) then
 !$OMP ATOMIC WRITE
@@ -8387,10 +8382,6 @@
          ier=talsh_shutdown(); if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-8
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
-!Deallocate device counters:
-         if(allocated(this%mic_flops)) deallocate(this%mic_flops)
-         if(allocated(this%amd_flops)) deallocate(this%amd_flops)
-         if(allocated(this%gpu_flops)) deallocate(this%gpu_flops)
 !Deactivate the completed list:
          ier=this%cml_list%reset()
          if(ier.eq.GFC_SUCCESS) then
@@ -8508,20 +8499,20 @@
 
            devk=DEV_HOST; devn=0 !defaults to (multicore) HOST
            if(opcode.eq.TAVP_INSTR_TENS_CONTRACT) then
-            if(flops.ge.TAVP_WRK_FLOPS_HEAVY.and.arint.ge.TAVP_WRK_COST_TO_SIZE) then
+            if(ACCELERATOR_ONLY.or.(flops.ge.TAVP_WRK_FLOPS_HEAVY.and.arint.ge.TAVP_WRK_COST_TO_SIZE)) then
              dev_list=>NULL(); curr_load=>NULL()
-             if(allocated(this%gpu_flops)) then
-              devk=DEV_NVIDIA_GPU; dev_list=>this%gpu_list; curr_load=>this%gpu_flops
-             elseif(allocated(this%mic_flops)) then
-              devk=DEV_INTEL_MIC; dev_list=>this%mic_list; curr_load=>this%mic_flops
-             elseif(allocated(this%amd_flops)) then
-              devk=DEV_AMD_GPU; dev_list=>this%amd_list; curr_load=>this%amd_flops
+             if(allocated(this%gpu_list)) then
+              devk=DEV_NVIDIA_GPU; dev_list=>this%gpu_list; curr_load(0:)=>this%gpu_flops
+             elseif(allocated(this%mic_list)) then
+              devk=DEV_INTEL_MIC; dev_list=>this%mic_list; curr_load(0:)=>this%mic_flops
+             elseif(allocated(this%amd_list)) then
+              devk=DEV_AMD_GPU; dev_list=>this%amd_list; curr_load(0:)=>this%amd_flops
              endif
-             if(associated(dev_list).and.associated(curr_load)) then
-              jj=lbound(dev_list,1); devn=dev_list(jj); min_load=curr_load(jj)
+             if(associated(dev_list)) then
+              jj=lbound(dev_list,1); devn=dev_list(jj); min_load=curr_load(devn)
               do jj=lbound(dev_list,1)+1,ubound(dev_list,1)
-               if(curr_load(jj).lt.min_load) then
-                devn=dev_list(jj); min_load=curr_load(jj)
+               if(curr_load(dev_list(jj)).lt.min_load) then
+                devn=dev_list(jj); min_load=curr_load(devn)
                endif
               enddo
              else
@@ -8827,7 +8818,7 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code, includes TRY_LATER
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
-         integer(INTD):: errc,dev,sl
+         integer(INTD):: errc,ier,dev,sl
          character(EXA_MAX_METHOD_NAME_LEN):: method_name
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_oprnd_t), pointer:: op0
@@ -8864,22 +8855,26 @@
 !$OMP END CRITICAL (IO)
                   flush(CONS_OUT)
                  endif
-                 errc=-8
+                 errc=-9
                 endif
                else
-                errc=-7
+                errc=-8
                endif
               else
  !Initialization to a scalar:
                errc=talsh_tensor_init(tens0,val=alpha,dev_id=dev,copy_ctrl=COPY_T,talsh_task=tens_instr%talsh_task)
-               if(errc.ne.TALSH_SUCCESS.and.errc.ne.TRY_LATER) then
-                if(VERBOSE) then
+               if(errc.ne.TALSH_SUCCESS) then
+                if(errc.eq.TRY_LATER) then
+                 ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-7
+                else
+                 if(VERBOSE) then
 !$OMP CRITICAL (IO)
-                 write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorInit): talsh_tensor_init failed with error ",i11)') errc
+                  write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorInit): talsh_tensor_init failed with error ",i11)') errc
 !$OMP END CRITICAL (IO)
-                 flush(CONS_OUT)
+                  flush(CONS_OUT)
+                 endif
+                 errc=-6
                 endif
-                errc=-6
                endif
               endif
              else
@@ -8909,7 +8904,7 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code, includes TRY_LATER
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
-         integer(INTD):: errc,dev,conj,cpl,nl,nr,i,dig_ptrn(1:MAX_TENSOR_RANK*2)
+         integer(INTD):: errc,ier,dev,conj,cpl,nl,nr,i,dig_ptrn(1:MAX_TENSOR_RANK*2)
          character(C_CHAR):: char_ptrn(256)
          character(256):: str_ptrn
          complex(8):: prefactor
@@ -8949,15 +8944,20 @@
                    do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
                    errc=talsh_tensor_contract(str_ptrn(1:cpl),tens0,tens1,tens2,prefactor,dev_id=dev,copy_ctrl=COPY_TTT,&
                    &talsh_task=tens_instr%talsh_task)
-                   if(errc.ne.TALSH_SUCCESS.and.errc.ne.TRY_LATER) then
-                    if(VERBOSE) then
+                   if(errc.ne.TALSH_SUCCESS) then
+                    if(errc.eq.TRY_LATER) then
+                     ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-12
+                    else
+                     if(VERBOSE) then
 !$OMP CRITICAL (IO)
-                     write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorContract): talsh_tensor_contract failed with error ",i11)')&
-                     &errc
+                      write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorContract): talsh_tensor_contract issue failed on device "'&
+                      &//',i4," with error ",i11)') dev,errc
+                      call talsh_task_print_info(tens_instr%talsh_task)
 !$OMP END CRITICAL (IO)
-                     flush(CONS_OUT)
+                      flush(CONS_OUT)
+                     endif
+                     errc=-11
                     endif
-                    errc=-11
                    endif
                   else
                    errc=-10
@@ -9001,7 +9001,7 @@
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code, includes TRY_LATER
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
-         integer(INTD):: errc,pl,i,n,dev
+         integer(INTD):: errc,ier,pl,i,n,dev
          integer(INTD), pointer:: prm(:)
          integer(C_INT):: dig_ptrn(1:MAX_TENSOR_RANK),cpl
          character(C_CHAR):: char_ptrn(256)
@@ -9045,15 +9045,19 @@
                  if(cpl.gt.0) then
                   errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,copy_ctrl=COPY_MT,&
                   &talsh_task=tens_instr%talsh_task)
-                  if(errc.ne.TALSH_SUCCESS.and.errc.ne.TRY_LATER) then
-                   if(VERBOSE) then
+                  if(errc.ne.TALSH_SUCCESS) then
+                   if(errc.eq.TRY_LATER) then
+                    ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-10
+                   else
+                    if(VERBOSE) then
 !$OMP CRITICAL (IO)
-                    write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)') errc
+                     write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)') errc
 !$OMP END CRITICAL (IO)
-                    flush(CONS_OUT)
-                    !write(6,*) dev,str_ptrn(1:cpl); call talsh_tensor_print_info(tens0); call talsh_tensor_print_info(tens1) !debug
+                     flush(CONS_OUT)
+                     !write(6,*) dev,str_ptrn(1:cpl); call talsh_tensor_print_info(tens0); call talsh_tensor_print_info(tens1) !debug
+                    endif
+                    errc=-9
                    endif
-                   errc=-9
                   endif
                  else
                   errc=-8
