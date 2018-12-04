@@ -6625,7 +6625,8 @@
             if(ier.ne.0.and.errc.eq.0) then
              if(VERBOSE) then
 !$OMP CRITICAL (IO)
-              write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer): Failed to release resources for tensor instruction:")')
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer): Failed to release resources with error ",i11,'//&
+              &'" for tensor instruction:")') ier
 !$OMP END CRITICAL (IO)
               call instr%print_it(dev_id=CONS_OUT)
               flush(CONS_OUT)
@@ -7454,38 +7455,55 @@
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK Resourcer
          class(tens_instr_t), intent(inout):: tens_instr   !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier,n,l
+         integer(INTD):: errc,n,l
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_rcrsv_t), pointer:: tensor
          character(TEREC_MAX_TENS_NAME_LEN+8):: tname
 
-         errc=talsh_task_destruct(tens_instr%talsh_task); if(errc.ne.TALSH_SUCCESS) errc=-4
-         n=tens_instr%get_num_operands(ier)
-         if(ier.eq.DSVP_SUCCESS) then
-          rloop: do while(n.gt.0)
-           n=n-1; oprnd=>tens_instr%get_operand(n,ier)
-           if(ier.eq.DSVP_SUCCESS) then
-            call oprnd%release_rsc(ier)
-            if(ier.ne.0) then
-             if(VERBOSE) then
-              select type(oprnd)
-              class is(tens_oprnd_t)
-               tensor=>oprnd%get_tensor(); call tensor%get_name(tname,l)
+         errc=0
+!!!$OMP FLUSH
+!        errc=talsh_task_destruct(tens_instr%talsh_task)
+         if(errc.eq.TALSH_SUCCESS) then
+          n=tens_instr%get_num_operands(errc)
+          if(errc.eq.DSVP_SUCCESS) then
+           rloop: do while(n.gt.0)
+            n=n-1; oprnd=>tens_instr%get_operand(n,errc)
+            if(errc.eq.DSVP_SUCCESS) then
+             call oprnd%release_rsc(errc)
+             if(errc.ne.0) then
+              if(VERBOSE) then
+               select type(oprnd)
+               class is(tens_oprnd_t)
+                tensor=>oprnd%get_tensor(); call tensor%get_name(tname,l)
 !$OMP CRITICAL (IO)
-               write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.release_resources)[",i6,"]: Resource release error ",i11," for tensor")'&
-               &,ADVANCE='NO') impir,ier; write(CONS_OUT,*) tname(1:l)
+                write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.release_resources)[",i6,"]: Resource release error ",i11,'//&
+                &'" for tensor")',ADVANCE='NO') impir,errc; write(CONS_OUT,*) tname(1:l)
 !$OMP END CRITICAL (IO)
-               flush(CONS_OUT)
-              end select
+                flush(CONS_OUT)
+               end select
+              endif
+              errc=-4; exit rloop
              endif
+            else
              errc=-3; exit rloop
             endif
-           else
-            errc=-2; exit rloop
-           endif
-          enddo rloop
+           enddo rloop
+          else
+           errc=-2
+          endif
          else
+!$OMP CRITICAL (IO)
+          call talsh_task_print_info(tens_instr%talsh_task)
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.release_resources)[",i6,"]: TAL-SH task destruction error ",i11)') impir,errc
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
           errc=-1
+         endif
+         if(errc.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.release_resources)[",i6,"]: Error ",i11)') impir,errc
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -8573,11 +8591,12 @@
 !$OMP END CRITICAL (IO)
               flush(CONS_OUT)
              endif
-             errc=-6
+             errc=-7
             end select
            else
-            errc=-5
+            errc=-6
            endif
+           ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-5
           else
            if(errc.ne.TALSH_SUCCESS) errc=-4
           endif
