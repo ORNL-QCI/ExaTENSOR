@@ -8888,6 +8888,7 @@
                 else
                  if(VERBOSE) then
 !$OMP CRITICAL (IO)
+                  call talsh_task_print_info(tens_instr%talsh_task)
                   write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorInit): talsh_tensor_init failed with error ",i11)') errc
 !$OMP END CRITICAL (IO)
                   flush(CONS_OUT)
@@ -8969,9 +8970,9 @@
                     else
                      if(VERBOSE) then
 !$OMP CRITICAL (IO)
+                      call talsh_task_print_info(tens_instr%talsh_task)
                       write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorContract): talsh_tensor_contract issue failed on device "'&
                       &//',i4," with error ",i11)') dev,errc
-                      call talsh_task_print_info(tens_instr%talsh_task)
 !$OMP END CRITICAL (IO)
                       flush(CONS_OUT)
                      endif
@@ -9070,6 +9071,7 @@
                    else
                     if(VERBOSE) then
 !$OMP CRITICAL (IO)
+                     call talsh_task_print_info(tens_instr%talsh_task)
                      write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)') errc
 !$OMP END CRITICAL (IO)
                      flush(CONS_OUT)
