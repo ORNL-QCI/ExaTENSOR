@@ -8972,7 +8972,7 @@
 !$OMP CRITICAL (IO)
                       call talsh_task_print_info(tens_instr%talsh_task)
                       write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorContract): talsh_tensor_contract issue failed on device "'&
-                      &//',i4," with error ",i11)') dev,errc
+                      &//',i4," with error ",i11,": TAL-SH task error code ",i11)') dev,errc,tens_instr%talsh_task%task_error
 !$OMP END CRITICAL (IO)
                       flush(CONS_OUT)
                      endif
