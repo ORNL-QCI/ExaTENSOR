@@ -8396,7 +8396,12 @@
 !$OMP ATOMIC READ
           talsh_on=tavp%talsh_in_use !wait until Resourcer releases TAL-SH
          enddo
-         if(VERBOSE) ier=talsh_stats()
+         if(VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(*,'("#MSG(TAL-SH): Device utilization statistics for MPI process ",i6,":")') impir
+          ier=talsh_stats()
+!$OMP END CRITICAL (IO)
+         endif
          ier=talsh_shutdown(); if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-8
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
