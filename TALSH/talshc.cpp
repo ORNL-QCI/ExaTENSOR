@@ -2073,7 +2073,10 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, void * dev_m
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
    errc=talsh_tensor_c_assoc(tens,image_id,&ctens);
-   if(errc || ctens == NULL){tsk->task_error=113; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
+   if(errc || ctens == NULL){
+    tsk->task_error=113; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+    if(errc != TRY_LATER){return TALSH_FAILURE;}else{return errc;}
+   }
    cuda_task=(cudaTask_t*)(tsk->task_p);
    if(dvk == DEV_HOST && dvn == 0){ //destination is Host
     j=-1; //Host
@@ -2343,7 +2346,8 @@ int talshTensorInit(talsh_tens_t * dtens, double val_real, double val_imag, int 
    //Associate TAL-SH tensor images with <tensBlck_t> objects:
    errc=talsh_tensor_c_assoc(dtens,dimg,&dctr);
    if(errc || dctr == NULL){
-    tsk->task_error=123; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
+    tsk->task_error=123; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+    if(errc != TRY_LATER){return TALSH_FAILURE;}else{return errc;}
    }
    //Get the CUDA task alias:
    cuda_task=(cudaTask_t*)(tsk->task_p);
@@ -2566,12 +2570,14 @@ int talshTensorAdd(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * lten
    //Associate TAL-SH tensor images with <tensBlck_t> objects:
    errc=talsh_tensor_c_assoc(dtens,dimg,&dctr);
    if(errc || dctr == NULL){
-    tsk->task_error=123; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
+    tsk->task_error=123; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+    if(errc != TRY_LATER){return TALSH_FAILURE;}else{return errc;}
    }
    errc=talsh_tensor_c_assoc(ltens,limg,&lctr);
    if(errc || lctr == NULL){
-    errc=talsh_tensor_c_dissoc(dctr);
-    tsk->task_error=124; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
+    j=talsh_tensor_c_dissoc(dctr);
+    tsk->task_error=124; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+    if(errc != TRY_LATER){return TALSH_FAILURE;}else{return errc;}
    }
    //Get the CUDA task alias:
    cuda_task=(cudaTask_t*)(tsk->task_p);
@@ -2834,17 +2840,20 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
    //Associate TAL-SH tensor images with <tensBlck_t> objects:
    errc=talsh_tensor_c_assoc(dtens,dimg,&dctr);
    if(errc || dctr == NULL){
-    tsk->task_error=123; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
+    tsk->task_error=123; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+    if(errc != TRY_LATER){return TALSH_FAILURE;}else{return errc;}
    }
    errc=talsh_tensor_c_assoc(ltens,limg,&lctr);
    if(errc || lctr == NULL){
-    errc=talsh_tensor_c_dissoc(dctr);
-    tsk->task_error=124; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
+    j=talsh_tensor_c_dissoc(dctr);
+    tsk->task_error=124; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+    if(errc != TRY_LATER){return TALSH_FAILURE;}else{return errc;}
    }
    errc=talsh_tensor_c_assoc(rtens,rimg,&rctr);
    if(errc || rctr == NULL){
-    errc=talsh_tensor_c_dissoc(lctr); errc=talsh_tensor_c_dissoc(dctr);
-    tsk->task_error=125; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
+    j=talsh_tensor_c_dissoc(lctr); j=talsh_tensor_c_dissoc(dctr);
+    tsk->task_error=125; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+    if(errc != TRY_LATER){return TALSH_FAILURE;}else{return errc;}
    }
    //Get the CUDA task alias:
    cuda_task=(cudaTask_t*)(tsk->task_p);
