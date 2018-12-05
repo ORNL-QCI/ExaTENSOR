@@ -31,20 +31,21 @@ export OMP_WAIT_POLICY=PASSIVE         #idle thread behavior
 #export LOMP_DEBUG=1                    #IBM XL OpenMP debugging
 
 #OpenMP thread binding:
-export OMP_PLACES_DEFAULT=threads                                    #default thread binding to CPU logical cores
-export OMP_PLACES_EOS="{1},{3},{5},{7,9},{0:16:2},{11},{13},{15}"    #Eos 16-core hyperthreaded Intel Xeon thread binding (even logical cores do computing)
-export OMP_PLACES_TITAN="{1},{3},{5},{7,9},{0:8:2},{11},{13},{15}"   #Titan 16-core 8-FPU AMD thread binding (even logical cores do computing)
-export OMP_PLACES_POWER9="{1},{3},{5},{7,9},{0:42:2},{11},{13},{15}" #Summit 21-core SMT4 Power9 socket thread binding (even logical cores do computing)
-export OMP_PLACES_KNL="{1},{3},{5},{7,9},{0:128:2},{11},{13},{15}"   #Percival 64-core SMT4 KNL thread binding (even logical cores do computing)
+export OMP_PLACES_DEFAULT=threads                                     #default thread binding to CPU logical cores
+export OMP_PLACES_EOS="{1},{3},{5},{7,9},{0:16:2},{11},{13},{15}"     #Eos 16-core hyperthreaded Intel Xeon thread binding (even logical cores do computing)
+export OMP_PLACES_TITAN="{1},{3},{5},{7,9},{0:8:2},{11},{13},{15}"    #Titan 16-core 8-FPU AMD thread binding (even logical cores do computing)
+#export OMP_PLACES_POWER9="{0},{1},{2},{3},{4:41:2},{5},{7},{9}"       #Summit 21-core SMT4 Power9 socket thread binding (even logical cores do computing)
+export OMP_PLACES_POWER9="{1},{3},{5},{7,9},{16},{11},{13},{15}"      #Summit 21-core SMT4 Power9 socket thread binding (even logical cores do computing)
+export OMP_PLACES_KNL="{1},{3},{5},{7,9},{0:128:2},{11},{13},{15}"    #Percival 64-core SMT4 KNL thread binding (even logical cores do computing)
 export OMP_PLACES=$OMP_PLACES_DEFAULT
 export OMP_PROC_BIND="close,spread,spread" #nest1: Functional threads (DSVU)
-                                           #nest2: TAVP-WRK:Dispatcher spawns coarse-grain executors
+                                           #nest2: TAVP-WRK:Dispatcher spawns coarse-grain Executors
                                            #nest3: TAVP-WRK:Dispatcher:Executor spawns execution threads in CP-TAL kernels
 #MKL specific:
 export MKL_NUM_THREADS_DEFAULT=1                #keep consistent with chosen OMP_PLACES!
 export MKL_NUM_THREADS_EOS=16                   #keep consistent with chosen OMP_PLACES!
 export MKL_NUM_THREADS_TITAN=8                  #keep consistent with chosen OMP_PLACES!
-export MKL_NUM_THREADS_POWER9=84                #keep consistent with chosen OMP_PLACES!
+export MKL_NUM_THREADS_POWER9=42                #keep consistent with chosen OMP_PLACES!
 export MKL_NUM_THREADS_KNL=128                  #keep consistent with chosen OMP_PLACES!
 export MKL_NUM_THREADS=$MKL_NUM_THREADS_DEFAULT #number of Intel MKL threads per process
 
@@ -75,8 +76,11 @@ export MPICH_RMA_OVER_DMAPP=1                #CRAY: DMAPP backend for CRAY-MPICH
 #export MPICH_GNI_MEM_DEBUG_FNAME=MPICH.memdebug
 #export MPICH_RANK_REORDER_DISPLAY=1
 
-#Summit (jsrun) specific:
+#Summit specific:
 unset PAMI_IBV_ENABLE_DCT
+#export PAMI_IBV_ENABLE_DCT=1        #reduces MPI_Init() time at large scale
+#export PAMI_ENABLE_STRIPING=1       #increases network bandwidth, also increases latency
+#export PAMI_IBV_ENABLE_OOO_AR=1     #adaptive routing is default
 
 rm core.* *.tmp *.log *.out *.x
 cp $QF_PATH/Qforce.x ./

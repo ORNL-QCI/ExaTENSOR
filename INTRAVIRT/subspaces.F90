@@ -1,7 +1,7 @@
 !ExaTENSOR: Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/16
+!REVISION: 2018/12/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2110,15 +2110,17 @@
 !unique id and an associated max-resolution basis, the latter consisting of a subset
 !of the original full basis (later on, reduced basis sets can be defined for any subspace).
 !Each subspace can also be directly accessed by its id in the vector tree <this%subspaces>.
-!Storage complexity O(NlogN), where N is the original full space dimension.
+!If provided, the tree branching factor <branch_fac> array regulates the number of children
+!spawn at each tree level, with a default of 2 (binary tree) when the array is exhausted.
+!Tree storage complexity O(NlogN), where N is the original full space dimension.
          implicit none
          class(h_space_t), intent(out), target:: this             !out: hierarchical representation of the vector space
          class(subspace_basis_t), intent(in), target:: full_basis !in: full basis of the vector space, {Psi_i}
          integer(INTD), intent(out), optional:: ierr              !out: error code
-         integer(INTD), intent(in), optional:: branch_fac         !in: aggregation tree branching factor (defaults to 2)
+         integer(INTD), intent(in), optional:: branch_fac(1:)     !in: aggregation tree branching factors for each tree level (defaults to 2 when not available)
          complex(8), intent(in), optional, target:: metric(:,:)   !in: metric tensor: g_ij=<Psi_i|Psi_j>: Hermitian complex matrix
          logical:: split
-         integer(INTD):: i,l,m,brf,tlevel,errc
+         integer(INTD):: i,l,m,brs,brm,brf,tlevel,errc
          integer(INTL):: nbnd
          integer(INTL), allocatable:: bndr(:)
          type(vec_tree_iter_t):: vt_it
@@ -2136,9 +2138,10 @@
 !Construct the subspace aggregation tree (SAT) by recursive basis splitting:
           allocate(bndr(1:this%space_dim),STAT=errc)
           if(errc.eq.0) then
-           if(present(branch_fac)) then; brf=branch_fac; else; brf=2; endif
-           if(brf.ge.2) then
-            allocate(segs(1:brf),STAT=errc)
+           if(present(branch_fac)) then; brs=size(branch_fac); else; brs=0; endif
+           call check_branch_factors(brm,errc)
+           if(errc.eq.0) then
+            allocate(segs(1:brm),STAT=errc)
             if(errc.eq.0) then
              errc=vt_it%init(this%subspaces)
              if(errc.eq.GFC_SUCCESS) then
@@ -2180,7 +2183,8 @@
                  tlevel=-1; split=.TRUE.
                  tloop: do while(split)
                   split=.FALSE.; tlevel=tlevel+1
-                  !write(*,'("Splitting Tree Level ",i4)') tlevel !debug
+                  brf=2; if(tlevel+1.le.brs) brf=branch_fac(tlevel+1)
+                  !write(*,'("Splitting Tree Level ",i4," with max branch factor ",i6)') tlevel,brf !debug
                   do while(errc.eq.GFC_SUCCESS)
   !Process the current tree vertex:
                    up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
@@ -2272,6 +2276,22 @@
          return
 
         contains
+
+         subroutine check_branch_factors(max_branch_fac,jerr)
+          integer(INTD), intent(out):: max_branch_fac
+          integer(INTD), intent(out):: jerr
+          integer(INTD):: jj
+
+          jerr=0; max_branch_fac=0
+          do jj=1,brs
+           if(branch_fac(jj).ge.2) then
+            if(branch_fac(jj).gt.max_branch_fac) max_branch_fac=branch_fac(jj)
+           else
+            jerr=-1; exit
+           endif
+          enddo
+          return
+         end subroutine check_branch_factors
 
          subroutine set_symmetry_boundaries(bas,jnbnd,jbnd,jerr)
           class(subspace_basis_t), intent(in):: bas

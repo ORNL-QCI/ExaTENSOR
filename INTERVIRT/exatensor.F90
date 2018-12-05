@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/11/08
+!REVISION: 2018/12/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -877,10 +877,10 @@
         integer(INTD), intent(out):: space_id                     !out: vector space id (non-negative)
         class(h_space_t), pointer, intent(out):: hspace           !out: pointer to the registered vector space
         integer(INTD), intent(in), optional:: branch_factor       !in: optional branching factor for construction of the subspace aggregation tree
-        integer(INTD):: brf
+        integer(INTD):: brf(1)
 
         ierr=EXA_SUCCESS; space_id=-1
-        brf=EXA_SUBSPACE_BRANCH_FACTOR_DEFAULT; if(present(branch_factor)) brf=branch_factor
+        brf(1)=EXA_SUBSPACE_BRANCH_FACTOR_DEFAULT; if(present(branch_factor)) brf(1)=branch_factor
         if(space_basis%dimsn().gt.0.and.len(space_name).gt.0) then
          space_id=hspace_register%register_space(space_name,ierr,hspace)
          if(ierr.eq.TEREC_SUCCESS.and.associated(hspace)) then

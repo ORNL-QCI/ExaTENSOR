@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/04
+!REVISION: 2018/12/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -108,6 +108,7 @@
         real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
  !Dispatcher:
         integer(INTD), private:: MAX_DISPATCHER_INTAKE=64       !max number of instructions taken from the port at a time
+        real(8), private:: DISPATCHER_DEFERRED_PAUSE=1d-4       !enforced pause to a Dispatcher before issuing the next instruction after the previous one has been deferred
         logical, private:: ACCELERATOR_ONLY=.TRUE.              !debug switch: if TRUE, all tensor contractions will be executed on accelerators
  !Retirer:
         integer(INTD), private:: MAX_RETIRER_BATCH=32           !max size of the retired instruction batch
@@ -8246,9 +8247,10 @@
               flush(CONS_OUT)
              endif
              ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
-            elseif(ier.eq.TRY_LATER) then !instruction cannot be issued now
+            elseif(ier.eq.TRY_LATER) then !instruction cannot be issued now due to the lack of resources: Deferred
              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,errcode)
              ier=this%iqueue%next()
+             !call wait_delay(real(DISPATCHER_DEFERRED_PAUSE,4)) !pause before issuing the next instruction
             else
              errc=-20; exit wloop
             endif
