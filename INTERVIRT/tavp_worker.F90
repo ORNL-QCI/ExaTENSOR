@@ -106,10 +106,12 @@
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=16 !max number of outstanding prefetches issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=8     !max number of outstanding uploads issued by Communicator
         real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
+        logical, private:: COMMUNICATOR_OFF=.FALSE.             !DEBUG: Turns off all actual communications
  !Dispatcher:
         integer(INTD), private:: MAX_DISPATCHER_INTAKE=64       !max number of instructions taken from the port at a time
         real(8), private:: DISPATCHER_DEFERRED_PAUSE=1d-4       !enforced pause to a Dispatcher before issuing the next instruction after the previous one has been deferred
-        logical, private:: ACCELERATOR_ONLY=.TRUE.              !debug switch: if TRUE, all tensor contractions will be executed on accelerators
+        logical, private:: ACCELERATOR_ONLY=.TRUE.              !DEBUG: if TRUE, all tensor contractions will be executed on accelerators
+        logical, private:: DISPATCHER_OFF=.FALSE.               !DEBUG: Turns off all actual computations
  !Retirer:
         integer(INTD), private:: MAX_RETIRER_BATCH=32           !max size of the retired instruction batch
 !TYPES:
@@ -2685,23 +2687,31 @@
                      if(errc.eq.0.and.comm_stat.eq.DS_OPRND_NO_COMM) then
                       cptr=this%resource%get_mem_ptr(errc)
                       if(errc.eq.0) then
-                       if(COMMUNICATOR_REQUEST) then
-                        call descr%get_data(cptr,errc,MPI_ASYNC_REQ)
-                        if(errc.eq.0.and.DEBUG.gt.1) then
-                         comm_stat=descr%get_comm_stat(errc,req)
+                       if(COMMUNICATOR_REQUEST) then !request-based one-sided communication
+                        if(.not.COMMUNICATOR_OFF) then
+                         call descr%get_data(cptr,errc,MPI_ASYNC_REQ)
+                         if(errc.eq.0.and.DEBUG.gt.1) then
+                          comm_stat=descr%get_comm_stat(errc,req)
 !$OMP CRITICAL (IO)
-                         write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Rget initiated with request = ",i12)') req
+                          write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Rget initiated with request = ",i12)') req
 !$OMP END CRITICAL (IO)
-                         flush(CONS_OUT)
+                          flush(CONS_OUT)
+                         endif
+                        else
+                         if(associated(this%cache_entry)) call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
                         endif
-                       else
+                       else !regular one-sided communication
                         if(COMMUNICATOR_BLOCKING) then
-                         call descr%get_data(cptr,errc,MPI_ASYNC_NOT)
+                         if(.not.COMMUNICATOR_OFF) call descr%get_data(cptr,errc,MPI_ASYNC_NOT)
                          if(associated(this%cache_entry)) call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
                         else
-                         call descr%get_data(cptr,errc,MPI_ASYNC_NRM)
+                         if(.not.COMMUNICATOR_OFF) then
+                          call descr%get_data(cptr,errc,MPI_ASYNC_NRM)
+                         else
+                          if(associated(this%cache_entry)) call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
+                         endif
                         endif
-                        if(errc.eq.0.and.DEBUG.gt.1) then
+                        if(errc.eq.0.and.DEBUG.gt.1.and.(.not.COMMUNICATOR_OFF)) then
 !$OMP CRITICAL (IO)
                          write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Get initiated without request")')
 !$OMP END CRITICAL (IO)
@@ -2808,24 +2818,34 @@
                     if(comm_stat.eq.DS_OPRND_NO_COMM) then
                      cptr=this%resource%get_mem_ptr(errc)
                      if(errc.eq.0) then
-                      if(COMMUNICATOR_REQUEST) then
-                       call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
-                       if(errc.eq.0.and.DEBUG.gt.1) then
-                        comm_stat=descr%get_comm_stat(errc,req)
+                      if(COMMUNICATOR_REQUEST) then !request-based one-sided communication
+                       if(.not.COMMUNICATOR_OFF) then
+                        call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
+                        if(errc.eq.0.and.DEBUG.gt.1) then
+                         comm_stat=descr%get_comm_stat(errc,req)
 !$OMP CRITICAL (IO)
-                        write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated with request = ",i12)') req
+                         write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated with request = ",i12)') req
 !$OMP END CRITICAL (IO)
-                        flush(CONS_OUT)
-                       endif
-                      else
-                       if(COMMUNICATOR_BLOCKING) then
-                        call descr%acc_data(cptr,errc,MPI_ASYNC_NOT)
-                        if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
-                        call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-13 !local buffer has been accumulated, thus must be reset to zero
+                         flush(CONS_OUT)
+                        endif
                        else
-                        call descr%acc_data(cptr,errc,MPI_ASYNC_NRM)
+                        if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                        call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-15 !local buffer has been accumulated, thus must be reset to zero
                        endif
-                       if(errc.eq.0.and.DEBUG.gt.1) then
+                      else !regular one-sided communication
+                       if(COMMUNICATOR_BLOCKING) then
+                        if(.not.COMMUNICATOR_OFF) call descr%acc_data(cptr,errc,MPI_ASYNC_NOT)
+                        if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                        call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-14 !local buffer has been accumulated, thus must be reset to zero
+                       else
+                        if(.not.COMMUNICATOR_OFF) then
+                         call descr%acc_data(cptr,errc,MPI_ASYNC_NRM)
+                        else
+                         if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                         call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-13 !local buffer has been accumulated, thus must be reset to zero
+                        endif
+                       endif
+                       if(errc.eq.0.and.DEBUG.gt.1.and.(.not.COMMUNICATOR_OFF)) then
 !$OMP CRITICAL (IO)
                         write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated without request")')
 !$OMP END CRITICAL (IO)
@@ -8129,11 +8149,18 @@
          contains
 
           subroutine set_microcode() !implementation of each tensor operation
+           integer(INTD):: jj
+
+           do jj=lbound(this%microcode,1),ubound(this%microcode,1)
+            this%microcode(jj)%instr_proc=>NULL()
+           enddo
            this%microcode(TAVP_INSTR_TENS_CREATE)%instr_proc=>TAVPWRKExecTensorCreate
            this%microcode(TAVP_INSTR_TENS_DESTROY)%instr_proc=>TAVPWRKExecTensorDestroy
            this%microcode(TAVP_INSTR_TENS_INIT)%instr_proc=>TAVPWRKExecTensorInit
-           this%microcode(TAVP_INSTR_TENS_CONTRACT)%instr_proc=>TAVPWRKExecTensorContract
-           this%microcode(TAVP_INSTR_TENS_ACCUMULATE)%instr_proc=>TAVPWRKExecTensorAccumulate
+           if(.not.DISPATCHER_OFF) then
+            this%microcode(TAVP_INSTR_TENS_CONTRACT)%instr_proc=>TAVPWRKExecTensorContract
+            this%microcode(TAVP_INSTR_TENS_ACCUMULATE)%instr_proc=>TAVPWRKExecTensorAccumulate
+           endif
            return
           end subroutine set_microcode
 
@@ -8462,32 +8489,31 @@
            if(errc.eq.DSVP_SUCCESS) then
             flops=tens_instr%get_flops(errc,arint,words)
             if(errc.eq.0) then
+             if(present(dev_id)) then
+              devid=dev_id; dev_num=talsh_kind_dev_id(devid,dev_kind)
+             else
+              devid=map_tensor_instruction(dev_kind,dev_num)
+             endif
              iproc=>this%microcode(opcode)%instr_proc
              if(associated(iproc)) then
-              if(present(dev_id)) then
-               dev_num=talsh_kind_dev_id(dev_id,dev_kind)
-               call iproc(this,tens_instr,ier,dev_id)
-              else
-               devid=map_tensor_instruction(dev_kind,dev_num)
-               call iproc(this,tens_instr,ier,devid)
-              endif
-              if(ier.eq.0) then
-               select case(dev_kind)
-               case(DEV_HOST)
-               case(DEV_NVIDIA_GPU)
-                this%gpu_flops(dev_num)=this%gpu_flops(dev_num)+flops
-               case(DEV_INTEL_MIC)
-                this%mic_flops(dev_num)=this%mic_flops(dev_num)+flops
-               case(DEV_AMD_GPU)
-                this%amd_flops(dev_num)=this%amd_flops(dev_num)+flops
-               case default
-                errc=-7
-               end select
-              else
-               if(ier.eq.TRY_LATER) then; errc=ier; else; errc=-6; endif
-              endif
+              call iproc(this,tens_instr,ier,devid)
              else
-              errc=-5
+              ier=0
+             endif
+             if(ier.eq.0) then
+              select case(dev_kind)
+              case(DEV_HOST)
+              case(DEV_NVIDIA_GPU)
+               this%gpu_flops(dev_num)=this%gpu_flops(dev_num)+flops
+              case(DEV_INTEL_MIC)
+               this%mic_flops(dev_num)=this%mic_flops(dev_num)+flops
+              case(DEV_AMD_GPU)
+               this%amd_flops(dev_num)=this%amd_flops(dev_num)+flops
+              case default
+               errc=-6
+              end select
+             else
+              if(ier.eq.TRY_LATER) then; errc=ier; else; errc=-5; endif
              endif
             else
              errc=-4
