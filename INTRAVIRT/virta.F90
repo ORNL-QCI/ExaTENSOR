@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/03
+!REVISION: 2018/12/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -112,8 +112,8 @@
  !Subspace hierarchy configuration:
         integer(INTD), parameter, public:: EXA_SUBSPACE_BRANCH_FACTOR_DEFAULT=2 !default branching factor for construction of subspace aggregation trees
  !TAVP hierarchy configuration:
-        integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=64  !maximal size of a work group (max number of workers per manager)
-        integer(INTD), public:: EXA_MANAGER_BRANCH_FACT=16  !branching factor for the managing hierarchy
+        integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=128  !maximal size of a work group (max number of workers per manager)
+        integer(INTD), public:: EXA_MANAGER_BRANCH_FACT=16   !branching factor for the managing hierarchy
  !TAVP identification:
         integer(INTD), parameter, public:: TAVP_ANY_ID=-1         !any TAVP
  !TAVP MPI message tags:

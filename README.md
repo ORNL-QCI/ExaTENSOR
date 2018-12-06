@@ -1,6 +1,6 @@
 ExaTENSOR: Domain-specific virtual processor specialized to
            numerical tensor algebra workloads on heterogeneous
-           HPC systems (multicore + NVIDIA GPU as of now).
+           HPC systems (multicore/KNL + NVIDIA GPU as of now).
 
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
 
@@ -62,15 +62,19 @@ BUILD: Choose the right options for your platform in the Makefile header and mak
 
 RUN: An example script run.sh shows how to run ExaTENSOR for a test case (Qforce.x)
      implemented in QFORCE/main.F90. In general, at least 4 MPI processes are needed
-     in order to run ExaTENSOR. The test configuration utilizes >=4 MPI processes,
+     in order to run ExaTENSOR. The test configuration utilizes >= 4 MPI processes,
      each process running at least 5 OpenMP threads. This MPI test can still be run on a
      single node via oversubscription of CPU cores. Environment variables to set:
      a) QF_PATH: Path to the ExaTENSOR root directory.
      b) QF_NUM_PROCS: Number of MPI processes, must be greater or equal to 4 for this test.
      c) QF_PROCS_PER_NODE: Number of MPI processes per node.
-     d) QF_CORES_PER_PROC: Number of CPU cores per MPI process. In case you have less
+     d) QF_CORES_PER_PROCESS: Number of CPU cores per MPI process. In case you have less
         CPU cores than the number of MPI processes, specify the minimum of 1.
-     e) QF_NUM_THREADS: Number of threads per MPI process (set to 8).
-     f) QF_GPUS_PER_PROCESS: Number of exclusive NVIDIA GPUs per MPI process.
+     e) QF_MEM_PER_PROCESS: Host RAM memory limit (MB) per MPI process.
+     f) QF_NVMEM_PER_PROCESS: Non-volatile memory limit (MB) per MPI process (if your node has one).
+     g) QF_HOST_BUFFER_SIZE: Size of the pinned Host RAM pool (MB): Should not exceed QF_MEM_PER_PROCESS.
+     h) QF_GPUS_PER_PROCESS: Number of exclusively owned NVIDIA GPUs per MPI process.
+     i) QF_NUM_THREADS: Initial number of threads per MPI process (always set to 8).
      At the bottom of run.sh, pick or specify your MPI execution command for Qforce.x,
-        taking into account the number of MPI processes per node, oversubscription, etc.
+     taking into account the number of MPI processes per node, oversubscription, etc.
+     The test should normally take less than 30 sec to run.

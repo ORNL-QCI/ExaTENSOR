@@ -1,10 +1,10 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/11
+!REVISION: 2018/12/06
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -26,7 +26,7 @@
 ! - C++11 at least.
 ! - MPI 3.0 at least.
 ! - OpenMP 3.0 at least (OpenMP 4.0+ if using Intel MIC).
-! - CUDA 5.0 at least.
+! - CUDA 5.0 at least (CUDA 9+ if using cuTT).
 !MPI launch notes:
 ! - MPI processes launched on the same node MUST have consecutive numbers!
 ! - Environment variable <QF_PROCS_PER_NODE> MUST be defined when using accelerators (number of processes per node)!
@@ -34,7 +34,7 @@
 ! - NO_AMD - do not use AMD GPU;
 ! - NO_PHI - do not use Intel Xeon Phi (MIC);
 ! - NO_GPU - do not use NVidia GPU (CUDA);
-! - NO_BLAS - BLAS/LAPACK calls will be replaced by in-house routines (D.I.L.);
+! - NO_BLAS - BLAS/LAPACK calls will be replaced by in-house (slow) routines (D.I.L.);
 ! - USE_MPI_MOD - use MPI module instead of mpif.h;
 ! - USE_MKL - use Intel MKL library for BLAS/LAPACK;
 !OUTPUT DEVICE:
@@ -448,8 +448,8 @@
         subroutine benchmark_exatensor()
          implicit none
          integer(INTL), parameter:: TEST_SPACE_DIM=64
-         integer(INTD), parameter:: BRANCHING_FACTOR=4
-         integer(INTD), parameter:: TENSOR_DATA_KIND=EXA_DATA_KIND_R4
+         integer(INTD), parameter:: BRANCHING_FACTOR=3
+         integer(INTD), parameter:: TENSOR_DATA_KIND=EXA_DATA_KIND_R8
          type(color_symmetry_t):: basis_symmetry(1:TEST_SPACE_DIM)
          type(subspace_basis_t):: basis
          class(h_space_t), pointer:: ao_space
@@ -638,8 +638,8 @@
 !Application initializes MPI:
         call MPI_Init_Thread(MPI_THREAD_MULTIPLE,mpi_th_provided,ierr)
         if(mpi_th_provided.eq.MPI_THREAD_MULTIPLE) then
-         !call test_exatensor()
-         call benchmark_exatensor()
+         call test_exatensor()
+         !call benchmark_exatensor()
         else
          write(6,*) 'Your MPI library does not support MPI_THREAD_MULTIPLE! Change it!'
         endif
