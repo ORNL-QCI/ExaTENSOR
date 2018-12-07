@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2018/12/06
+REVISION: 2018/12/07
 
 Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -155,12 +155,14 @@ FOR DEVELOPERS ONLY:
 
 //DATA KINDS (keep consistent with tensor_algebra.F90):
 #define NO_TYPE 0 //null type
-//#define R2 2      //half-precision float data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
-#define R4 4      //float data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
-#define R8 8      //double data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
-//#define C2 12     //half-precision float complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
-#define C4 14     //float complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
-#define C8 18     //double complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
+//#define R2 2      //half-precision float data kind
+#define R4 4      //single-precision float data kind
+#define R8 8      //double-precision float data kind
+//#define R16 10    //quadruple-precision float data kind
+//#define C2 12     //half-precision float complex data kind
+#define C4 14     //single-precision float complex data kind
+#define C8 18     //double-precision float complex data kind
+//#define C16 20    //quadruple-precision float complex data kind
 
 //CUDA TASK STATUS (keep consistent with tensor_algebra.F90):
 #define CUDA_TASK_ERROR -1
