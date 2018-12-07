@@ -1,9 +1,9 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/06
+!REVISION: 2018/12/07
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -2668,7 +2668,7 @@
          type(C_PTR):: cptr
          logical:: remot
 
-         call prof_push('Prefetch',0)
+         call prof_push('Prefetch'//CHAR_NULL,0)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock() !`This lock includes blocking communication time
@@ -2796,7 +2796,7 @@
          type(C_PTR):: cptr
          logical:: temporary,accumulator,located,remote,skip_acc
 
-         call prof_push('Upload',1)
+         call prof_push('Upload'//CHAR_NULL,1)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock() !`This lock includes blocking communication time
@@ -2930,7 +2930,7 @@
          class(DataDescr_t), pointer:: descr
          logical:: tw
 
-         call prof_push('Sync',2)
+         call prof_push('Sync'//CHAR_NULL,2)
          res=.FALSE.; tw=.TRUE.; if(present(wait)) tw=wait
          if(this%is_active(errc)) then
           if(errc.eq.0) then
