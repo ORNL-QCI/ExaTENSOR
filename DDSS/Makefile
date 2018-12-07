@@ -171,8 +171,8 @@ CUDA_INC = -I.
 endif
 
 #CUDA LIBS:
-CUDA_LINK_NOWRAP = -L$(PATH_CUDA_LIB) -lcudart -lcublas
-CUDA_LINK_WRAP = -lcudart -lcublas
+CUDA_LINK_NOWRAP = -L$(PATH_CUDA_LIB) -lcublas -lcudart -lnvToolsExt
+CUDA_LINK_WRAP = -lcublas -lcudart -lnvToolsExt
 CUDA_LINK_CUDA = $(CUDA_LINK_$(WRAP))
 CUDA_LINK_NOCUDA = -L.
 CUDA_LINK = $(CUDA_LINK_$(GPU_CUDA))
@@ -285,7 +285,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(CUDA_LINK) $(LIB)
 
 OBJS =  ./OBJ/dil_basic.o ./OBJ/sys_service.o ./OBJ/c2fortran.o ./OBJ/c2f_ifc.o ./OBJ/stsubs.o ./OBJ/timer.o ./OBJ/timers.o \
-	./OBJ/mpi_fort.o ./OBJ/service_mpi.o ./OBJ/distributed.o ./OBJ/pack_prim.o ./OBJ/test_pack_prim.o
+	./OBJ/nvtx_profile.o ./OBJ/mpi_fort.o ./OBJ/service_mpi.o ./OBJ/distributed.o ./OBJ/pack_prim.o ./OBJ/test_pack_prim.o
 
 $(NAME): lib$(NAME).a ./OBJ/main.o ./OBJ/test_pack_prim.o
 	$(FCOMP) ./OBJ/main.o lib$(NAME).a $(LFLAGS) -o test_$(NAME).x
@@ -321,6 +321,9 @@ endif
 
 ./OBJ/timers.o: timers.F90 ./OBJ/timer.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) timers.F90 -o ./OBJ/timers.o
+
+./OBJ/nvtx_profile.o: nvtx_profile.c nvtx_profile.h
+	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) nvtx_profile.c -o ./OBJ/nvtx_profile.o
 
 ./OBJ/mpi_fort.o: mpi_fort.c
 	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) mpi_fort.c -o ./OBJ/mpi_fort.o

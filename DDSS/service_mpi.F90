@@ -1,9 +1,9 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/03
+!REVISION: 2018/12/07
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -128,6 +128,15 @@
           integer(MPI_ADDRESS_KIND):: disp          !out: absolute MPI displacement
           integer(C_INT):: ierr                     !out: error code (0:success)
          end subroutine MPI_Get_Displacement
+ !Profiling/tracing:
+         subroutine nvtx_push(annotation,color) bind(c,name='prof_push')
+          import
+          implicit none
+          character(C_CHAR), intent(in):: annotation(*)
+          integer(C_INT), value:: color
+         end subroutine nvtx_push
+         subroutine nvtx_pop() bind(c,name='prof_pop')
+         end subroutine nvtx_pop
         end interface
 !Visibility:
         public MPI_Get_Displacement

@@ -211,8 +211,8 @@ CUDA_INC = -I.
 endif
 
 #CUDA LIBS:
-CUDA_LINK_NOWRAP = -L$(PATH_CUDA_LIB) -lcudart -lcublas
-CUDA_LINK_WRAP = -lcudart -lcublas
+CUDA_LINK_NOWRAP = -L$(PATH_CUDA_LIB) -lcublas -lcudart -lnvToolsExt
+CUDA_LINK_WRAP = -lcublas -lcudart -lnvToolsExt
 CUDA_LINK_CUDA = $(CUDA_LINK_$(WRAP))
 CUDA_LINK_NOCUDA = -L.
 CUDA_LINK = $(CUDA_LINK_$(GPU_CUDA))

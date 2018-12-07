@@ -1,9 +1,9 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/29 (started 2015/03/18)
+!REVISION: 2018/12/07 (started 2015/03/18)
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -117,7 +117,7 @@
         integer(INT_MPI), parameter, private:: READ_SIGN=+1  !incoming traffic sign (reading direction)
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
-        integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**26 !max number of elements in a single MPI message (larger to be split)
+        integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27 !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096  !max number of outstanding one-sided data transfer requests per process
         integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0        !default communication tag (for P2P MPI communications)
   !Lock types:
@@ -1606,7 +1606,9 @@
                call rw_entry%print_it(dev_out=jo)
                flush(jo)
               endif
+              call nvtx_push('MPI_Win_flush_local'//CHAR_NULL,1)
               call MPI_Win_flush_local(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
+              call nvtx_pop()
               if(errc.ne.0.and.DDSS_MPI_ERR_FATAL) then
                call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_flush_local failed!')
               else
@@ -1626,7 +1628,9 @@
                call rw_entry%print_it(dev_out=jo)
                flush(jo)
               endif
+              call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
               call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
+              call nvtx_pop()
               if(errc.ne.0.and.DDSS_MPI_ERR_FATAL) then
                call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_flush failed!')
               else
@@ -1647,7 +1651,9 @@
              call rw_entry%print_it(dev_out=jo)
              flush(jo)
             endif
+            call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
             call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
+            call nvtx_pop()
             if(errc.ne.0.and.DDSS_MPI_ERR_FATAL) then
              call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_unlock failed!')
             else
@@ -1756,7 +1762,9 @@
                call rw_entry%print_it(dev_out=jo)
                flush(jo)
               endif
+              call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
               call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
+              call nvtx_pop()
               if(errc.eq.0) then
                this%StatMPI=MPI_STAT_COMPLETED
                nullify(rw_entry)
@@ -1832,7 +1840,9 @@
                call rw_entry%print_it(dev_out=jo)
                flush(jo)
               endif
+              call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
               call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
+              call nvtx_pop()
               if(errc.eq.0) then
                this%StatMPI=MPI_STAT_COMPLETED
                nullify(rw_entry)
@@ -1973,7 +1983,9 @@
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
+          call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
           call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            rw_entry%LockType=NO_LOCK
            rw_entry%LastSync=RankWinRefs%TransCount
@@ -1988,7 +2000,9 @@
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
+          call nvtx_push('MPI_Win_lock'//CHAR_NULL,0)
           call MPI_Win_lock(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*READ_SIGN
           else
@@ -2014,7 +2028,9 @@
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
+           call nvtx_push('MPI_Get'//CHAR_NULL,4)
            call MPI_Get(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,jtarg,jv,MPI_REAL4,this%WinMPI%Window,jerr)
+           call nvtx_pop()
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
             exit
@@ -2027,7 +2043,9 @@
           endif
          else !request-handle
           jv=this%DataVol
+          call nvtx_push('MPI_Rget'//CHAR_NULL,5)
           call MPI_Rget(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,this%ReqHandle,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2052,7 +2070,9 @@
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
+           call nvtx_push('MPI_Get'//CHAR_NULL,4)
            call MPI_Get(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,jtarg,jv,MPI_REAL8,this%WinMPI%Window,jerr)
+           call nvtx_pop()
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
             exit
@@ -2065,7 +2085,9 @@
           endif
          else !request-handle
           jv=this%DataVol
+          call nvtx_push('MPI_Rget'//CHAR_NULL,5)
           call MPI_Rget(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,this%ReqHandle,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2090,7 +2112,9 @@
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
+           call nvtx_push('MPI_Get'//CHAR_NULL,4)
            call MPI_Get(c4_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,jtarg,jv,MPI_COMPLEX8,this%WinMPI%Window,jerr)
+           call nvtx_pop()
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
             exit
@@ -2103,7 +2127,9 @@
           endif
          else !request-handle
           jv=this%DataVol
+          call nvtx_push('MPI_Rget'//CHAR_NULL,5)
           call MPI_Rget(c4_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,this%ReqHandle,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2128,7 +2154,9 @@
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
+           call nvtx_push('MPI_Get'//CHAR_NULL,4)
            call MPI_Get(c8_arr(js:js+jv-1),jv,MPI_COMPLEX16,this%RankMPI,jtarg,jv,MPI_COMPLEX16,this%WinMPI%Window,jerr)
+           call nvtx_pop()
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
             exit
@@ -2141,7 +2169,9 @@
           endif
          else !request-handle
           jv=this%DataVol
+          call nvtx_push('MPI_Rget'//CHAR_NULL,5)
           call MPI_Rget(c8_arr,jv,MPI_COMPLEX16,this%RankMPI,this%Offset,jv,MPI_COMPLEX16,this%WinMPI%Window,this%ReqHandle,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2263,7 +2293,9 @@
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
+          call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
           call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            rw_entry%LockType=NO_LOCK
            rw_entry%LastSync=RankWinRefs%TransCount
@@ -2278,7 +2310,9 @@
            call rw_entry%print_it(dev_out=jo)
            flush(jo)
           endif
+          call nvtx_push('MPI_Win_lock'//CHAR_NULL,0)
           call MPI_Win_lock(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*WRITE_SIGN
           else
@@ -2304,8 +2338,10 @@
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
+           call nvtx_push('MPI_Accumulate'//CHAR_NULL,6)
            call MPI_Accumulate(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,jtarg,jv,MPI_REAL4,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
+           call nvtx_pop()
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
             exit
@@ -2318,8 +2354,10 @@
           endif
          else !request-handle
           jv=this%DataVol
+          call nvtx_push('MPI_Raccumulate'//CHAR_NULL,7)
           call MPI_Raccumulate(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2344,8 +2382,10 @@
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
+           call nvtx_push('MPI_Accumulate'//CHAR_NULL,6)
            call MPI_Accumulate(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,jtarg,jv,MPI_REAL8,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
+           call nvtx_pop()
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
             exit
@@ -2358,8 +2398,10 @@
           endif
          else !request-handle
           jv=this%DataVol
+          call nvtx_push('MPI_Raccumulate'//CHAR_NULL,7)
           call MPI_Raccumulate(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2384,8 +2426,10 @@
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
+           call nvtx_push('MPI_Accumulate'//CHAR_NULL,6)
            call MPI_Accumulate(c4_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,jtarg,jv,MPI_COMPLEX8,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
+           call nvtx_pop()
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
             exit
@@ -2398,8 +2442,10 @@
           endif
          else !request-handle
           jv=this%DataVol
+          call nvtx_push('MPI_Raccumulate'//CHAR_NULL,7)
           call MPI_Raccumulate(c4_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2424,8 +2470,10 @@
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
+           call nvtx_push('MPI_Accumulate'//CHAR_NULL,6)
            call MPI_Accumulate(c8_arr(js:js+jv-1),jv,MPI_COMPLEX16,this%RankMPI,jtarg,jv,MPI_COMPLEX16,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
+           call nvtx_pop()
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
             exit
@@ -2438,8 +2486,10 @@
           endif
          else !request-handle
           jv=this%DataVol
+          call nvtx_push('MPI_Raccumulate'//CHAR_NULL,7)
           call MPI_Raccumulate(c8_arr,jv,MPI_COMPLEX16,this%RankMPI,this%Offset,jv,MPI_COMPLEX16,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
+          call nvtx_pop()
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
