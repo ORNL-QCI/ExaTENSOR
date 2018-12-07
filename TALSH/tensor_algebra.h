@@ -2,10 +2,10 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2018/09/21
+REVISION: 2018/12/06
 
-Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
 
 This file is part of ExaTensor.
 
@@ -60,9 +60,9 @@ FOR DEVELOPERS ONLY:
  # If for some reason a device resource is not released properly but the object destruction still
    has happened, a non-critical error NOT_CLEAN may be returned.
 **/
-//BEGINNING OF TENSOR_ALGEBRA_H
-#ifndef _TENSOR_ALGEBRA_H
-#define _TENSOR_ALGEBRA_H
+
+#ifndef TENSOR_ALGEBRA_H_
+#define TENSOR_ALGEBRA_H_
 
 #include <time.h>
 
@@ -484,4 +484,4 @@ int cuda_get_device_count(int * dev_count);
 template <typename T> int gpu_matrix_multiply_tn(size_t ll, size_t lr, size_t lc, const T * lmat, const T * rmat, T * dmat);
 #endif
 
-#endif /*END _TENSOR_ALGEBRA_H*/
+#endif /*TENSOR_ALGEBRA_H_*/

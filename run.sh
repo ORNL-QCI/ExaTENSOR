@@ -81,6 +81,7 @@ unset PAMI_IBV_ENABLE_DCT
 #export PAMI_IBV_ENABLE_DCT=1        #reduces MPI_Init() time at large scale
 #export PAMI_ENABLE_STRIPING=1       #increases network bandwidth, also increases latency
 #export PAMI_IBV_ENABLE_OOO_AR=1     #adaptive routing is default
+#export OMPI_LD_PRELOAD_POSTPEND=$OLCF_SPECTRUM_MPI_ROOT/lib/libmpitrace.so
 
 rm core.* *.tmp *.log *.out *.x
 cp $QF_PATH/Qforce.x ./
@@ -94,6 +95,7 @@ ulimit -s unlimited
 #aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROCESS -cc none ./Qforce.x #>& qforce.log
 
 #jsrun -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x #>& qforce.log
+#jsrun -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone nvprof -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x #>& qforce.log
 
 #nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x #>& qforce.log
 

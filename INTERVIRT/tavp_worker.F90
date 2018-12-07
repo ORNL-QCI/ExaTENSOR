@@ -2668,6 +2668,7 @@
          type(C_PTR):: cptr
          logical:: remot
 
+         call prof_push('Prefetch',0)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock() !`This lock includes blocking communication time
@@ -2775,6 +2776,7 @@
           flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
         end subroutine TensOprndPrefetch
 !--------------------------------------------
@@ -2794,6 +2796,7 @@
          type(C_PTR):: cptr
          logical:: temporary,accumulator,located,remote,skip_acc
 
+         call prof_push('Upload',1)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock() !`This lock includes blocking communication time
@@ -2906,6 +2909,7 @@
           flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
         end subroutine TensOprndUpload
 !---------------------------------------------------------
@@ -2926,6 +2930,7 @@
          class(DataDescr_t), pointer:: descr
          logical:: tw
 
+         call prof_push('Sync',2)
          res=.FALSE.; tw=.TRUE.; if(present(wait)) tw=wait
          if(this%is_active(errc)) then
           if(errc.eq.0) then
@@ -3011,6 +3016,7 @@
           flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
         end function TensOprndSync
 !------------------------------------------------

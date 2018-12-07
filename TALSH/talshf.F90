@@ -1,8 +1,8 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2018/12/03
+!REVISION: 2018/12/06
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -37,6 +37,7 @@
         public get_contr_pattern      !
         public get_contr_pattern_sym  !
         public contr_pattern_rnd      !
+        public prof_push,prof_pop     !profiling
 !PARAMETERS:
  !Generic:
         integer(INTD), private:: CONS_OUT=6 !default output device for this module
