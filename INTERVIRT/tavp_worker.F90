@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/07
+!REVISION: 2018/12/09
 
 !Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -371,8 +371,8 @@
          integer(INTL), private:: host_buf_size=TAVP_WRK_HOST_BUF_SIZE          !size of the pinned Host argument buffer
          integer(INTD), private:: host_arg_max=0                                !max number of tensor arguments in the pinned Host argument buffer
          integer(INTD), allocatable, private:: gpu_list(:)                      !list [1..max ] of available NVIDIA GPU (device numeration from 0)
-         integer(INTD), allocatable, private:: amd_list(:)                      !list [1..max ] of available AMD GPU (device numeration from 0)
          integer(INTD), allocatable, private:: mic_list(:)                      !list [1..max ] of available INTEL MIC (device numeration from 0)
+         integer(INTD), allocatable, private:: amd_list(:)                      !list [1..max ] of available AMD GPU (device numeration from 0)
          real(8), private:: gpu_flops(0:MAX_GPUS_PER_NODE-1)                    !current number of Flops issued to each enumerated GPU device
          real(8), private:: mic_flops(0:MAX_MICS_PER_NODE-1)                    !current number of Flops issued to each enumerated MIC device
          real(8), private:: amd_flops(0:MAX_AMDS_PER_NODE-1)                    !current number of Flops issued to each enumerated AMD device
@@ -393,8 +393,8 @@
         type, extends(dsv_conf_t), private:: tavp_wrk_dispatcher_conf_t
          integer(INTL), public:: host_buf_size                          !size of the pinned Host argument buffer
          integer(INTD), allocatable, public:: gpu_list(:)               !list [1..max] of available NVIDIA GPU (device numeration from 0)
-         integer(INTD), allocatable, public:: amd_list(:)               !list [1..max] of available AMD GPU (device numeration from 0)
          integer(INTD), allocatable, public:: mic_list(:)               !list [1..max] of available INTEL MIC (device numeration from 0)
+         integer(INTD), allocatable, public:: amd_list(:)               !list [1..max] of available AMD GPU (device numeration from 0)
         end type tavp_wrk_dispatcher_conf_t
  !TAVP-WRK (order of DSVU matters):
         type, extends(dsvp_t), public:: tavp_wrk_t
@@ -424,8 +424,8 @@
          integer(INTL), public:: nvram_size                 !size of the usable NVRAM memory (if any) in bytes
          integer(INTD), public:: num_mpi_windows            !number of dynamic MPI windows per global addressing space
          integer(INTD), allocatable, public:: gpu_list(:)   !list [1..max] of the accesible NVIDIA GPU devices (device numeration from 0)
-         integer(INTD), allocatable, public:: amd_list(:)   !list [1..max] of the accesible AMD GPU devices (device numeration from 0)
          integer(INTD), allocatable, public:: mic_list(:)   !list [1..max] of the accesible Intel MIC devices (device numeration from 0)
+         integer(INTD), allocatable, public:: amd_list(:)   !list [1..max] of the accesible AMD GPU devices (device numeration from 0)
         end type tavp_wrk_conf_t
 !INTERFACES:
         abstract interface
@@ -1227,6 +1227,7 @@
          integer(1), pointer:: i1(:)
          integer(4), pointer:: i4(:)
 
+         call prof_push('ZeroBuffer'//CHAR_NULL,8)
          if(.not.this%is_empty(errc)) then
           if(errc.eq.0) then
            addr=this%get_mem_ptr(errc)
@@ -1256,6 +1257,7 @@
           if(errc.ne.0) errc=-1
          endif
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
         end subroutine TensResrcZeroBuffer
 !------------------------------------------------------------
@@ -2590,6 +2592,7 @@
          class(tens_layout_t), pointer:: layout
          logical:: init_zero
 
+         call prof_push('Acquire'//CHAR_NULL,0)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock()
@@ -2650,6 +2653,7 @@
           errc=-1
          endif
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
         end subroutine TensOprndAcquireRsc
 !----------------------------------------------
@@ -2668,7 +2672,7 @@
          type(C_PTR):: cptr
          logical:: remot
 
-         call prof_push('Prefetch'//CHAR_NULL,0)
+         call prof_push('Prefetch'//CHAR_NULL,1)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock() !`This lock includes blocking communication time
@@ -2796,7 +2800,7 @@
          type(C_PTR):: cptr
          logical:: temporary,accumulator,located,remote,skip_acc
 
-         call prof_push('Upload'//CHAR_NULL,1)
+         call prof_push('Upload'//CHAR_NULL,2)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock() !`This lock includes blocking communication time
@@ -2930,7 +2934,7 @@
          class(DataDescr_t), pointer:: descr
          logical:: tw
 
-         call prof_push('Sync'//CHAR_NULL,2)
+         call prof_push('SyncComm'//CHAR_NULL,3)
          res=.FALSE.; tw=.TRUE.; if(present(wait)) tw=wait
          if(this%is_active(errc)) then
           if(errc.eq.0) then
@@ -8138,10 +8142,10 @@
            this%host_buf_size=conf%host_buf_size
            if(allocated(this%gpu_list)) deallocate(this%gpu_list)
            if(allocated(conf%gpu_list)) this%gpu_list=conf%gpu_list
-           if(allocated(this%amd_list)) deallocate(this%amd_list)
-           if(allocated(conf%amd_list)) this%amd_list=conf%amd_list
            if(allocated(this%mic_list)) deallocate(this%mic_list)
            if(allocated(conf%mic_list)) this%mic_list=conf%mic_list
+           if(allocated(this%amd_list)) deallocate(this%amd_list)
+           if(allocated(conf%amd_list)) this%amd_list=conf%amd_list
            call set_microcode() !sets up the operational microcode table
           else
            errc=-2
@@ -8488,6 +8492,7 @@
          procedure(tavp_wrk_dispatch_proc_i), pointer:: iproc
          real(8):: flops,words,arint
 
+         call prof_push('Issue'//CHAR_NULL,4)
          errc=0; ier=0
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -8541,6 +8546,7 @@
           flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
 
          contains
@@ -8599,6 +8605,7 @@
          logical:: wt
          real(8):: flops
 
+         call prof_push('SyncIssue'//CHAR_NULL,5)
          errc=0; res=.FALSE.
          if(talsh_task_status(tens_instr%talsh_task).eq.TALSH_TASK_EMPTY) then
           res=.TRUE.; sts=TALSH_TASK_COMPLETED
@@ -8659,6 +8666,7 @@
           if(ier.ne.0.and.errc.eq.0) errc=-1
          endif
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
         end function TAVPWRKDispatcherSyncInstr
 !----------------------------------------------------------------------
@@ -8887,6 +8895,8 @@
          class(tens_method_uni_t), pointer:: method
          complex(8):: alpha
          logical:: defined
+
+         call prof_push('TensorInit'//CHAR_NULL,9)
 !$OMP FLUSH
          errc=0
          dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
@@ -8953,6 +8963,7 @@
          endif
 !$OMP FLUSH
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
         end subroutine TAVPWRKExecTensorInit
 !------------------------------------------------------------------------
@@ -8973,6 +8984,8 @@
          class(ds_instr_ctrl_t), pointer:: ctrl
          class(ctrl_tens_contr_t), pointer:: ctrl_contract
          type(contr_ptrn_ext_t), pointer:: contr_ptrn_ext
+
+         call prof_push('TensorContract'//CHAR_NULL,10)
 !$OMP FLUSH
          errc=0
          dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
@@ -9050,6 +9063,7 @@
          endif
 !$OMP FLUSH
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
         end subroutine TAVPWRKExecTensorContract
 !--------------------------------------------------------------------------
@@ -9072,6 +9086,8 @@
          class(ctrl_tens_add_t), pointer:: ctrl_add
          class(tens_cache_entry_t), pointer:: cache_entry
          type(permutation_t), pointer:: permut
+
+         call prof_push('TensorAccumulate'//CHAR_NULL,11)
 !$OMP FLUSH
          errc=0
          dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
@@ -9146,6 +9162,7 @@
          endif
 !$OMP FLUSH
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
         end subroutine TAVPWRKExecTensorAccumulate
 ![tavp_wrk_t]======================================
@@ -9197,7 +9214,7 @@
                 if(errc.eq.0) then
                  num_units=num_units+1
   !Dispatcher:
-                 dispatcher_conf=tavp_wrk_dispatcher_conf_t(conf%host_buf_size,conf%gpu_list,conf%amd_list,conf%mic_list)
+                 dispatcher_conf=tavp_wrk_dispatcher_conf_t(conf%host_buf_size,conf%gpu_list,conf%mic_list,conf%amd_list)
                  call this%dispatcher%configure(dispatcher_conf,errc)
                  if(errc.eq.0) then
                   num_units=num_units+1

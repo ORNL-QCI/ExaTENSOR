@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/03
+!REVISION: 2018/12/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -5253,7 +5253,7 @@
          class(tens_instr_t), intent(in):: tens_instr       !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(out), optional:: alt_channel !out: alternative dispatch channel (can be the same as the primary channel)
-         integer(INTD):: errc,i,num_args
+         integer(INTD):: errc,i,opcode,num_args
          class(ds_oprnd_t), pointer:: tens_oprnd
          integer(INTD):: owner_ids(0:MAX_TENSOR_OPERANDS-1)
          class(DataDescr_t), pointer:: descr
@@ -5261,51 +5261,56 @@
          channel=-1; alt_channel=-1 !negative value means undefined
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           num_args=tens_instr%get_num_operands(errc)
+           opcode=tens_instr%get_code(errc)
            if(errc.eq.DSVP_SUCCESS) then
+            num_args=tens_instr%get_num_operands(errc)
+            if(errc.eq.DSVP_SUCCESS) then
  !Determine which TAVP owns each tensor argument:
-            tens_oprnd=>NULL()
-            do i=0,num_args-1
-             tens_oprnd=>tens_instr%get_operand(i,errc)
-             if(errc.eq.DSVP_SUCCESS) then
-              select type(tens_oprnd)
-              class is(tens_oprnd_t)
-               call tens_oprnd%lock()
-               if(this%tavp_is_bottom) then
-                descr=>tens_oprnd%get_data_descriptor(errc)
-                if(errc.eq.0) then
-                 if(associated(descr)) then
-                  if(descr%is_set(errc,proc_rank=owner_ids(i))) then !TAVP-WRK id
-                   if(errc.ne.0) then; errc=-9; exit; endif
+             tens_oprnd=>NULL()
+             do i=0,num_args-1
+              tens_oprnd=>tens_instr%get_operand(i,errc)
+              if(errc.eq.DSVP_SUCCESS) then
+               select type(tens_oprnd)
+               class is(tens_oprnd_t)
+                call tens_oprnd%lock()
+                if(this%tavp_is_bottom) then
+                 descr=>tens_oprnd%get_data_descriptor(errc)
+                 if(errc.eq.0) then
+                  if(associated(descr)) then
+                   if(descr%is_set(errc,proc_rank=owner_ids(i))) then !TAVP-WRK id
+                    if(errc.ne.0) then; errc=-10; exit; endif
+                   else
+                    owner_ids(i)=-1 !data descriptor is not set yet
+                   endif
                   else
                    owner_ids(i)=-1 !data descriptor is not set yet
                   endif
                  else
-                  owner_ids(i)=-1 !data descriptor is not set yet
+                  errc=-9; exit
                  endif
                 else
-                 errc=-8; exit
+                 owner_ids(i)=tens_oprnd%get_owner_id(errc,as_child=.TRUE.) !TAVP-MNG owner id as a child
+                 if(errc.ne.0) then; errc=-8; exit; endif
                 endif
-               else
-                owner_ids(i)=tens_oprnd%get_owner_id(errc,as_child=.TRUE.) !TAVP-MNG owner id as a child
-                if(errc.ne.0) then; errc=-7; exit; endif
-               endif
-               call tens_oprnd%unlock()
-              class default
+                call tens_oprnd%unlock()
+               class default
+                errc=-7; exit
+               end select
+               tens_oprnd=>NULL()
+              else
                errc=-6; exit
-              end select
+              endif
+             enddo
+             if(errc.ne.0.and.associated(tens_oprnd)) then !in case of error
+              select type(tens_oprnd); class is(tens_oprnd_t); call tens_oprnd%unlock(); end select
               tens_oprnd=>NULL()
-             else
-              errc=-5; exit
              endif
-            enddo
-            if(errc.ne.0.and.associated(tens_oprnd)) then !in case of error
-             select type(tens_oprnd); class is(tens_oprnd_t); call tens_oprnd%unlock(); end select
-             tens_oprnd=>NULL()
-            endif
  !Decide which dispatch channel to map the instruction to:
-            if(errc.eq.0.and.num_args.gt.0) then
-             channel=map_by_arg_order(alt_channel,errc); if(errc.ne.0) errc=-4
+             if(errc.eq.0.and.num_args.gt.0) then
+              channel=map_by_arg_order(alt_channel,errc); if(errc.ne.0) errc=-5
+             endif
+            else
+             errc=-4
             endif
            else
             errc=-3
@@ -5330,6 +5335,7 @@
           integer(INTD):: ja,jj
           integer(INTL):: min_instr
           logical:: jf
+          real(8):: rnd
 
           jerr=0; chnl=-1; alt=-1
  !Determine the alternative channel first (based on dispatch load balancing):
@@ -5352,6 +5358,11 @@
             else
              chnl=map_by_round(jerr)
             endif
+           endif
+          else
+           if(opcode.eq.TAVP_INSTR_TENS_CONTRACT.and.DISPATCH_BALANCE) then !work stealing for certain tensor operations
+            call random_number(rnd)
+            if(rnd.lt.1d0/(1d0+exp(-(5d-1)*real((this%dispatch_count(chnl)-this%dispatch_count(alt))-4,8)))) chnl=alt
            endif
           endif
           return
