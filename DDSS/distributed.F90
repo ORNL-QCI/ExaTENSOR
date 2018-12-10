@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/07 (started 2015/03/18)
+!REVISION: 2018/12/09 (started 2015/03/18)
 
 !Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -117,9 +117,10 @@
         integer(INT_MPI), parameter, private:: READ_SIGN=+1  !incoming traffic sign (reading direction)
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
-        integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27 !max number of elements in a single MPI message (larger to be split)
-        integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096  !max number of outstanding one-sided data transfer requests per process
-        integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0        !default communication tag (for P2P MPI communications)
+        integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27    !max number of elements in a single MPI message (larger to be split)
+        integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096     !max number of outstanding one-sided data transfer requests per process
+        integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0           !default communication tag (for P2P MPI communications)
+        integer(INT_MPI), parameter, private:: MPI_ASSER=MPI_MODE_NOCHECK !MPI assertion for locking
   !Lock types:
         integer(INT_MPI), parameter, public:: NO_LOCK=0        !no MPI lock (must be zero)
         integer(INT_MPI), parameter, public:: SHARED_LOCK=1    !shared MPI lock (must be positive)
@@ -1886,7 +1887,6 @@
         type(C_PTR), intent(in):: loc_ptr                !in: pointer to a local buffer
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success, TRY_LATER:resource is currently busy)
         integer(INT_MPI), intent(in), optional:: async   !in: asynchronisity: {MPI_ASYNC_NOT,MPI_ASYNC_NRM,MPI_ASYNC_REQ}
-        integer(INT_MPI), parameter:: MPI_ASSER=0        !MPI lock assertion
         integer(INT_MPI):: rwe,errc,asnc
         real(4), pointer, contiguous:: r4_ptr(:)
         real(8), pointer, contiguous:: r8_ptr(:)
@@ -2196,7 +2196,6 @@
         type(C_PTR), intent(in):: loc_ptr                !in: pointer to a local buffer
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success, TRY_LATER:resource is currently busy)
         integer(INT_MPI), intent(in), optional:: async   !in: asynchronisity: {MPI_ASYNC_NOT,MPI_ASYNC_NRM,MPI_ASYNC_REQ}
-        integer(INT_MPI), parameter:: MPI_ASSER=0        !MPI lock assertion
         integer(INT_MPI):: rwe,errc,asnc
         real(4), pointer, contiguous:: r4_ptr(:)
         real(8), pointer, contiguous:: r8_ptr(:)
