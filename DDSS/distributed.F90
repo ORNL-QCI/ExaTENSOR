@@ -121,7 +121,8 @@
         integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27    !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096     !max number of outstanding one-sided data transfer requests per process
         integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0           !default communication tag (for P2P MPI communications)
-        integer(INT_MPI), parameter, private:: MPI_ASSER=MPI_MODE_NOCHECK !MPI assertion for locking
+       !integer(INT_MPI), parameter, private:: MPI_ASSER=MPI_MODE_NOCHECK !MPI assertion for locking
+        integer(INT_MPI), parameter, private:: MPI_ASSER=0                !MPI assertion for locking
   !Lock types:
         integer(INT_MPI), parameter, public:: NO_LOCK=0        !no MPI lock (must be zero)
         integer(INT_MPI), parameter, public:: SHARED_LOCK=1    !shared MPI lock (must be positive)
