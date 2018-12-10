@@ -117,6 +117,7 @@
         integer(INT_MPI), parameter, private:: READ_SIGN=+1  !incoming traffic sign (reading direction)
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
+        logical, parameter, private:: LAZY_LOCKING=.TRUE.                 !lazy MPI window locking
         integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27    !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096     !max number of outstanding one-sided data transfer requests per process
         integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0           !default communication tag (for P2P MPI communications)
@@ -164,10 +165,11 @@
          integer(INT_MPI), private:: PrevEntry(1:MAX_ONESIDED_REQS) !previous entry within a bin (linked list)
          integer(INT_MPI), private:: HashBin(0:HASH_MOD-1)=0        !first element in each hash bin
          contains
-          procedure, private:: clean=>RankWinListClean           !clean the (rank,window) list (initialization)
+          procedure, private:: init=>RankWinListInit             !clean the (rank,window) list (initialization)
           procedure, private:: test=>RankWinListTest             !test whether a given (rank,window) entry is in the list (with an optional append)
-          procedure, private:: delete=>RankWinListDel            !delete a given active (rank,window) entry
           procedure, private:: new_transfer=>RankWinListNewTrans !register a new data transfer (increment the global transfer ID)
+          procedure, private:: delete=>RankWinListDelete         !delete a given active (rank,window) entry
+          procedure, private:: delete_all=>RankWinListDeleteAll  !delete all (rank,window) entries
           procedure, private:: print_all=>RankWinListPrint       !print all active communications
         end type RankWinList_t
  !Basic MPI window info:
@@ -314,10 +316,11 @@
         private RankWinInit
         private RankWinPrintIt
  !RankWinList_t:
-        private RankWinListClean
+        private RankWinListInit
         private RankWinListTest
-        private RankWinListDel
         private RankWinListNewTrans
+        private RankWinListDelete
+        private RankWinListDeleteAll
         private RankWinListPrint
  !WinMPI_t:
         private WinMPIClean
@@ -552,8 +555,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine RankWinPrintIt
-!=============================================
-        subroutine RankWinListClean(this,ierr)
+!============================================
+        subroutine RankWinListInit(this,ierr)
 !Cleans the (rank,window) list (must be called before use).
         implicit none
         class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
@@ -566,12 +569,12 @@
         do i=1,MAX_ONESIDED_REQS-1; this%NextEntry(i)=i+1; enddo; this%NextEntry(MAX_ONESIDED_REQS)=0 !linked list
         do i=1,MAX_ONESIDED_REQS; call this%RankWins(i)%init(); enddo !init all entries to null
         if(DEBUG.ge.2) then
-         write(jo,'("#DEBUG(distributed:RankWinList.Clean)[",i7,"]: (rank,win)-list cleaned.")') impir
+         write(jo,'("#DEBUG(distributed:RankWinList.Init)[",i7,"]: (rank,win)-list initialized.")') impir
          flush(jo)
         endif
         if(present(ierr)) ierr=0
         return
-        end subroutine RankWinListClean
+        end subroutine RankWinListInit
 !---------------------------------------------------------------------------
         integer(INT_MPI) function RankWinListTest(this,rank,win,ierr,append)
 !Looks up a given pair (rank,window) in the active (rank,window) list and
@@ -651,43 +654,6 @@
         if(present(ierr)) ierr=errc
         return
         end function RankWinListTest
-!-----------------------------------------------------
-        subroutine RankWinListDel(this,entry_num,ierr)
-!Deletes entry <entry_num> from the active (rank,window) list.
-        implicit none
-        class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
-        integer(INT_MPI), intent(in):: entry_num         !in: number of the entry to be deleted
-        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI):: i,j,m,errc
-
-        errc=0
-        if(entry_num.ge.1.and.entry_num.le.MAX_ONESIDED_REQS) then
-         if(this%RankWins(entry_num)%Rank.ge.0) then !active entry
-          m=mod(this%RankWins(entry_num)%Rank,HASH_MOD)
-          i=this%PrevEntry(entry_num)
-          j=this%NextEntry(entry_num)
-          if(i.gt.0) this%NextEntry(i)=j
-          if(j.gt.0) this%PrevEntry(j)=i
-          if(this%HashBin(m).eq.entry_num) this%HashBin(m)=j
-          this%PrevEntry(entry_num)=0; this%NextEntry(entry_num)=this%FirstFree
-          if(this%FirstFree.gt.0) this%PrevEntry(this%FirstFree)=entry_num
-          this%FirstFree=entry_num; this%NumEntries=this%NumEntries-1
-          if(DEBUG.ge.1) then
-           write(jo,'("#DEBUG(distributed:RankWinList.Del)[",i5,":",i3,"]: (window,rank) entry ",i5," deleted: ")',ADVANCE='NO')&
-           &impir,thread_id,entry_num
-           call this%RankWins(entry_num)%print_it(dev_out=jo)
-           flush(jo)
-          endif
-          call this%RankWins(entry_num)%init() !clean entry
-         else
-          errc=1 !empty entries cannot be deleted
-         endif
-        else
-         errc=2
-        endif
-        if(present(ierr)) ierr=errc
-        return
-        end subroutine RankWinListDel
 !-----------------------------------------------------------
         subroutine RankWinListNewTrans(this,dd,rwe,dir,ierr)
 !This subroutine increments the global transfer ID and communicated data size
@@ -730,6 +696,66 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine RankWinListNewTrans
+!--------------------------------------------------------
+        subroutine RankWinListDelete(this,entry_num,ierr)
+!Deletes entry <entry_num> from the active (rank,window) list.
+        implicit none
+        class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
+        integer(INT_MPI), intent(in):: entry_num         !in: number of the entry to be deleted
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: i,j,m,errc
+
+        errc=0
+        if(entry_num.ge.1.and.entry_num.le.MAX_ONESIDED_REQS) then
+         if(this%RankWins(entry_num)%Rank.ge.0) then !active entry
+          m=mod(this%RankWins(entry_num)%Rank,HASH_MOD)
+          i=this%PrevEntry(entry_num)
+          j=this%NextEntry(entry_num)
+          if(i.gt.0) this%NextEntry(i)=j
+          if(j.gt.0) this%PrevEntry(j)=i
+          if(this%HashBin(m).eq.entry_num) this%HashBin(m)=j
+          this%PrevEntry(entry_num)=0; this%NextEntry(entry_num)=this%FirstFree
+          if(this%FirstFree.gt.0) this%PrevEntry(this%FirstFree)=entry_num
+          this%FirstFree=entry_num; this%NumEntries=this%NumEntries-1
+          if(DEBUG.ge.1) then
+           write(jo,'("#DEBUG(distributed:RankWinList.Delete)[",i5,":",i3,"]: (window,rank) entry ",i5," deleted: ")',ADVANCE='NO')&
+           &impir,thread_id,entry_num
+           call this%RankWins(entry_num)%print_it(dev_out=jo)
+           flush(jo)
+          endif
+          call this%RankWins(entry_num)%init() !clean entry
+         else
+          errc=1 !empty entries cannot be deleted
+         endif
+        else
+         errc=2
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine RankWinListDelete
+!-------------------------------------------------
+        subroutine RankWinListDeleteAll(this,ierr)
+!Deletes all (rank,window) entries.
+        implicit none
+        class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc,i,rnk,win
+
+        errc=0
+        do i=lbound(this%RankWins,1),ubound(this%RankWins,1)
+         rnk=this%RankWins(i)%Rank; win=this%RankWins(i)%Window
+         if(rnk.ge.0) then !active entry
+          if(this%RankWins(i)%RefCount.gt.0.or.LAZY_LOCKING) call MPI_Win_unlock(rnk,win,errc)
+          if(errc.eq.0) then
+           call this%delete(i,errc); if(errc.ne.0) then; errc=1; exit; endif
+          else
+           errc=2
+          endif
+         endif
+        enddo
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine RankWinListDeleteAll
 !-----------------------------------------------------
         subroutine RankWinListPrint(this,ierr,dev_out)
 !This subroutine prints the current state of the RankWinList_t,
@@ -1175,7 +1201,7 @@
 
         call MPI_Barrier(comm_mpi,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
-         if(RankWinRefs%FirstFree.lt.0) call RankWinRefs%clean() !init the (rank,win) list
+         if(RankWinRefs%FirstFree.lt.0) call RankWinRefs%init() !init the (rank,win) list
          if(num_wins.gt.0) then
           allocate(this%DataWins(1:num_wins),STAT=errc)
           if(errc.eq.0) then
@@ -1229,42 +1255,47 @@
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: i,j,errc
 
-        call MPI_Barrier(this%CommMPI,errc) !test the validity of the MPI communicator
+        call RankWinRefs%delete_all(errc)
         if(errc.eq.0) then
-         if(this%NumWins.gt.0) then !initialized distributed memory space
-          if(this%local_size(errc).eq.0) then !distributed memory space must be empty
-           if(errc.eq.0) then
-            do i=this%NumWins,1,-1
-             call this%DataWins(i)%destroy(j); if(j.ne.0) errc=1
-            enddo
+         call MPI_Barrier(this%CommMPI,errc) !test the validity of the MPI communicator
+         if(errc.eq.0) then
+          if(this%NumWins.gt.0) then !initialized distributed memory space
+           if(this%local_size(errc).eq.0) then !distributed memory space must be empty
             if(errc.eq.0) then
-             deallocate(this%DataWins,STAT=errc)
+             do i=this%NumWins,1,-1
+              call this%DataWins(i)%destroy(j); if(j.ne.0) errc=1
+             enddo
              if(errc.eq.0) then
-              if(DEBUG.ge.2) then
-               write(jo,'("#DEBUG(distributed:DistrSpace.Destroy)[",i7,"]: Distributed space destroyed: ",i11,1x,i4,1x,A32)')&
-               &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),32))
-               flush(jo)
+              deallocate(this%DataWins,STAT=errc)
+              if(errc.eq.0) then
+               if(DEBUG.ge.2) then
+                write(jo,'("#DEBUG(distributed:DistrSpace.Destroy)[",i7,"]: Distributed space destroyed: ",i11,1x,i4,1x,A32)')&
+                &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),32))
+                flush(jo)
+               endif
+               this%NumWins=0
+               this%CommMPI=MPI_COMM_NULL
+               this%SpaceName=' '
+              else
+               errc=1
               endif
-              this%NumWins=0
-              this%CommMPI=MPI_COMM_NULL
-              this%SpaceName=' '
              else
-              errc=1
+              errc=2
              endif
             else
-             errc=2
+             errc=3
             endif
            else
-            errc=3
+            errc=4
            endif
           else
-           errc=4
+           errc=5
           endif
          else
-          errc=5
+          errc=6
          endif
         else
-         errc=6
+         errc=7
         endif
         if(present(ierr)) ierr=errc
         return
@@ -1652,11 +1683,17 @@
              call rw_entry%print_it(dev_out=jo)
              flush(jo)
             endif
-            call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
-            call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
-            call nvtx_pop()
+            if(LAZY_LOCKING) then
+             call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+             call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
+             call nvtx_pop()
+            else
+             call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
+             call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
+             call nvtx_pop()
+            endif
             if(errc.ne.0.and.DDSS_MPI_ERR_FATAL) then
-             call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_unlock failed!')
+             call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_unlock/MPI_Win_flush failed!')
             else
              synced=(errc.eq.0)
             endif
@@ -1671,7 +1708,9 @@
             if(synced) rw_entry%LastSync=RankWinRefs%TransCount !update the last sync event for this (rank,win)
             if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
              nullify(rw_entry)
-             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
+             if(.not.LAZY_LOCKING) then
+              call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
+             endif
             elseif(rw_entry%RefCount.lt.0) then
              if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed:DataDescr.FlushData): Negative reference count: ",i12)')&
                          &rw_entry%RefCount
@@ -1757,21 +1796,35 @@
             endif
             if(errc.eq.0) then
              if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
-              if(DEBUG.ge.1) then
-               write(jo,'("#DEBUG(distributed:DataDescr.TestData)[",i5,":",i3,"]: WIN_UNLOCK(.test): ")',ADVANCE='NO')&
-               &impir,thread_id
-               call rw_entry%print_it(dev_out=jo)
-               flush(jo)
+              if(LAZY_LOCKING) then
+               if(DEBUG.ge.1) then
+                write(jo,'("#DEBUG(distributed:DataDescr.TestData)[",i5,":",i3,"]: WIN_FLUSH(.test): ")',ADVANCE='NO')&
+                &impir,thread_id
+                call rw_entry%print_it(dev_out=jo)
+                flush(jo)
+               endif
+               call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+               call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc)
+               call nvtx_pop()
+              else
+               if(DEBUG.ge.1) then
+                write(jo,'("#DEBUG(distributed:DataDescr.TestData)[",i5,":",i3,"]: WIN_UNLOCK(.test): ")',ADVANCE='NO')&
+                &impir,thread_id
+                call rw_entry%print_it(dev_out=jo)
+                flush(jo)
+               endif
+               call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
+               call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
+               call nvtx_pop()
               endif
-              call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
-              call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
-              call nvtx_pop()
               if(errc.eq.0) then
                this%StatMPI=MPI_STAT_COMPLETED
                nullify(rw_entry)
-               call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+               if(.not.LAZY_LOCKING) then
+                call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+               endif
               else
-               if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.TestData): MPI_Win_unlock failed!')
+               if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.TestData): MPI_Win_unlock/MPI_Win_flush failed!')
                errc=3
               endif
              endif
@@ -1835,21 +1888,35 @@
             endif
             if(errc.eq.0) then
              if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
-              if(DEBUG.ge.1) then
-               write(jo,'("#DEBUG(distributed:DataDescr.WaitData)[",i5,":",i3,"]: WIN_UNLOCK(.wait): ")',ADVANCE='NO')&
-               &impir,thread_id
-               call rw_entry%print_it(dev_out=jo)
-               flush(jo)
+              if(LAZY_LOCKING) then
+               if(DEBUG.ge.1) then
+                write(jo,'("#DEBUG(distributed:DataDescr.WaitData)[",i5,":",i3,"]: WIN_FLUSH(.wait): ")',ADVANCE='NO')&
+                &impir,thread_id
+                call rw_entry%print_it(dev_out=jo)
+                flush(jo)
+               endif
+               call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+               call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc)
+               call nvtx_pop()
+              else
+               if(DEBUG.ge.1) then
+                write(jo,'("#DEBUG(distributed:DataDescr.WaitData)[",i5,":",i3,"]: WIN_UNLOCK(.wait): ")',ADVANCE='NO')&
+                &impir,thread_id
+                call rw_entry%print_it(dev_out=jo)
+                flush(jo)
+               endif
+               call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
+               call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
+               call nvtx_pop()
               endif
-              call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
-              call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
-              call nvtx_pop()
               if(errc.eq.0) then
                this%StatMPI=MPI_STAT_COMPLETED
                nullify(rw_entry)
-               call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+               if(.not.LAZY_LOCKING) then
+                call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+               endif
               else
-               if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.WaitData): MPI_Win_unlock failed!')
+               if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.WaitData): MPI_Win_unlock/MPI_Win_flush failed!')
                errc=3
               endif
              endif
@@ -1978,19 +2045,34 @@
 
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*READ_SIGN.lt.0) then !communication direction change
-          if(DEBUG.ge.1) then
-           write(jo,'("#DEBUG(distributed:DataDescr.GetData)[",i5,":",i3,"]: WIN_UNLOCK(.get): ")',ADVANCE='NO') impir,thread_id
-           call rw_entry%print_it(dev_out=jo)
-           flush(jo)
+          if(LAZY_LOCKING) then
+           if(DEBUG.ge.1) then
+            write(jo,'("#DEBUG(distributed:DataDescr.GetData)[",i5,":",i3,"]: WIN_FLUSH(.get): ")',ADVANCE='NO') impir,thread_id
+            call rw_entry%print_it(dev_out=jo)
+            flush(jo)
+           endif
+           call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+           call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,jerr)
+           call nvtx_pop()
+          else
+           if(DEBUG.ge.1) then
+            write(jo,'("#DEBUG(distributed:DataDescr.GetData)[",i5,":",i3,"]: WIN_UNLOCK(.get): ")',ADVANCE='NO') impir,thread_id
+            call rw_entry%print_it(dev_out=jo)
+            flush(jo)
+           endif
+           call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
+           call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,jerr)
+           call nvtx_pop()
           endif
-          call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
-          call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,jerr)
-          call nvtx_pop()
           if(jerr.eq.0) then
-           rw_entry%LockType=NO_LOCK
+           if(LAZY_LOCKING) then
+            rw_entry%LockType=SHARED_LOCK*READ_SIGN
+           else
+            rw_entry%LockType=NO_LOCK
+           endif
            rw_entry%LastSync=RankWinRefs%TransCount
           else
-           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Win_unlock failed!')
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Win_unlock/MPI_Win_flush failed!')
            jerr=1
           endif
          endif
@@ -2287,19 +2369,34 @@
 
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*WRITE_SIGN.lt.0) then !communication direction change
-          if(DEBUG.ge.1) then
-           write(jo,'("#DEBUG(distributed:DataDescr.AccData)[",i5,":",i3,"]: WIN_UNLOCK(.acc): ")',ADVANCE='NO') impir,thread_id
-           call rw_entry%print_it(dev_out=jo)
-           flush(jo)
+          if(LAZY_LOCKING) then
+           if(DEBUG.ge.1) then
+            write(jo,'("#DEBUG(distributed:DataDescr.AccData)[",i5,":",i3,"]: WIN_FLUSH(.acc): ")',ADVANCE='NO') impir,thread_id
+            call rw_entry%print_it(dev_out=jo)
+            flush(jo)
+           endif
+           call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+           call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,jerr)
+           call nvtx_pop()
+          else
+           if(DEBUG.ge.1) then
+            write(jo,'("#DEBUG(distributed:DataDescr.AccData)[",i5,":",i3,"]: WIN_UNLOCK(.acc): ")',ADVANCE='NO') impir,thread_id
+            call rw_entry%print_it(dev_out=jo)
+            flush(jo)
+           endif
+           call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
+           call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,jerr)
+           call nvtx_pop()
           endif
-          call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
-          call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,jerr)
-          call nvtx_pop()
           if(jerr.eq.0) then
-           rw_entry%LockType=NO_LOCK
+           if(LAZY_LOCKING) then
+            rw_entry%LockType=SHARED_LOCK*WRITE_SIGN
+           else
+            rw_entry%LockType=NO_LOCK
+           endif
            rw_entry%LastSync=RankWinRefs%TransCount
           else
-           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_unlock failed!')
+           if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Win_unlock/MPI_Win_flush failed!')
            jerr=1
           endif
          endif
