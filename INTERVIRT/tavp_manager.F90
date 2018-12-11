@@ -1,9 +1,9 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/09
+!REVISION: 2018/12/11
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -3530,6 +3530,7 @@
            if(num_loc_instr.lt.MIN_LOCATE_INSTR.and.(.not.stalled)) cycle wloop !no enough tensor instructions to initiate locating rotations
           endif
  !Perform a full rotation cycle for the tensor instructions being located at a given NAT level:
+          call prof_push('Locating'//CHAR_NULL,0)
           term_num=0 !number of terminated Locators
           rot_num=0 !rotation number
           if(ring_exists) then
@@ -3686,6 +3687,7 @@
             flush(CONS_OUT)
            endif
           endif
+          call prof_pop()
  !Move partially located tensor instructions from the locating list to the deferred list:
           ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
           ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
@@ -4258,6 +4260,7 @@
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
 
+         call prof_push('Decomposing'//CHAR_NULL,1)
          uid=this%get_id()
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -4318,6 +4321,7 @@
           errc=-1
          endif
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
 
         contains

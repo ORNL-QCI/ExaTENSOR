@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/09 (started 2015/03/18)
+!REVISION: 2018/12/11 (started 2015/03/18)
 
 !Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -118,6 +118,7 @@
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
         logical, parameter, private:: LAZY_LOCKING=.TRUE.                 !lazy MPI window locking
+        logical, parameter, private:: TEST_AND_FLUSH=.TRUE.               !MPI_Test() will call MPI_Win_flush() on completion
         integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27    !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096     !max number of outstanding one-sided data transfer requests per process
         integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0           !default communication tag (for P2P MPI communications)
@@ -1720,7 +1721,7 @@
              call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
             endif
            endif
-           if(associated(rw_entry)) nullify(rw_entry)
+           nullify(rw_entry)
           else
            errc=6
           endif
@@ -1798,15 +1799,24 @@
             if(errc.eq.0) then
              if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
               if(LAZY_LOCKING) then
-               if(DEBUG.ge.1) then
-                write(jo,'("#DEBUG(distributed:DataDescr.TestData)[",i5,":",i3,"]: WIN_FLUSH(.test): ")',ADVANCE='NO')&
-                &impir,thread_id
-                call rw_entry%print_it(dev_out=jo)
-                flush(jo)
+               if(TEST_AND_FLUSH) then
+                if(DEBUG.ge.1) then
+                 write(jo,'("#DEBUG(distributed:DataDescr.TestData)[",i5,":",i3,"]: WIN_FLUSH(.test): ")',ADVANCE='NO')&
+                 &impir,thread_id
+                 call rw_entry%print_it(dev_out=jo)
+                 flush(jo)
+                endif
+                call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+                call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc)
+                call nvtx_pop()
+                if(errc.eq.0) then
+                 this%StatMPI=MPI_STAT_COMPLETED
+                 rw_entry%LastSync=RankWinRefs%TransCount
+                else
+                 if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.TestData): MPI_Win_flush failed!')
+                 errc=2
+                endif
                endif
-               call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
-               call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc)
-               call nvtx_pop()
               else
                if(DEBUG.ge.1) then
                 write(jo,'("#DEBUG(distributed:DataDescr.TestData)[",i5,":",i3,"]: WIN_UNLOCK(.test): ")',ADVANCE='NO')&
@@ -1817,37 +1827,35 @@
                call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
                call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
                call nvtx_pop()
-              endif
-              if(errc.eq.0) then
-               this%StatMPI=MPI_STAT_COMPLETED
-               nullify(rw_entry)
-               if(.not.LAZY_LOCKING) then
-                call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+               if(errc.eq.0) then
+                this%StatMPI=MPI_STAT_COMPLETED
+                nullify(rw_entry)
+                call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=3
+               else
+                if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.TestData): MPI_Win_unlock failed!')
+                errc=4
                endif
-              else
-               if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.TestData): MPI_Win_unlock/MPI_Win_flush failed!')
-               errc=3
               endif
              endif
             endif
-            if(associated(rw_entry)) nullify(rw_entry)
            else
             if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed:DataDescr.TestData): Invalid reference count: ",i12)')&
                         &rw_entry%RefCount
             nullify(rw_entry)
-            errc=4
+            errc=5
             call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
            endif
+           nullify(rw_entry)
           else
-           errc=5
+           errc=6
           endif
          elseif(this%StatMPI.eq.MPI_STAT_COMPLETED.or.this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
           DataDescrTestData=.TRUE.
          else
-          errc=6
+          errc=7
          endif
         else
-         errc=7
+         errc=8
         endif
         if(present(ierr)) ierr=errc
         return
@@ -1890,15 +1898,24 @@
             if(errc.eq.0) then
              if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
               if(LAZY_LOCKING) then
-               if(DEBUG.ge.1) then
-                write(jo,'("#DEBUG(distributed:DataDescr.WaitData)[",i5,":",i3,"]: WIN_FLUSH(.wait): ")',ADVANCE='NO')&
-                &impir,thread_id
-                call rw_entry%print_it(dev_out=jo)
-                flush(jo)
+               if(TEST_AND_FLUSH) then
+                if(DEBUG.ge.1) then
+                 write(jo,'("#DEBUG(distributed:DataDescr.WaitData)[",i5,":",i3,"]: WIN_FLUSH(.wait): ")',ADVANCE='NO')&
+                 &impir,thread_id
+                 call rw_entry%print_it(dev_out=jo)
+                 flush(jo)
+                endif
+                call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+                call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc)
+                call nvtx_pop()
+                if(errc.eq.0) then
+                 this%StatMPI=MPI_STAT_COMPLETED
+                 rw_entry%LastSync=RankWinRefs%TransCount
+                else
+                 if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.WaitData): MPI_Win_flush failed!')
+                 errc=2
+                endif
                endif
-               call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
-               call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc)
-               call nvtx_pop()
               else
                if(DEBUG.ge.1) then
                 write(jo,'("#DEBUG(distributed:DataDescr.WaitData)[",i5,":",i3,"]: WIN_UNLOCK(.wait): ")',ADVANCE='NO')&
@@ -1909,35 +1926,33 @@
                call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
                call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
                call nvtx_pop()
-              endif
-              if(errc.eq.0) then
-               this%StatMPI=MPI_STAT_COMPLETED
-               nullify(rw_entry)
-               if(.not.LAZY_LOCKING) then
-                call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+               if(errc.eq.0) then
+                this%StatMPI=MPI_STAT_COMPLETED
+                nullify(rw_entry)
+                call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=3
+               else
+                if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.WaitData): MPI_Win_unlock failed!')
+                errc=4
                endif
-              else
-               if(DDSS_MPI_ERR_FATAL) call quit(errc,'#FATAL(distributed:DataDescr.WaitData): MPI_Win_unlock/MPI_Win_flush failed!')
-               errc=3
               endif
              endif
             endif
-            if(associated(rw_entry)) nullify(rw_entry)
            else
             if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed:DataDescr.WaitData): Invalid reference count: ",i12)')&
                         &rw_entry%RefCount
-            errc=4
+            errc=5
             nullify(rw_entry)
             call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
            endif
+           nullify(rw_entry)
           else
-           errc=5
+           errc=6
           endif
          elseif(this%StatMPI.ne.MPI_STAT_COMPLETED.and.this%StatMPI.ne.MPI_STAT_COMPLETED_ORIG) then
-          errc=6
+          errc=7
          endif
         else
-         errc=7
+         errc=8
         endif
         if(present(ierr)) ierr=errc
         return
