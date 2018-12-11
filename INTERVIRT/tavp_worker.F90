@@ -1237,11 +1237,19 @@
              if(mod(bytes,4_INTL).eq.0_INTL) then
               ext=bytes/4_INTL
               call c_f_pointer(addr,i4,(/ext/))
-              i4(:)=0 !`IEEE 754: All bits are 0 => floating-point +0
+!$OMP PARALLEL DEFAULT(SHARED)
+!$OMP WORKSHARE
+              i4(1:ext)=0 !`IEEE 754: All bits are 0 => floating-point +0
+!$OMP END WORKSHARE
+!$OMP END PARALLEL
               i4=>NULL()
              else
               call c_f_pointer(addr,i1,(/bytes/))
-              i1(:)=0 !`IEEE 754: All bits are 0 => floating-point +0
+!$OMP PARALLEL DEFAULT(SHARED)
+!$OMP WORKSHARE
+              i1(1:bytes)=0_1 !`IEEE 754: All bits are 0 => floating-point +0
+!$OMP END WORKSHARE
+!$OMP END PARALLEL
               i1=>NULL()
              endif
             else
