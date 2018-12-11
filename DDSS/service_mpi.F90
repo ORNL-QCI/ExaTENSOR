@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/07
+!REVISION: 2018/12/10
 
 !Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -559,22 +559,23 @@
          integer:: j0,jn
 
          ier=0
-         if(mpi_procs_per_node.gt.0) then
-          j0=mod(gpus_found,mpi_procs_per_node)
-          gpu_count=gpus_found/mpi_procs_per_node; gpu_start=mpi_proc_id_on_node*gpu_count
-          if(mpi_proc_id_on_node.lt.j0) then
-           gpu_start=gpu_start+mpi_proc_id_on_node; gpu_count=gpu_count+1
-          else
-           gpu_start=gpu_start+j0
-          endif
-          jstr=' '; call get_environment_variable('QF_GPUS_PER_PROCESS',jstr)
-          j0=len_trim(jstr)
-          if(j0.gt.0) then
-           jn=icharnum(j0,jstr(1:j0))
-           if(jn.lt.gpu_count) gpu_count=jn
-          endif
+         jstr=' '; call get_environment_variable('QF_GPUS_PER_PROCESS',jstr)
+         j0=len_trim(jstr)
+         if(j0.gt.0) then
+          jn=icharnum(j0,jstr(1:j0))
+          gpu_count=jn; gpu_start=0
          else
-          gpu_start=0; gpu_count=0; ier=1 !mpi_procs_per_node has not been specified
+          if(mpi_procs_per_node.gt.0) then
+           j0=mod(gpus_found,mpi_procs_per_node)
+           gpu_count=gpus_found/mpi_procs_per_node; gpu_start=mpi_proc_id_on_node*gpu_count
+           if(mpi_proc_id_on_node.lt.j0) then
+            gpu_start=gpu_start+mpi_proc_id_on_node; gpu_count=gpu_count+1
+           else
+            gpu_start=gpu_start+j0
+           endif
+          else
+           gpu_start=0; gpu_count=0; ier=1 !mpi_procs_per_node has not been specified
+          endif
          endif
          return
          end subroutine restrict_gpu_amount
