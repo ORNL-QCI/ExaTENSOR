@@ -107,7 +107,7 @@
         logical, private:: COMMUNICATOR_BLOCKING=.FALSE.        !switches between blocking and non-blocking one-sided communication semantics
         logical, private:: COMMUNICATOR_OPT_ACC=.TRUE.          !optimized (reduced) accumulation mechanism
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=8  !max number of outstanding prefetches issued by Communicator
-        integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=2     !max number of outstanding uploads issued by Communicator
+        integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=3     !max number of outstanding uploads issued by Communicator
         real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
         logical, private:: COMMUNICATOR_NO_FETCH=.FALSE.        !DEBUG: Turns off all data fetches
         logical, private:: COMMUNICATOR_NO_UPLOAD=.FALSE.       !DEBUG: Turns off all data uploads
