@@ -232,6 +232,7 @@
          integer(INT_MPI), private:: StatMPI=MPI_STAT_NONE !status of the data transfer request (see MPI_STAT_XXX parameters above)
          integer(INT_MPI), private:: ReqHandle=MPI_REQUEST_NULL !MPI request handle (for MPI communications with a request handle)
          real(8), private:: TimeStarted=-1d0      !time stamp of communication initiation
+         real(8), private:: TimeSynced=-1d0       !time stamp of communication synchronization
          contains
           procedure, private:: clean=>DataDescrClean            !clean a data descriptor
           procedure, private:: init=>DataDescrInit              !set up a data descriptor (initialization)
@@ -1470,6 +1471,7 @@
             this%StatMPI=MPI_STAT_NONE
             this%ReqHandle=MPI_REQUEST_NULL
             this%TimeStarted=-1d0
+            this%TimeSynced=-1d0
             call MPI_Get_Displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
            else
             errc=2
@@ -1661,6 +1663,7 @@
               endif
              endif
              if(errc.eq.0) then
+              this%TimeSynced=time_sys_sec()
               this%StatMPI=MPI_STAT_COMPLETED_ORIG
               rw_entry%RefCount=rw_entry%RefCount-1
              else
@@ -1690,6 +1693,7 @@
               endif
              endif
              if(errc.eq.0) then
+              this%TimeSynced=time_sys_sec()
               this%StatMPI=MPI_STAT_COMPLETED
               rw_entry%RefCount=rw_entry%RefCount-1
              else
@@ -1732,6 +1736,7 @@
              synced=(errc.eq.0)
             endif
             if(errc.eq.0) then
+             this%TimeSynced=time_sys_sec()
              this%StatMPI=MPI_STAT_COMPLETED
              rw_entry%RefCount=rw_entry%RefCount-1
             else
@@ -1817,12 +1822,13 @@
              call MPI_Test(this%ReqHandle,compl,mpi_stat,errc)
              if(errc.eq.0) then
               if(compl) then
+               this%TimeSynced=time_sys_sec()
                this%StatMPI=MPI_STAT_COMPLETED_ORIG
                rw_entry%RefCount=rw_entry%RefCount-1
                DataDescrTestData=.TRUE.
                if(LOGGING.gt.0) then
-                write(jo,'("#MSG(DDSS::test)[",i5,":",i3,"]: MPI_Test() completed with time (sec) = ",F8.4)')&
-                &impir,thread_id,time_sys_sec()-this%TimeStarted
+                write(jo,'("#MSG(DDSS::test)[",i5,":",i3,"]: MPI_TEST() completed with time (sec) = ",F8.4)')&
+                &impir,thread_id,this%TimeSynced-this%TimeStarted
                 flush(jo)
                endif
               endif
@@ -1830,12 +1836,13 @@
               this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
              endif
             else
+             this%TimeSynced=time_sys_sec()
              this%StatMPI=MPI_STAT_COMPLETED_ORIG
              rw_entry%RefCount=rw_entry%RefCount-1
              DataDescrTestData=.TRUE.
              if(LOGGING.gt.0) then
-              write(jo,'("#MSG(DDSS::test)[",i5,":",i3,"]: MPI_Test() overcompleted with time (sec) = ",F8.4)')&
-              &impir,thread_id,time_sys_sec()-this%TimeStarted
+              write(jo,'("#MSG(DDSS::test)[",i5,":",i3,"]: MPI_TEST() overcompleted with time (sec) = ",F8.4)')&
+              &impir,thread_id,this%TimeSynced-this%TimeStarted
               flush(jo)
              endif
             endif
@@ -1944,14 +1951,26 @@
              endif
              call MPI_Wait(this%ReqHandle,mpi_stat,errc)
              if(errc.eq.0) then
+              this%TimeSynced=time_sys_sec()
               this%StatMPI=MPI_STAT_COMPLETED_ORIG
               rw_entry%RefCount=rw_entry%RefCount-1
+              if(LOGGING.gt.0) then
+               write(jo,'("#MSG(DDSS::test)[",i5,":",i3,"]: MPI_WAIT() completed with time (sec) = ",F8.4)')&
+               &impir,thread_id,this%TimeSynced-this%TimeStarted
+               flush(jo)
+              endif
              else
               this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
              endif
             else
+             this%TimeSynced=time_sys_sec()
              this%StatMPI=MPI_STAT_COMPLETED_ORIG
              rw_entry%RefCount=rw_entry%RefCount-1
+             if(LOGGING.gt.0) then
+              write(jo,'("#MSG(DDSS::test)[",i5,":",i3,"]: MPI_WAIT() overcompleted with time (sec) = ",F8.4)')&
+              &impir,thread_id,this%TimeSynced-this%TimeStarted
+              flush(jo)
+             endif
             endif
             if(errc.eq.0) then
              if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
