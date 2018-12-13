@@ -231,6 +231,7 @@
          integer(8), private:: TransID=0_8        !absolute value = data transfer request ID (or zero if none); sign = data transfer direction {READ_SIGN,WRITE_SIGN}
          integer(INT_MPI), private:: StatMPI=MPI_STAT_NONE !status of the data transfer request (see MPI_STAT_XXX parameters above)
          integer(INT_MPI), private:: ReqHandle=MPI_REQUEST_NULL !MPI request handle (for MPI communications with a request handle)
+         real(8), private:: TimeStarted=-1d0      !time stamp of communication initiation
          contains
           procedure, private:: clean=>DataDescrClean            !clean a data descriptor
           procedure, private:: init=>DataDescrInit              !set up a data descriptor (initialization)
@@ -1468,6 +1469,7 @@
             this%TransID=0 !0 means "never assigned a Transfer ID"
             this%StatMPI=MPI_STAT_NONE
             this%ReqHandle=MPI_REQUEST_NULL
+            this%TimeStarted=-1d0
             call MPI_Get_Displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
            else
             errc=2
@@ -1818,6 +1820,11 @@
                this%StatMPI=MPI_STAT_COMPLETED_ORIG
                rw_entry%RefCount=rw_entry%RefCount-1
                DataDescrTestData=.TRUE.
+               if(LOGGING.gt.0) then
+                write(jo,'("#MSG(DDSS::test)[",i5,":",i3,"]: MPI_Test() completed with time (sec) = ",F8.4)')&
+                &impir,thread_id,time_sys_sec()-this%TimeStarted
+                flush(jo)
+               endif
               endif
              else
               this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
@@ -1826,6 +1833,11 @@
              this%StatMPI=MPI_STAT_COMPLETED_ORIG
              rw_entry%RefCount=rw_entry%RefCount-1
              DataDescrTestData=.TRUE.
+             if(LOGGING.gt.0) then
+              write(jo,'("#MSG(DDSS::test)[",i5,":",i3,"]: MPI_Test() overcompleted with time (sec) = ",F8.4)')&
+              &impir,thread_id,time_sys_sec()-this%TimeStarted
+              flush(jo)
+             endif
             endif
             if(errc.eq.0) then
              if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
@@ -2226,6 +2238,7 @@
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
+           this%TimeStarted=time_sys_sec()
           else
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
@@ -2243,6 +2256,7 @@
           endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
+           this%TimeStarted=time_sys_sec()
           else
            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Rget failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
@@ -2283,6 +2297,7 @@
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
+           this%TimeStarted=time_sys_sec()
           else
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
@@ -2300,6 +2315,7 @@
           endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
+           this%TimeStarted=time_sys_sec()
           else
            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Rget failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
@@ -2340,6 +2356,7 @@
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
+           this%TimeStarted=time_sys_sec()
           else
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
@@ -2357,6 +2374,7 @@
           endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
+           this%TimeStarted=time_sys_sec()
           else
            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Rget failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
@@ -2397,6 +2415,7 @@
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
+           this%TimeStarted=time_sys_sec()
           else
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
@@ -2414,6 +2433,7 @@
           endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
+           this%TimeStarted=time_sys_sec()
           else
            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Rget failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
@@ -2633,6 +2653,7 @@
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
+           this%TimeStarted=time_sys_sec()
           else
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
@@ -2651,6 +2672,7 @@
           endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
+           this%TimeStarted=time_sys_sec()
           else
            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Raccumulate failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
@@ -2692,6 +2714,7 @@
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
+           this%TimeStarted=time_sys_sec()
           else
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
@@ -2710,6 +2733,7 @@
           endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
+           this%TimeStarted=time_sys_sec()
           else
            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Raccumulate failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
@@ -2751,6 +2775,7 @@
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
+           this%TimeStarted=time_sys_sec()
           else
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
@@ -2769,6 +2794,7 @@
           endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
+           this%TimeStarted=time_sys_sec()
           else
            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Raccumulate failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
@@ -2810,6 +2836,7 @@
           enddo
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_NRM
+           this%TimeStarted=time_sys_sec()
           else
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
@@ -2828,6 +2855,7 @@
           endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
+           this%TimeStarted=time_sys_sec()
           else
            if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Raccumulate failed!')
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
