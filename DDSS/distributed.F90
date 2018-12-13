@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/11 (started 2015/03/18)
+!REVISION: 2018/12/13 (started 2015/03/18)
 
 !Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -102,6 +102,7 @@
         integer, private:: CONS_OUT=6     !default output for this module
         logical, private:: VERBOSE=.TRUE. !verbosity for errors
         integer, private:: DEBUG=0        !debugging mode
+        integer, private:: LOGGING=0      !logging mode
  !MPI errors:
         logical, private:: DDSS_MPI_ERR_FATAL=.TRUE. !if .TRUE., MPI errors will cause termination, otherwise just error code
  !Packing/unpacking:
@@ -118,7 +119,7 @@
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
         logical, parameter, private:: LAZY_LOCKING=.TRUE.                 !lazy MPI window locking
-        logical, parameter, private:: TEST_AND_FLUSH=.TRUE.               !MPI_Test() will call MPI_Win_flush() on completion
+        logical, parameter, private:: TEST_AND_FLUSH=.TRUE.               !MPI_Test() will call MPI_Win_flush() on completion when entry reference count becomes 0 (not necessary)
         integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27    !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096     !max number of outstanding one-sided data transfer requests per process
         integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0           !default communication tag (for P2P MPI communications)
@@ -1617,6 +1618,7 @@
         integer(INT_MPI):: rwe,errc
         type(RankWin_t), pointer:: rw_entry
         logical:: lcl,synced
+        real(8):: tm
 
         errc=0; synced=.FALSE.
         if(present(local)) then; lcl=local; else; lcl=.FALSE.; endif !default is flushing both at the origin and target
@@ -1641,8 +1643,15 @@
                flush(jo)
               endif
               call nvtx_push('MPI_Win_flush_local'//CHAR_NULL,1)
+              tm=time_sys_sec()
               call MPI_Win_flush_local(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
+              tm=time_sys_sec()-tm
               call nvtx_pop()
+              if(LOGGING.gt.0) then
+               write(jo,'("#MSG(DDSS::flush)[",i5,":",i3,"]: MPI_WIN_FLUSH_LOCAL(",i13,",",i5,") time (sec) = ",F8.4)')&
+               &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+               flush(jo)
+              endif
               if(errc.ne.0.and.DDSS_MPI_ERR_FATAL) then
                call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_flush_local failed!')
               else
@@ -1663,8 +1672,15 @@
                flush(jo)
               endif
               call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+              tm=time_sys_sec()
               call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
+              tm=time_sys_sec()-tm
               call nvtx_pop()
+              if(LOGGING.gt.0) then
+               write(jo,'("#MSG(DDSS::flush)[",i5,":",i3,"]: MPI_WIN_FLUSH(",i13,",",i5,") time (sec) = ",F8.4)')&
+               &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+               flush(jo)
+              endif
               if(errc.ne.0.and.DDSS_MPI_ERR_FATAL) then
                call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_flush failed!')
               else
@@ -1687,12 +1703,26 @@
             endif
             if(LAZY_LOCKING) then
              call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+             tm=time_sys_sec()
              call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
+             tm=time_sys_sec()-tm
              call nvtx_pop()
+             if(LOGGING.gt.0) then
+              write(jo,'("#MSG(DDSS::flush)[",i5,":",i3,"]: MPI_WIN_FLUSH(",i13,",",i5,") time (sec) = ",F8.4)')&
+              &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+              flush(jo)
+             endif
             else
              call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
+             tm=time_sys_sec()
              call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
+             tm=time_sys_sec()-tm
              call nvtx_pop()
+             if(LOGGING.gt.0) then
+              write(jo,'("#MSG(DDSS::flush)[",i5,":",i3,"]: MPI_WIN_UNLOCK(",i13,",",i5,") time (sec) = ",F8.4)')&
+              &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+              flush(jo)
+             endif
             endif
             if(errc.ne.0.and.DDSS_MPI_ERR_FATAL) then
              call quit(errc,'#FATAL(distributed:DataDescr.FlushData): MPI_Win_unlock/MPI_Win_flush failed!')
@@ -1767,6 +1797,7 @@
         integer(INT_MPI):: mpi_stat(MPI_STATUS_SIZE),rwe,errc
         type(RankWin_t), pointer:: rw_entry
         logical:: compl
+        real(8):: tm
 
         errc=0; DataDescrTestData=.FALSE.
         if(this%RankMPI.ge.0) then
@@ -1807,8 +1838,15 @@
                  flush(jo)
                 endif
                 call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+                tm=time_sys_sec()
                 call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc)
+                tm=time_sys_sec()-tm
                 call nvtx_pop()
+                if(LOGGING.gt.0) then
+                 write(jo,'("#MSG(DDSS::test)[",i5,":",i3,"]: MPI_WIN_FLUSH(",i13,",",i5,") time (sec) = ",F8.4)')&
+                 &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+                 flush(jo)
+                endif
                 if(errc.eq.0) then
                  this%StatMPI=MPI_STAT_COMPLETED
                  rw_entry%LastSync=RankWinRefs%TransCount
@@ -1825,8 +1863,15 @@
                 flush(jo)
                endif
                call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
+               tm=time_sys_sec()
                call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
+               tm=time_sys_sec()-tm
                call nvtx_pop()
+               if(LOGGING.gt.0) then
+                write(jo,'("#MSG(DDSS::test)[",i5,":",i3,"]: MPI_WIN_UNLOCK(",i13,",",i5,") time (sec) = ",F8.4)')&
+                &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+                flush(jo)
+               endif
                if(errc.eq.0) then
                 this%StatMPI=MPI_STAT_COMPLETED
                 nullify(rw_entry)
@@ -1870,6 +1915,7 @@
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: mpi_stat(MPI_STATUS_SIZE),rwe,errc
         type(RankWin_t), pointer:: rw_entry
+        real(8):: tm
 
         errc=0
         if(this%RankMPI.ge.0) then
@@ -1906,8 +1952,15 @@
                  flush(jo)
                 endif
                 call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+                tm=time_sys_sec()
                 call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,errc)
+                tm=time_sys_sec()-tm
                 call nvtx_pop()
+                if(LOGGING.gt.0) then
+                 write(jo,'("#MSG(DDSS::wait)[",i5,":",i3,"]: MPI_WIN_FLUSH(",i13,",",i5,") time (sec) = ",F8.4)')&
+                 &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+                 flush(jo)
+                endif
                 if(errc.eq.0) then
                  this%StatMPI=MPI_STAT_COMPLETED
                  rw_entry%LastSync=RankWinRefs%TransCount
@@ -1924,8 +1977,15 @@
                 flush(jo)
                endif
                call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
+               tm=time_sys_sec()
                call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,errc)
+               tm=time_sys_sec()-tm
                call nvtx_pop()
+               if(LOGGING.gt.0) then
+                write(jo,'("#MSG(DDSS::wait)[",i5,":",i3,"]: MPI_WIN_UNLOCK(",i13,",",i5,") time (sec) = ",F8.4)')&
+                &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+                flush(jo)
+               endif
                if(errc.eq.0) then
                 this%StatMPI=MPI_STAT_COMPLETED
                 nullify(rw_entry)
@@ -2058,6 +2118,7 @@
          integer(INT_MPI), intent(in):: rw
          integer(INT_MPI), intent(out):: jerr
          type(RankWin_t), pointer:: rw_entry
+         real(8):: tm
 
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*READ_SIGN.lt.0) then !communication direction change
@@ -2068,8 +2129,15 @@
             flush(jo)
            endif
            call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+           tm=time_sys_sec()
            call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::get)[",i5,":",i3,"]: MPI_WIN_FLUSH(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+            flush(jo)
+           endif
           else
            if(DEBUG.ge.1) then
             write(jo,'("#DEBUG(distributed:DataDescr.GetData)[",i5,":",i3,"]: WIN_UNLOCK(.get): ")',ADVANCE='NO') impir,thread_id
@@ -2077,8 +2145,15 @@
             flush(jo)
            endif
            call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
+           tm=time_sys_sec()
            call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::get)[",i5,":",i3,"]: MPI_WIN_UNLOCK(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+            flush(jo)
+           endif
           endif
           if(jerr.eq.0) then
            if(LAZY_LOCKING) then
@@ -2099,8 +2174,15 @@
            flush(jo)
           endif
           call nvtx_push('MPI_Win_lock'//CHAR_NULL,0)
+          tm=time_sys_sec()
           call MPI_Win_lock(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
+          tm=time_sys_sec()-tm
           call nvtx_pop()
+          if(LOGGING.gt.0) then
+           write(jo,'("#MSG(DDSS::get)[",i5,":",i3,"]: MPI_WIN_LOCK(",i13,",",i5,") time (sec) = ",F8.4)')&
+           &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+           flush(jo)
+          endif
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*READ_SIGN
           else
@@ -2118,6 +2200,7 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+         real(8):: tm
 
          jerr=0; jdts=data_type_size(R4)
          jdu=this%WinMPI%DispUnit
@@ -2127,8 +2210,15 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call nvtx_push('MPI_Get'//CHAR_NULL,4)
+           tm=time_sys_sec()
            call MPI_Get(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,jtarg,jv,MPI_REAL4,this%WinMPI%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::get)[",i5,":",i3,"]: MPI_GET(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+            flush(jo)
+           endif
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
             exit
@@ -2142,8 +2232,15 @@
          else !request-handle
           jv=this%DataVol
           call nvtx_push('MPI_Rget'//CHAR_NULL,5)
+          tm=time_sys_sec()
           call MPI_Rget(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,this%ReqHandle,jerr)
+          tm=time_sys_sec()-tm
           call nvtx_pop()
+          if(LOGGING.gt.0) then
+           write(jo,'("#MSG(DDSS:get)[",i5,":",i3,"]: MPI_RGET(",i13,",",i5,") time (sec) = ",F8.4)')&
+           &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+           flush(jo)
+          endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2160,6 +2257,7 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+         real(8):: tm
 
          jerr=0; jdts=data_type_size(R8)
          jdu=this%WinMPI%DispUnit
@@ -2169,8 +2267,15 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call nvtx_push('MPI_Get'//CHAR_NULL,4)
+           tm=time_sys_sec()
            call MPI_Get(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,jtarg,jv,MPI_REAL8,this%WinMPI%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::get)[",i5,":",i3,"]: MPI_GET(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+            flush(jo)
+           endif
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
             exit
@@ -2184,8 +2289,15 @@
          else !request-handle
           jv=this%DataVol
           call nvtx_push('MPI_Rget'//CHAR_NULL,5)
+          tm=time_sys_sec()
           call MPI_Rget(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,this%ReqHandle,jerr)
+          tm=time_sys_sec()-tm
           call nvtx_pop()
+          if(LOGGING.gt.0) then
+           write(jo,'("#MSG(DDSS::get)[",i5,":",i3,"]: MPI_RGET(",i13,",",i5,") time (sec) = ",F8.4)')&
+           &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+           flush(jo)
+          endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2202,6 +2314,7 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+         real(8):: tm
 
          jerr=0; jdts=data_type_size(C4)
          jdu=this%WinMPI%DispUnit
@@ -2211,8 +2324,15 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call nvtx_push('MPI_Get'//CHAR_NULL,4)
+           tm=time_sys_sec()
            call MPI_Get(c4_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,jtarg,jv,MPI_COMPLEX8,this%WinMPI%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::get)[",i5,":",i3,"]: MPI_GET(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+            flush(jo)
+           endif
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
             exit
@@ -2226,8 +2346,15 @@
          else !request-handle
           jv=this%DataVol
           call nvtx_push('MPI_Rget'//CHAR_NULL,5)
+          tm=time_sys_sec()
           call MPI_Rget(c4_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,this%ReqHandle,jerr)
+          tm=time_sys_sec()-tm
           call nvtx_pop()
+          if(LOGGING.gt.0) then
+           write(jo,'("#MSG(DDSS::get)[",i5,":",i3,"]: MPI_RGET(",i13,",",i5,") time (sec) = ",F8.4)')&
+           &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+           flush(jo)
+          endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2244,6 +2371,7 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+         real(8):: tm
 
          jerr=0; jdts=data_type_size(C8)
          jdu=this%WinMPI%DispUnit
@@ -2253,8 +2381,15 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call nvtx_push('MPI_Get'//CHAR_NULL,4)
+           tm=time_sys_sec()
            call MPI_Get(c8_arr(js:js+jv-1),jv,MPI_COMPLEX16,this%RankMPI,jtarg,jv,MPI_COMPLEX16,this%WinMPI%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::get)[",i5,":",i3,"]: MPI_GET(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+            flush(jo)
+           endif
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.GetData): MPI_Get failed!')
             exit
@@ -2268,8 +2403,15 @@
          else !request-handle
           jv=this%DataVol
           call nvtx_push('MPI_Rget'//CHAR_NULL,5)
+          tm=time_sys_sec()
           call MPI_Rget(c8_arr,jv,MPI_COMPLEX16,this%RankMPI,this%Offset,jv,MPI_COMPLEX16,this%WinMPI%Window,this%ReqHandle,jerr)
+          tm=time_sys_sec()-tm
           call nvtx_pop()
+          if(LOGGING.gt.0) then
+           write(jo,'("#MSG(DDSS::get)[",i5,":",i3,"]: MPI_RGET(",i13,",",i5,") time (sec) = ",F8.4)')&
+           &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+           flush(jo)
+          endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2382,6 +2524,7 @@
          integer(INT_MPI), intent(in):: rw
          integer(INT_MPI), intent(out):: jerr
          type(RankWin_t), pointer:: rw_entry
+         real(8):: tm
 
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*WRITE_SIGN.lt.0) then !communication direction change
@@ -2392,8 +2535,15 @@
             flush(jo)
            endif
            call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
+           tm=time_sys_sec()
            call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_WIN_FLUSH(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+            flush(jo)
+           endif
           else
            if(DEBUG.ge.1) then
             write(jo,'("#DEBUG(distributed:DataDescr.AccData)[",i5,":",i3,"]: WIN_UNLOCK(.acc): ")',ADVANCE='NO') impir,thread_id
@@ -2401,8 +2551,15 @@
             flush(jo)
            endif
            call nvtx_push('MPI_Win_unlock'//CHAR_NULL,3)
+           tm=time_sys_sec()
            call MPI_Win_unlock(rw_entry%Rank,rw_entry%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_WIN_UNLOCK(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+            flush(jo)
+           endif
           endif
           if(jerr.eq.0) then
            if(LAZY_LOCKING) then
@@ -2423,8 +2580,15 @@
            flush(jo)
           endif
           call nvtx_push('MPI_Win_lock'//CHAR_NULL,0)
+          tm=time_sys_sec()
           call MPI_Win_lock(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
+          tm=time_sys_sec()-tm
           call nvtx_pop()
+          if(LOGGING.gt.0) then
+           write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_WIN_LOCK(",i13,",",i5,") time (sec) = ",F8.4)')&
+           &impir,thread_id,rw_entry%Window,rw_entry%Rank,tm
+           flush(jo)
+          endif
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*WRITE_SIGN
           else
@@ -2442,6 +2606,7 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+         real(8):: tm
 
          jerr=0; jdts=data_type_size(R4)
          jdu=this%WinMPI%DispUnit
@@ -2451,9 +2616,16 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call nvtx_push('MPI_Accumulate'//CHAR_NULL,6)
+           tm=time_sys_sec()
            call MPI_Accumulate(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,jtarg,jv,MPI_REAL4,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_ACCUMULATE(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+            flush(jo)
+           endif
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
             exit
@@ -2467,9 +2639,16 @@
          else !request-handle
           jv=this%DataVol
           call nvtx_push('MPI_Raccumulate'//CHAR_NULL,7)
+          tm=time_sys_sec()
           call MPI_Raccumulate(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
+          tm=time_sys_sec()-tm
           call nvtx_pop()
+          if(LOGGING.gt.0) then
+           write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_RACCUMULATE(",i13,",",i5,") time (sec) = ",F8.4)')&
+           &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+           flush(jo)
+          endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2486,6 +2665,7 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+         real(8):: tm
 
          jerr=0; jdts=data_type_size(R8)
          jdu=this%WinMPI%DispUnit
@@ -2495,9 +2675,16 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call nvtx_push('MPI_Accumulate'//CHAR_NULL,6)
+           tm=time_sys_sec()
            call MPI_Accumulate(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,jtarg,jv,MPI_REAL8,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_ACCUMULATE(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+            flush(jo)
+           endif
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
             exit
@@ -2511,9 +2698,16 @@
          else !request-handle
           jv=this%DataVol
           call nvtx_push('MPI_Raccumulate'//CHAR_NULL,7)
+          tm=time_sys_sec()
           call MPI_Raccumulate(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
+          tm=time_sys_sec()-tm
           call nvtx_pop()
+          if(LOGGING.gt.0) then
+           write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_RACCUMULATE(",i13,",",i5,") time (sec) = ",F8.4)')&
+           &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+           flush(jo)
+          endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2530,6 +2724,7 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+         real(8):: tm
 
          jerr=0; jdts=data_type_size(C4)
          jdu=this%WinMPI%DispUnit
@@ -2539,9 +2734,16 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call nvtx_push('MPI_Accumulate'//CHAR_NULL,6)
+           tm=time_sys_sec()
            call MPI_Accumulate(c4_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,jtarg,jv,MPI_COMPLEX8,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_ACCUMULATE(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+            flush(jo)
+           endif
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
             exit
@@ -2555,9 +2757,16 @@
          else !request-handle
           jv=this%DataVol
           call nvtx_push('MPI_Raccumulate'//CHAR_NULL,7)
+          tm=time_sys_sec()
           call MPI_Raccumulate(c4_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
+          tm=time_sys_sec()-tm
           call nvtx_pop()
+          if(LOGGING.gt.0) then
+           write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_RACCUMULATE(",i13,",",i5,") time (sec) = ",F8.4)')&
+           &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+           flush(jo)
+          endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -2574,6 +2783,7 @@
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv,jdts,jdu
          integer(INT_ADDR):: jtarg
+         real(8):: tm
 
          jerr=0; jdts=data_type_size(C8)
          jdu=this%WinMPI%DispUnit
@@ -2583,9 +2793,16 @@
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
            jtarg=this%Offset+((js-1)*jdts)/jdu
            call nvtx_push('MPI_Accumulate'//CHAR_NULL,6)
+           tm=time_sys_sec()
            call MPI_Accumulate(c8_arr(js:js+jv-1),jv,MPI_COMPLEX16,this%RankMPI,jtarg,jv,MPI_COMPLEX16,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
+           tm=time_sys_sec()-tm
            call nvtx_pop()
+           if(LOGGING.gt.0) then
+            write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_ACCUMULATE(",i13,",",i5,") time (sec) = ",F8.4)')&
+            &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+            flush(jo)
+           endif
            if(jerr.ne.0) then
             if(DDSS_MPI_ERR_FATAL) call quit(jerr,'#FATAL(distributed:DataDescr.AccData): MPI_Accumulate failed!')
             exit
@@ -2599,9 +2816,16 @@
          else !request-handle
           jv=this%DataVol
           call nvtx_push('MPI_Raccumulate'//CHAR_NULL,7)
+          tm=time_sys_sec()
           call MPI_Raccumulate(c8_arr,jv,MPI_COMPLEX16,this%RankMPI,this%Offset,jv,MPI_COMPLEX16,MPI_SUM,&
                               &this%WinMPI%Window,this%ReqHandle,jerr)
+          tm=time_sys_sec()-tm
           call nvtx_pop()
+          if(LOGGING.gt.0) then
+           write(jo,'("#MSG(DDSS::accumulate)[",i5,":",i3,"]: MPI_RACCUMULATE(",i13,",",i5,") time (sec) = ",F8.4)')&
+           &impir,thread_id,this%WinMPI%Window,this%RankMPI,tm
+           flush(jo)
+          endif
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else

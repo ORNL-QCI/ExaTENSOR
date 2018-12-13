@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/11
+!REVISION: 2018/12/13
 
 !Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -94,8 +94,11 @@
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=64_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=16384                        !max number of tensor instructions in a bytecode envelope
+ !Decoder:
+        logical, private:: DECODER_RECV_PAUSE=.TRUE.  !if TRUE MIN_DECODER_WAIT_TIME will be enforced (see below)
+        real(8), private:: MIN_DECODER_WAIT_TIME=1d-3 !minimal pause (sec) between testing for new incoming bytecode
  !Resourcer:
-        real(8), parameter, private:: MAX_RESOURCER_ACTIVE_MEM_FRAC=7d-1 !fraction of Host RAM after which regular resourcing queue blocks and only deferred queue stays active
+        real(8), private:: MAX_RESOURCER_ACTIVE_MEM_FRAC=7d-1 !fraction of Host RAM after which regular resourcing queue blocks and only deferred queue stays active
         integer(INTD), private:: MAX_RESOURCER_INTAKE=512 !max number of instructions in Resourcer's main queue
         integer(INTD), private:: MAX_RESOURCER_INSTR=64   !max number of instructions during a single new resource allocation phase before passing resourced instructions to Communicator
         real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3  !max time spent in a single new resource allocation phase
@@ -106,8 +109,10 @@
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=8  !max number of outstanding prefetches issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=2     !max number of outstanding uploads issued by Communicator
         real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
-        logical, private:: COMMUNICATOR_OFF=.FALSE.             !DEBUG: Turns off all actual communications
+        logical, private:: COMMUNICATOR_NO_FETCH=.FALSE.        !DEBUG: Turns off all data fetches
+        logical, private:: COMMUNICATOR_NO_UPLOAD=.FALSE.       !DEBUG: Turns off all data uploads
  !Dispatcher:
+        logical, private:: DISPATCHER_CPU_PARALLEL=.TRUE.       !parallel vs serial execution of numerical tasks on CPU
         integer(INTD), private:: MAX_DISPATCHER_INTAKE=64       !max number of instructions taken from the port at a time
         real(8), private:: DISPATCHER_DEFERRED_PAUSE=1d-4       !enforced pause to a Dispatcher before issuing the next instruction after the previous one has been deferred
         logical, private:: ACCELERATOR_ONLY=.TRUE.              !DEBUG: if TRUE, all tensor contractions will be executed on accelerators
@@ -1083,6 +1088,9 @@
 !Allocates local memory either from a system or from a custom buffer.
 !If the resource has already been allocated before, an error will be returned.
 !If the memory allocation is unsuccessful, returns either TRY_LATER or an error code.
+!If <in_buffer> is not specified and the allocation size is greater or equal to
+!TAVP_WRK_MIN_SIZE_IN_BUF, then an attempt to allocate this memory from the Host buffer
+!will be perfomed first, and, if unsuccessful, it will fallback to a regular allocation.
          implicit none
          class(tens_resrc_t), intent(inout):: this    !inout: tensor resource
          integer(INTL), intent(in):: bytes            !in: size in bytes
@@ -1096,6 +1104,7 @@
          type(C_PTR):: addr
          logical:: retry
 
+         call prof_push('AllocBuffer'//CHAR_NULL,8)
          if(this%is_empty(errc)) then
           if(bytes.gt.0_INTL) then
            dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
@@ -1112,6 +1121,11 @@
             errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr)
             if(errc.eq.TRY_LATER.and.in_buf.eq.YEP.and.retry) then
              in_buf=NOPE; errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr) !fall back to system allocator
+             if(LOGGING.gt.0) then
+              write(CONS_OUT,'("#MSG(TAVP-WRK:tens_resrc_t.allocate_buffer): Fallback detected of size (bytes) ",i13,'//&
+              &'": Error ",i11)') bytes,errc
+              flush(CONS_OUT)
+             endif
             endif
            else
             errc=TRY_LATER
@@ -1142,6 +1156,7 @@
           errc=-1
          endif
          if(present(ierr)) ierr=errc
+         call prof_pop()
          return
         end subroutine TensResrcAllocateBuffer
 !------------------------------------------------
@@ -1227,7 +1242,7 @@
          integer(1), pointer:: i1(:)
          integer(4), pointer:: i4(:)
 
-         call prof_push('ZeroBuffer'//CHAR_NULL,8)
+         call prof_push('ZeroBuffer'//CHAR_NULL,9)
          if(.not.this%is_empty(errc)) then
           if(errc.eq.0) then
            addr=this%get_mem_ptr(errc)
@@ -2701,7 +2716,7 @@
                       cptr=this%resource%get_mem_ptr(errc)
                       if(errc.eq.0) then
                        if(COMMUNICATOR_REQUEST) then !request-based one-sided communication
-                        if(.not.COMMUNICATOR_OFF) then
+                        if(.not.COMMUNICATOR_NO_FETCH) then
                          call descr%get_data(cptr,errc,MPI_ASYNC_REQ)
                          if(errc.eq.0.and.DEBUG.gt.1) then
                           comm_stat=descr%get_comm_stat(errc,req)
@@ -2715,16 +2730,16 @@
                         endif
                        else !regular one-sided communication
                         if(COMMUNICATOR_BLOCKING) then
-                         if(.not.COMMUNICATOR_OFF) call descr%get_data(cptr,errc,MPI_ASYNC_NOT)
+                         if(.not.COMMUNICATOR_NO_FETCH) call descr%get_data(cptr,errc,MPI_ASYNC_NOT)
                          if(associated(this%cache_entry)) call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
                         else
-                         if(.not.COMMUNICATOR_OFF) then
+                         if(.not.COMMUNICATOR_NO_FETCH) then
                           call descr%get_data(cptr,errc,MPI_ASYNC_NRM)
                          else
                           if(associated(this%cache_entry)) call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
                          endif
                         endif
-                        if(errc.eq.0.and.DEBUG.gt.1.and.(.not.COMMUNICATOR_OFF)) then
+                        if(errc.eq.0.and.DEBUG.gt.1.and.(.not.COMMUNICATOR_NO_FETCH)) then
 !$OMP CRITICAL (IO)
                          write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Get initiated without request")')
 !$OMP END CRITICAL (IO)
@@ -2834,7 +2849,7 @@
                      cptr=this%resource%get_mem_ptr(errc)
                      if(errc.eq.0) then
                       if(COMMUNICATOR_REQUEST) then !request-based one-sided communication
-                       if(.not.COMMUNICATOR_OFF) then
+                       if(.not.COMMUNICATOR_NO_UPLOAD) then
                         call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
                         if(errc.eq.0.and.DEBUG.gt.1) then
                          comm_stat=descr%get_comm_stat(errc,req)
@@ -2849,18 +2864,18 @@
                        endif
                       else !regular one-sided communication
                        if(COMMUNICATOR_BLOCKING) then
-                        if(.not.COMMUNICATOR_OFF) call descr%acc_data(cptr,errc,MPI_ASYNC_NOT)
+                        if(.not.COMMUNICATOR_NO_UPLOAD) call descr%acc_data(cptr,errc,MPI_ASYNC_NOT)
                         if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
                         call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-14 !local buffer has been accumulated, thus must be reset to zero
                        else
-                        if(.not.COMMUNICATOR_OFF) then
+                        if(.not.COMMUNICATOR_NO_UPLOAD) then
                          call descr%acc_data(cptr,errc,MPI_ASYNC_NRM)
                         else
                          if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
                          call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-13 !local buffer has been accumulated, thus must be reset to zero
                         endif
                        endif
-                       if(errc.eq.0.and.DEBUG.gt.1.and.(.not.COMMUNICATOR_OFF)) then
+                       if(errc.eq.0.and.DEBUG.gt.1.and.(.not.COMMUNICATOR_NO_UPLOAD)) then
 !$OMP CRITICAL (IO)
                         write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated without request")')
 !$OMP END CRITICAL (IO)
@@ -5293,6 +5308,7 @@
          class(tavp_wrk_decoder_t), intent(inout):: this !inout: TAVP-WRK decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid,num_packets,opcode,sts,port_id,i,j,uid,channel
+         integer:: timer_recv
          logical:: active,stopping,new
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
@@ -5316,11 +5332,11 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-49
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-53
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-48
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-52
 !Initialize the control list:
-         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-47
+         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-51
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -5329,20 +5345,30 @@
 !$OMP ATOMIC UPDATE
           tavp%units_active=tavp%units_active+1
 !$OMP FLUSH
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-46
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-50
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-45
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-49
          endif
 !Initialize the tensor cache dump list iterator:
-         ier=dumpi%init(dump_cache); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-44
+         ier=dumpi%init(dump_cache); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-48
+!Initialize timers:
+         ier=timer_start(timer_recv,MIN_DECODER_WAIT_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-47
 !Work loop:
          active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
           if(.not.stopping) then
  !Receive new bytecode (if posted):
-           call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-43; exit wloop; endif
-           new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,tag=TAVP_DISPATCH_TAG,comm=this%source_comm)
-           if(ier.ne.0.and.errc.eq.0) then; errc=-42; exit wloop; endif
+           if(timer_expired(timer_recv,ier).or.(.not.DECODER_RECV_PAUSE)) then
+            if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-46; exit wloop; endif
+            call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-45; exit wloop; endif
+            new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,tag=TAVP_DISPATCH_TAG,comm=this%source_comm)
+            if(ier.ne.0.and.errc.eq.0) then; errc=-44; exit wloop; endif
+            ier=timer_reset(timer_recv,MIN_DECODER_WAIT_TIME)
+            if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-43; exit wloop; endif
+           else
+            if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-42; exit wloop; endif
+            new=.FALSE.
+           endif
            if(new) then !new bytecode is available
             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-41; exit wloop; endif
             channel=this%bytecode%get_tag(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-40; exit wloop; endif
@@ -5456,6 +5482,8 @@
            ier=this%iqueue%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
           endif
          enddo wloop
+!Destroy timers:
+         ier=timer_destroy(timer_recv) !`Ignored error code
 !Release the tensor cache dump list iterator:
          ier=dumpi%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
          ier=dumpi%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
@@ -8240,6 +8268,7 @@
          endif
 !Set the max number of OpenMP threads for the next parallel (computing) region:
          opl=get_omp_place_info(n) !get the place id and place width the current (Dispatcher) thread is in
+         if(.not.DISPATCHER_CPU_PARALLEL) n=1
          call omp_set_num_threads(n) !the next parallel region in TAL-SH can use up to n threads from this place
          if(LOGGING.gt.0) then
           n=omp_get_max_threads()
@@ -8904,7 +8933,7 @@
          complex(8):: alpha
          logical:: defined
 
-         call prof_push('TensorInit'//CHAR_NULL,9)
+         call prof_push('TensorInit'//CHAR_NULL,10)
 !$OMP FLUSH
          errc=0
          dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
@@ -8993,7 +9022,7 @@
          class(ctrl_tens_contr_t), pointer:: ctrl_contract
          type(contr_ptrn_ext_t), pointer:: contr_ptrn_ext
 
-         call prof_push('TensorContract'//CHAR_NULL,10)
+         call prof_push('TensorContract'//CHAR_NULL,11)
 !$OMP FLUSH
          errc=0
          dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
@@ -9095,7 +9124,7 @@
          class(tens_cache_entry_t), pointer:: cache_entry
          type(permutation_t), pointer:: permut
 
-         call prof_push('TensorAccumulate'//CHAR_NULL,11)
+         call prof_push('TensorAccumulate'//CHAR_NULL,12)
 !$OMP FLUSH
          errc=0
          dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id

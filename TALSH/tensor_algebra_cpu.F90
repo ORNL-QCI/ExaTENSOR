@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/21
+!REVISION: 2018/12/13
 
 !Copyright (C) 2013-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -61,6 +61,8 @@
  !Default output for the module procedures:
         integer, private:: CONS_OUT=6     !default output device for this module (also used for INTEL MIC TAL)
         logical, private:: VERBOSE=.TRUE. !verbosity (also used for INTEL MIC TAL)
+        integer, private:: DEBUG=0        !debugging mode
+        integer, private:: LOGGING=0      !logging mode
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: CONS_OUT,VERBOSE
 !DIR$ ATTRIBUTES ALIGN:128:: CONS_OUT,VERBOSE
@@ -2987,7 +2989,7 @@
 !------------------------------------------------
         integer:: i,j,k,l,m,n,k0,k1,k2,k3,ks,kf
         integer(LONGINT):: l0,l1,l2,l3,lld,lrd,lcd
-        integer:: ltb,rtb,dtb,lrank,rrank,drank,nlu,nru,ncd,tst,contr_case,conj,dn2o(0:max_tensor_rank)
+        integer:: ltb,rtb,dtb,lrank,nthr,rrank,drank,nlu,nru,ncd,tst,contr_case,conj,dn2o(0:max_tensor_rank)
         integer, target:: lo2n(0:max_tensor_rank),ro2n(0:max_tensor_rank),do2n(0:max_tensor_rank)
         integer, pointer:: trn(:)
         type(tensor_block_t), pointer:: tens_in,tens_out,ltp,rtp,dtp
@@ -2995,7 +2997,7 @@
         character(2):: dtk
         character(1):: ltrm,rtrm
         real(4):: d_r4
-        real(8):: d_r8,start_gemm
+        real(8):: d_r8,start_gemm,finish_gemm
         complex(8):: d_c8,l_c8,r_c8,alf
         logical:: contr_ok,ltransp,rtransp,dtransp,transp,lconj,rconj,dconj
 
@@ -3163,7 +3165,8 @@
          if(rtrm.eq.'C') then; l2=lrd; else; l2=lcd; endif !leading dimension for the right matrix
  !Multiply two matrices (dtp += ltp * rtp):
          if(present(alpha)) then; alf=alpha; else; alf=(1d0,0d0); endif
-!	 start_gemm=thread_wtime() !debug
+	 nthr=omp_get_max_threads() !debug
+	 start_gemm=thread_wtime() !debug
 	 select case(contr_case)
 	 case(PARTIAL_CONTRACTION) !destination is an array
 	  select case(dtk)
@@ -3244,7 +3247,7 @@
 	  if(rconj) then; r_c8=conjg(rtp%scalar_value); else; r_c8=rtp%scalar_value; endif
 	  dtp%scalar_value=dtp%scalar_value+l_c8*r_c8*alf
 	 end select
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): GEMM time: ",F10.4)') thread_wtime(start_gemm) !debug
+	 finish_gemm=thread_wtime()
  !Transpose the matrix-result back into the output tensor:
 	 if(dtransp) then
 !	  write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') 0 !debug
@@ -3278,6 +3281,10 @@
 	  if(dtransp) then; call tensor_block_destroy(dta,j); if(j.ne.0) ierr=ierr+2000+j; endif
 	 case(MULTIPLY_SCALARS)
 	 end select
+	 if(LOGGING.gt.0) then
+	  write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): Max threads = ",i3,": GEMM time ",F10.4)')&
+          &nthr,finish_gemm-start_gemm !debug
+	 endif
 	else
 	 ierr=30
 	endif
@@ -5425,7 +5432,7 @@
 !DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,bases_in,bases_out,bases_pri,segs
 #endif
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(dim_num.lt.0) then; ierr=1; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
 !Check the index permutation:
 	trivial=.TRUE.; do i=1,dim_num; if(dim_transp(i).ne.i) then; trivial=.FALSE.; exit; endif; enddo
@@ -5619,9 +5626,11 @@
          endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!       tm=thread_wtime(time_beg) !debug
-!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
-!        tm,dble(2_LONGINT*bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
+	tm=thread_wtime(time_beg) !debug
+	if(LOGGING.gt.0) then
+	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
+	 tm,dble(2_LONGINT*bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
+	endif
 	return
 	end subroutine tensor_block_copy_dlf_r4
 !------------------------------------------------------------------------------------------------
@@ -5667,7 +5676,7 @@
 !DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,bases_in,bases_out,bases_pri,segs
 #endif
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(dim_num.lt.0) then; ierr=1; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
 !Check the index permutation:
 	trivial=.TRUE.; do i=1,dim_num; if(dim_transp(i).ne.i) then; trivial=.FALSE.; exit; endif; enddo
@@ -5861,9 +5870,11 @@
          endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!	tm=thread_wtime(time_beg) !debug
-!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)')&
-!	&tm,dble(2_LONGINT*bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
+	tm=thread_wtime(time_beg) !debug
+	if(LOGGING.gt.0) then
+	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)')&
+	 &tm,dble(2_LONGINT*bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
+	endif
 	return
 	end subroutine tensor_block_copy_dlf_r8
 !-------------------------------------------------------------------------------------------------------
@@ -5911,7 +5922,7 @@
 !DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,bases_in,bases_out,bases_pri,segs
 #endif
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(present(conjug)) then; conj=conjug; else; conj=.FALSE.; endif !optional complex conjugation
 	if(dim_num.lt.0) then
 	 ierr=1; return
@@ -6136,9 +6147,11 @@
          endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!       tm=thread_wtime(time_beg) !debug
-!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
-!        tm,dble(2_LONGINT*bs*real_kind*2_LONGINT)/(tm*1024d0*1024d0*1024d0),ierr !debug
+	tm=thread_wtime(time_beg) !debug
+	if(LOGGING.gt.0) then
+	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
+	 tm,dble(2_LONGINT*bs*real_kind*2_LONGINT)/(tm*1024d0*1024d0*1024d0),ierr !debug
+	endif
 	return
 	end subroutine tensor_block_copy_dlf_c8
 !--------------------------------------------------------------------------------------------------------
