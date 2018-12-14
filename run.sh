@@ -20,15 +20,15 @@ export QF_NUM_THREADS=8           #initial number of CPU threads per MPI process
 
 #OpenMP generic:
 export OMP_NUM_THREADS=$QF_NUM_THREADS #initial number of OpenMP threads per MPI process
-export OMP_DYNAMIC=FALSE               #no OpenMP dynamic threading
-export OMP_NESTED=TRUE                 #OpenMP nested parallelism is mandatory
+export OMP_DYNAMIC=false               #no OpenMP dynamic threading
+export OMP_NESTED=true                 #OpenMP nested parallelism is mandatory
 export OMP_MAX_ACTIVE_LEVELS=3         #max number of OpenMP nesting levels (at least 3)
-export OMP_THREAD_LIMIT=1024           #max total number of OpenMP threads per process
+export OMP_THREAD_LIMIT=256            #max total number of OpenMP threads per process
 export OMP_WAIT_POLICY=PASSIVE         #idle thread behavior
-#export OMP_STACKSIZE=200M              #stack size per thread
-#export OMP_DISPLAY_ENV=VERBOSE         #display OpenMP environment variables
-#export GOMP_DEBUG=1                    #GNU OpenMP debugging
-#export LOMP_DEBUG=1                    #IBM XL OpenMP debugging
+#export OMP_STACKSIZE=200M             #stack size per thread
+#export OMP_DISPLAY_ENV=VERBOSE        #display OpenMP environment variables
+#export GOMP_DEBUG=1                   #GNU OpenMP debugging
+#export LOMP_DEBUG=1                   #IBM XL OpenMP debugging
 
 #OpenMP thread binding:
 export OMP_PLACES_DEFAULT=threads                                     #default thread binding to CPU logical cores
@@ -48,6 +48,7 @@ export MKL_NUM_THREADS_TITAN=8                  #keep consistent with chosen OMP
 export MKL_NUM_THREADS_POWER9=42                #keep consistent with chosen OMP_PLACES!
 export MKL_NUM_THREADS_KNL=128                  #keep consistent with chosen OMP_PLACES!
 export MKL_NUM_THREADS=$MKL_NUM_THREADS_DEFAULT #number of Intel MKL threads per process
+export MKL_DYNAMIC=false
 
 #Intel MIC specific:
 #export KMP_AFFINITY="verbose,granularity=core,compact"     #Intel CPU thread affinity

@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/13
+!REVISION: 2018/12/14
 
 !Copyright (C) 2013-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -37,7 +37,7 @@
 !PREPROCESSOR:
 ! -D NO_OMP: Do not use OpenMP (serial);
 ! -D NO_BLAS: Replace BLAS calls with in-house routines (slower);
-! -D USE_MKL: USE Intel MKL library for BLAS;
+! -D USE_MKL: Use Intel MKL library interface for BLAS;
 ! -D NO_PHI: Ignore Intel MIC (Xeon Phi);
        module tensor_algebra_cpu
 !       use, intrinsic:: ISO_C_BINDING
@@ -47,16 +47,21 @@
         use combinatoric
         use timers
         use symm_index
+#ifdef USE_MKL
+        !use blas95
+        !use lapack95
+        !use f95_precision
+        use mkl_service
+#endif
 #ifndef NO_OMP
         use omp_lib
-#endif
-#ifdef USE_MKL
-        use mkl95_blas
-        use mkl95_lapack
-        use mkl95_precision
-#endif
         implicit none
         public
+#else
+        implicit none
+        public
+        integer, external:: omp_get_max_threads
+#endif
 !PARAMETERS:
  !Default output for the module procedures:
         integer, private:: CONS_OUT=6     !default output device for this module (also used for INTEL MIC TAL)
@@ -3002,6 +3007,10 @@
         logical:: contr_ok,ltransp,rtransp,dtransp,transp,lconj,rconj,dconj
 
         ierr=0
+        nthr=omp_get_max_threads()
+#ifdef USE_MKL
+        call mkl_set_num_threads(nthr)
+#endif
 !Get the argument types:
         ltb=tensor_block_layout(ltens,ierr); if(ierr.ne.0) then; ierr=1; return; endif !left-tensor storage layout type
         rtb=tensor_block_layout(rtens,ierr); if(ierr.ne.0) then; ierr=2; return; endif !right-tensor storage layout type
@@ -3165,7 +3174,6 @@
          if(rtrm.eq.'C') then; l2=lrd; else; l2=lcd; endif !leading dimension for the right matrix
  !Multiply two matrices (dtp += ltp * rtp):
          if(present(alpha)) then; alf=alpha; else; alf=(1d0,0d0); endif
-	 nthr=omp_get_max_threads() !debug
 	 start_gemm=thread_wtime() !debug
 	 select case(contr_case)
 	 case(PARTIAL_CONTRACTION) !destination is an array
