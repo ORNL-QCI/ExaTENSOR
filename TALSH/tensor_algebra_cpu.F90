@@ -51,7 +51,7 @@
         !use blas95
         !use lapack95
         !use f95_precision
-        use mkl_service
+        !use mkl_service
 #endif
 #ifndef NO_OMP
         use omp_lib
@@ -60,7 +60,7 @@
 #else
         implicit none
         public
-        integer, external:: omp_get_max_threads
+        integer, external:: omp_get_max_threads,omp_set_num_threads
 #endif
 !PARAMETERS:
  !Default output for the module procedures:

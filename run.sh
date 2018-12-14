@@ -84,6 +84,8 @@ unset PAMI_IBV_ENABLE_DCT
 #export PAMI_IBV_ENABLE_OOO_AR=1     #adaptive routing is default
 #export PAMI_IBV_DISABLE_ODP=0       #ODP (requires CAPI for performance)
 #export PAMI_IBV_DEBUG_CQE=1         #CQE error debugging
+#export PAMI_IBV_DEBUG_QP_TIMEOUT=22
+#export PAMI_IBV_DEBUG_RNR_RETRY=9
 #export OMPI_LD_PRELOAD_POSTPEND=$OLCF_SPECTRUM_MPI_ROOT/lib/libmpitrace.so
 
 rm core.* *.tmp *.log *.out *.x
@@ -98,7 +100,7 @@ ulimit -s unlimited
 #aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROCESS -cc none ./Qforce.x #>& qforce.log
 
 #jsrun -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x #>& qforce.log
-#jsrun --smpiargs="-mca common pami use_odp" -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x #>& qforce.log
+#jsrun --smpiargs="-mca common_pami_use_odp 1" -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x #>& qforce.log
 #jsrun -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone nvprof -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x #>& qforce.log
 
 #nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x #>& qforce.log
