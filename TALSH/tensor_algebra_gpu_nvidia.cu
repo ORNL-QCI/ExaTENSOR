@@ -1,9 +1,9 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2017/10/20
+REVISION: 2018/12/20
 
-Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
 
 This file is part of ExaTensor.
 
@@ -3305,7 +3305,8 @@ NOTES:
 //----------------------------------------------------------------------------------------------------------------------------------------
 // TENSOR CONTRACTION (non-blocking):
 __host__ int gpu_tensor_block_contract_dlf(const int *cptrn, tensBlck_t *ltens, tensBlck_t *rtens, tensBlck_t *dtens,
-                                           unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id, double scale_real, double scale_imag)
+                                           unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id,
+                                           double scale_real, double scale_imag, int conj_bits)
 /**
 dtens(:)+=ltens(:)*rtens(:)
 INPUT:
@@ -3319,6 +3320,7 @@ INPUT:
  # gpu_id - suggested GPU ID on which the operation is to be scheduled (-1: defaults to the optimal one);
  # scale_real - real part of the GEMM alpha coefficient (defaults to 1.0);
  # scale_imag - imaginary part of the GEMM alpha coefficient (defaults to 0.0);
+ # conj_bits - tensor argument complex conjugation bits, one bit per argument: {0:D,1:L,2:R};
 OUTPUT:
  # dtens - updated destination tensor;
  # cuda_task - recorded CUDA task (either successfully scheduled or failed).
@@ -3376,7 +3378,7 @@ NOTES:
  if(tensDevRsc_is_empty(dtens->src_rsc) != NOPE) return -8;  //source resource must be present (tensor body)
  if(tensDevRsc_is_empty(ltens->src_rsc) != NOPE) return -9;  //source resource must be present (tensor body)
  if(tensDevRsc_is_empty(rtens->src_rsc) != NOPE) return -10; //source resource must be present (tensor body)
-//Check the contraction pattern and dimension extent correspondence:
+//Check the contraction pattern and tensor dimension extent correspondence:
  for(i=0;i<drank;i++) dprm[i]=0; for(i=0;i<lrank;i++) lprm[i]=0; for(i=0;i<rrank;i++) rprm[i]=0;
  for(i=0;i<lrank;i++){ //position in ltens
   j=cptrn[i];
@@ -3409,6 +3411,11 @@ NOTES:
   }
  }
  for(i=0;i<drank;i++) if(dprm[i] != 1) return -27;
+//Check argument complex conjugation bits:
+ conj_bits = conj_bits & 7; //keep only first three bits, one per tensor argument
+ if(conj_bits & 1){ //destination tensor argument conjugation = inverse conjugation of left and right tensor arguments
+  conj_bits = conj_bits ^ 7;
+ }
 //Activate the right GPU:
  if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE){gpu_num=tens_op_best_gpu(dtens,ltens,rtens);}else{gpu_num=gpu_id;}
  if(gpu_is_mine(gpu_num) <= GPU_OFF) return -28; //GPU is not mine or error

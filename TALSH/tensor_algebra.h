@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2018/12/07
+REVISION: 2018/12/20
 
 Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -470,7 +470,8 @@ int cuda_get_device_count(int * dev_count);
  int cuda_task_dev_rsc_move(cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc);
  int cuda_task_arg_has_resource(cudaTask_t *cuda_task, unsigned int arg_num, char which, int *ierr);
  int cuda_task_arg_destroy(cudaTask_t *cuda_task, int arg_num = -1);
- float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy = NULL, float *out_copy = NULL, float *comp = NULL, float *mmul = NULL);
+ float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy = NULL, float *out_copy = NULL, float *comp = NULL,
+                      float *mmul = NULL);
  float cuda_task_time_(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp, float *mmul);
  void cuda_task_print(const cudaTask_t *cuda_task);
 //  NV-TAL tensor operations:
@@ -478,8 +479,9 @@ int cuda_get_device_count(int * dev_count);
  int gpu_tensor_block_init(tensBlck_t *dtens, double val, unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id = -1);
  int gpu_tensor_block_add(const int *cptrn, tensBlck_t *ltens, tensBlck_t *dtens, unsigned int coh_ctrl,
                           cudaTask_t *cuda_task, int gpu_id = -1, double scale_real = 1.0, double scale_imag = 0.0);
- int gpu_tensor_block_contract_dlf(const int *cptrn, tensBlck_t *ltens, tensBlck_t *rtens, tensBlck_t *dtens, unsigned int coh_ctrl,
-                                   cudaTask_t *cuda_task, int gpu_id = -1, double scale_real = 1.0, double scale_imag = 0.0);
+ int gpu_tensor_block_contract_dlf(const int *cptrn, tensBlck_t *ltens, tensBlck_t *rtens, tensBlck_t *dtens,
+                                   unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id = -1,
+                                   double scale_real = 1.0, double scale_imag = 0.0, int conj_bits = 0);
 #endif /*NO_GPU */
 #ifdef __cplusplus
 }
