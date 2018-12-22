@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/14
+!REVISION: 2018/12/22
 
 !Copyright (C) 2013-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4022,35 +4022,43 @@
         endif
         return
         end subroutine get_contr_pattern_sym
-!-------------------------------------------------------------------------------------------
-	subroutine get_contr_permutations(lrank,rrank,cptrn,dprm,lprm,rprm,ncd,nlu,nru,ierr) bind(c,name='get_contr_permutations') !SERIAL
+!------------------------------------------------------------------------------------------------------
+	subroutine get_contr_permutations(lrank,rrank,cptrn,conj_bits,dprm,lprm,rprm,ncd,nlu,nru,ierr)&
+                                         &bind(c,name='get_contr_permutations') !SERIAL
 !This subroutine returns all tensor index permutations necessary for the tensor
 !contraction specified by <cptrn> (implemented via a matrix multiplication).
 !INPUT:
 ! - cptrn(1:lrank+rrank) - digital contraction pattern;
+! - conj_bits - complex conjugation bits {0:D,1:L,2:R};
 !OUTPUT:
-! - dprm(0:drank) - index permutation for the destination tensor (N2O, numeration starts from 1);
-! - lprm(0:lrank) - index permutation for the left tensor argument (O2N, numeration starts from 1);
-! - rprm(0:rrank) - index permutation for the right tensor argument (O2N, numeration starts from 1);
+! - dprm(0:drank) - signed index permutation for the destination tensor (N2O, numeration starts from 1);
+! - lprm(0:lrank) - signed index permutation for the left tensor argument (O2N, numeration starts from 1);
+! - rprm(0:rrank) - signed index permutation for the right tensor argument (O2N, numeration starts from 1);
 ! - ncd - total number of contracted indices;
 ! - nlu - number of left uncontracted indices;
 ! - nru - number of right uncontracted indices;
 ! - ierr - error code (0:success).
-!	use, intrinsic:: ISO_C_BINDING
 	implicit none
 !------------------------------------------------
 	logical, parameter:: check_pattern=.TRUE.
 !------------------------------------------------
 	integer(C_INT), intent(in), value:: lrank,rrank
 	integer(C_INT), intent(in):: cptrn(1:*)
+	integer(C_INT), intent(in), value:: conj_bits
 	integer(C_INT), intent(out):: dprm(0:*),lprm(0:*),rprm(0:*),ncd,nlu,nru
 	integer(C_INT), intent(inout):: ierr
-	integer(C_INT) i,j,k,drank,jkey(1:lrank+rrank),jtrn0(0:lrank+rrank),jtrn1(0:lrank+rrank)
-	logical pattern_ok,simple
+	integer(C_INT):: i,j,k,drank,jkey(1:lrank+rrank),jtrn0(0:lrank+rrank),jtrn1(0:lrank+rrank)
+	logical:: pattern_ok,simple,left_conj,right_conj
 
 	ierr=0
 	if(check_pattern) then; pattern_ok=contr_pattern_ok(); else; pattern_ok=.TRUE.; endif
 	if(pattern_ok.and.lrank.ge.0.and.rrank.ge.0) then
+ !Check conjugation bits:
+         left_conj=btest(conj_bits,1)
+         right_conj=btest(conj_bits,2)
+         if(btest(conj_bits,0)) then
+          left_conj=.not.left_conj; right_conj=.not.right_conj
+         endif
  !Destination operand:
 	 drank=0; dprm(0)=+1
 	 do i=1,lrank; if(cptrn(i).gt.0) then; drank=drank+1; dprm(drank)=cptrn(i); endif; enddo
@@ -4063,7 +4071,7 @@
 	 enddo
 	 if(simple) dprm(1:drank)=(/(j,j=1,drank)/)
  !Right tensor operand:
-	 nru=0; ncd=0; rprm(0)=+1 !numbers of the right uncontracted and contracted dimensions
+	 rprm(0)=+1; nru=0; ncd=0 !numbers of the right uncontracted and contracted dimensions
 	 if(rrank.gt.0) then
 	  j=0; do i=1,rrank; if(cptrn(lrank+i).lt.0) then; j=j+1; rprm(i)=j; endif; enddo; ncd=j !contracted dimensions
 	  nru=rrank-ncd !uncontracted dimensions
@@ -4074,7 +4082,7 @@
 	  endif
 	 endif
  !Left tensor operand:
-	 lprm(0)=+1 !number of the left uncontracted dimensions
+	 lprm(0)=+1
 	 if(lrank.gt.0) then
 	  j=0; do i=1,lrank; if(cptrn(i).lt.0) then; j=j+1; jtrn1(j)=i; jkey(j)=abs(cptrn(i)); endif; enddo
 	  jtrn0(0:j)=(/+1,(k,k=1,j)/); if(j.ge.2) call merge_sort_key_int(j,jkey,jtrn0)
@@ -4085,6 +4093,25 @@
 	   do i=1,lrank; if(cptrn(i).gt.0) then; j=j+1; lprm(i)=j; endif; enddo
 	  endif
 	 endif
+ !Apply conjugation if needed (swap contracted and uncontracted positions):
+         if(left_conj) then
+          do i=1,lrank
+           if(lprm(i).le.ncd) then
+            lprm(i)=lprm(i)+nlu
+           else
+            lprm(i)=lprm(i)-ncd
+           endif
+          enddo
+         endif
+         if(right_conj) then
+          do i=1,rrank
+           if(rprm(i).le.ncd) then
+            rprm(i)=rprm(i)+nru
+           else
+            rprm(i)=rprm(i)-ncd
+           endif
+          enddo
+         endif
 	else !invalid lrank or rrank or cptrn(:)
 	 ierr=1
 	endif
@@ -4093,7 +4120,8 @@
 	contains
 
 	 logical function contr_pattern_ok()
-	 integer(C_INT) j0,j1,jc,jl
+	 integer(C_INT):: j0,j1,jc,jl
+
 	 contr_pattern_ok=.TRUE.; jl=lrank+rrank
 	 if(jl.gt.0) then
 	  jkey(1:jl)=0; jc=0
