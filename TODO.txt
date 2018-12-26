@@ -16,24 +16,28 @@ FEATURES NEEDED:
 
 
 UNSOLVED ISSUES:
- 2018/03/07: Implement tensor R/W status update (in the cache) at the TAVP-MNG level:
+ 2018/03/07: Implement tensor R/W status update (in the tensor cache) at the TAVP-MNG level:
              Dependency check and status update on instruction issue should be done during location cycle;
-             Status update on instruction retirement will probably require another rotation cycle, or
-             it may be implemented via remote MPI atomics.
+             Status update on instruction retirement will probably require another rotation cycle,
+             for example via opening an additional port in Locator for instructions from Collector,
+             or it may be implemented via remote MPI atomics (remotely accesible R/W counters).
  2018/03/07: At the bottom TAVP-MNG level it is unclear how to implement replication within a group of the
              TAVP-WRK processes belonging to the same TAVP-MNG process. Perhaps argument renaming and
              replication under modified names provides an acceptable solution:
              T12(a,b,i,j) --> T12$0, T12$1, T12$2, etc. Note that later the output tensor name substitution
-             may additionally mangle the name: T12 --> T12#0 (accumulator); T12#1, T12#2, etc. (temporary).
+             may additionally mangle the name: T12 --> T12#0 (accumulator), T12#1, T12#2, ... (temporary).
              Thus, combined will give: T12 (original) --> T12$1 (replica) --> T12$1#3 (temporary replica).
- 2018/03/26: TAL-SH coherence control might not work properly when the same tensor is concurrently participating
-             in multiple tensor operations as an input. Needs to be checked.
- 2018/08/20: Temporary (output) tensors must be reused, especially if they are already on GPU.
+ 2018/08/20: Temporary (output) tensors should be reused, especially if they are already on GPU.
  2018/09/12: Tensor transformation requires MPI_PUT and MPI_GET for output tensor arguments:
              Get output tensor argument --> Transform it locally --> Put output tensor argument.
              Tensor initialization requires MPI_PUT. Tensor operations with INOUT operands also
              require MPI_GET + MPI_PUT mechanism on output operands.
- 2018/10/26: Frequent small object allocations/deallocations should be replaced by GFC::bank factory.
+ 2018/10/26: Frequent small object allocations/deallocations should be replaced by GFC::bank factories.
+ 2018/12/26: DS Instruction class requires a new field called .stream, indicating which instruction stream
+             the DS instruction is following. Stream 0 is the default out-of-order stream. A stream with
+             a positive number indicates a sequence of dependent instructions to be executed in their
+             original order; all instructions from such a sequence will be marked with the same stream;
+             the last instruction in this sequence will have its stream number negated.
 
 
 SOLVED:
@@ -55,6 +59,8 @@ SOLVED:
              -> tavp_wrk_resourcer_t.acquire_resource().
  2018/03/27: Subspace decomposition algorithm with alignment does not work properly: Example with alignment 5:
              [50] -> [[20]+[30]] -> [[[10]+[10]]+[[25]+[5]]]
+ 2018/03/26: TAL-SH coherence control might not work properly when the same tensor is concurrently participating
+             in multiple tensor operations as an input. Needs to be checked.
  2014/07/07: Check GPU_UP before switching GPUs.
  2014/07/07: Add a scalar scaling factor to <tensor_block_contract> and <gpu_tensor_block_contract>.
  2014/01/04: Add concurrent kernel execution into tensor_block_contract_dlf_r4_ for input tensor transposes.

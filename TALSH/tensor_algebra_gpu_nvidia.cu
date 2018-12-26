@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2018/12/24
+REVISION: 2018/12/26
 
 Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -125,7 +125,7 @@ static int cuda_task_finalize(cudaTask_t *cuda_task);
 template <typename T>
 __global__ void gpu_array_norm2__(size_t arr_size, const T * arr, volatile T * bnorm2);
 template <typename T>
-__global__ void gpu_array_init__(size_t tsize, T * arr, T val);
+__global__ void gpu_array_init__(size_t arr_size, T * arr, T val);
 template <typename T>
 __global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T * dest_arg, T alpha,
                                       int left_conj = 0, int right_conj = 0);
@@ -210,31 +210,35 @@ __device__ static int norm2_wr_lock=0; //write lock shared by all <gpu_array_nor
 // Infrastructure for kernels <gpu_array_dot_product__>:
 __device__ static int dot_product_wr_lock=0; //write lock shared by all <gpu_array_dot_product__> running on GPU
 #endif /*NO_GPU*/
-//------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
 #ifndef NO_GPU
 //CUDA KERNELS:
 // SUM OF THE SQUARES OF ALL ARRAY ELEMENTS:
+// REAL:
 template <typename T>
-__global__ void gpu_array_norm2__(size_t arr_size, const T * arr, volatile T * bnorm2)
+__global__ void gpu_array_norm2__(size_t arr_size, const T * __restrict__ arr, volatile T * bnorm2)
 /** Computes the squared 2-norm of array arr(0:arr_size-1)
 INPUT:
  # arr_size - size of the array;
  # arr(0:arr_size-1) - array;
+ # bnorm2 - must be zero!
 OUTPUT:
  # bnorm2 - squared 2-norm of the array (resides on device as well);
 **/
 {
  size_t i,n;
  T _thread_norm2;
- extern __shared__ T thread_norms2[];
+ extern __shared__ double thread_norms2[]; //size = blockDim.x*sizeof(double)
 
  n=gridDim.x*blockDim.x; _thread_norm2=static_cast<T>(0.0);
  for(i=blockIdx.x*blockDim.x+threadIdx.x;i<arr_size;i+=n){_thread_norm2+=arr[i]*arr[i];}
  thread_norms2[threadIdx.x]=_thread_norm2;
  __syncthreads();
  if(threadIdx.x == 0){
-  _thread_norm2=thread_norms2[0]; for(i=1;i<blockDim.x;i++){_thread_norm2+=thread_norms2[i];}
+  _thread_norm2=static_cast<T>(thread_norms2[0]);
+  for(i=1;i<blockDim.x;i++) _thread_norm2+=static_cast<T>(thread_norms2[i]);
   i=1; while(i == 1){i=atomicMax(&norm2_wr_lock,1);} //waiting for the lock to unlock, then lock
+  __threadfence();
   *bnorm2+=_thread_norm2;
   __threadfence();
   i=atomicExch(&norm2_wr_lock,0); //unlock
@@ -242,15 +246,88 @@ OUTPUT:
  __syncthreads();
  return;
 }
-//-----------------------------------------------------------
+// COMPLEX4:
+template <>
+__global__ void gpu_array_norm2__<talshComplex4>(size_t arr_size, const talshComplex4 *  __restrict__ arr,
+                                                 volatile talshComplex4 * bnorm2)
+/** Computes the squared 2-norm of array arr(0:arr_size-1)
+INPUT:
+ # arr_size - size of the array;
+ # arr(0:arr_size-1) - array;
+ # bnorm2 - must be zero!
+OUTPUT:
+ # bnorm2 - squared 2-norm of the array (resides on device as well);
+**/
+{
+ size_t i,n;
+ float _thread_norm2;
+ extern __shared__ double thread_norms2[]; //size = blockDim.x*sizeof(double)
+ talshComplex4 bn;
+
+ n=gridDim.x*blockDim.x; _thread_norm2=0.0f;
+ for(i=blockIdx.x*blockDim.x+threadIdx.x;i<arr_size;i+=n){
+  _thread_norm2+=talshComplex4Abs(arr[i]);
+ }
+ thread_norms2[threadIdx.x]=_thread_norm2;
+ __syncthreads();
+ if(threadIdx.x == 0){
+  _thread_norm2=static_cast<float>(thread_norms2[0]);
+  for(i=1;i<blockDim.x;++i) _thread_norm2+=static_cast<float>(thread_norms2[i]);
+  i=1; while(i == 1){i=atomicMax(&norm2_wr_lock,1);} //waiting for the lock to unlock, then lock
+  __threadfence();
+  bn=talshComplex4Add(*bnorm2,talshComplex4Set(_thread_norm2,0.0f));
+  *bnorm2=bn;
+  __threadfence();
+  i=atomicExch(&norm2_wr_lock,0); //unlock
+ }
+ __syncthreads();
+ return;
+}
+// COMPLEX8:
+template <>
+__global__ void gpu_array_norm2__<talshComplex8>(size_t arr_size, const talshComplex8 * __restrict__ arr,
+                                                 volatile talshComplex8 * bnorm2)
+/** Computes the squared 2-norm of array arr(0:arr_size-1)
+INPUT:
+ # arr_size - size of the array;
+ # arr(0:arr_size-1) - array;
+ # bnorm2 - must be zero!
+OUTPUT:
+ # bnorm2 - squared 2-norm of the array (resides on device as well);
+**/
+{
+ size_t i,n;
+ double _thread_norm2;
+ extern __shared__ double thread_norms2[]; //size = blockDim.x*sizeof(double)
+ talshComplex8 bn;
+
+ n=gridDim.x*blockDim.x; _thread_norm2=0.0;
+ for(i=blockIdx.x*blockDim.x+threadIdx.x;i<arr_size;i+=n){
+  _thread_norm2+=talshComplex8Abs(arr[i]);
+ }
+ thread_norms2[threadIdx.x]=_thread_norm2;
+ __syncthreads();
+ if(threadIdx.x == 0){
+  _thread_norm2=thread_norms2[0]; for(i=1;i<blockDim.x;++i) _thread_norm2+=thread_norms2[i];
+  i=1; while(i == 1){i=atomicMax(&norm2_wr_lock,1);} //waiting for the lock to unlock, then lock
+  __threadfence();
+  bn=talshComplex8Add(*bnorm2,talshComplex8Set(_thread_norm2,0.0));
+  *bnorm2=bn;
+  __threadfence();
+  i=atomicExch(&norm2_wr_lock,0); //unlock
+ }
+ __syncthreads();
+ return;
+}
+//---------------------------------------------------------------
 // ARRAY INITIALIZATION:
 template <typename T>
-__global__ void gpu_array_init__(size_t tsize, T* arr, T val)
+__global__ void gpu_array_init__(size_t arr_size, T * arr, T val)
 /** arr(:)=val **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
- for(size_t l=_ti;l<tsize;l+=_gd){arr[l]=val;}
+ for(size_t l = _ti; l < arr_size; l += _gd) arr[l] = val;
  return;
 }
 //---------------------------------------------------------------------------------------------------
@@ -274,7 +351,19 @@ __global__ void gpu_scalar_multiply__<talshComplex4>(const talshComplex4 * left_
 /** Scalar += Scalar * Scalar * Alpha **/
 {
  if(blockIdx.x == 0 && threadIdx.x == 0){
-  talshComplex4Add(*dest_arg,talshComplex4Mul(talshComplex4Mul(*left_arg,*right_arg),alpha));
+  if(left_conj != 0){
+   if(right_conj != 0){
+    *dest_arg=talshComplex4Add(*dest_arg,talshComplex4Mul(talshComplex4Mul(talshComplex4Conjg(*left_arg),talshComplex4Conjg(*right_arg)),alpha));
+   }else{
+    *dest_arg=talshComplex4Add(*dest_arg,talshComplex4Mul(talshComplex4Mul(talshComplex4Conjg(*left_arg),*right_arg),alpha));
+   }
+  }else{
+   if(right_conj != 0){
+    *dest_arg=talshComplex4Add(*dest_arg,talshComplex4Mul(talshComplex4Mul(*left_arg,talshComplex4Conjg(*right_arg)),alpha));
+   }else{
+    *dest_arg=talshComplex4Add(*dest_arg,talshComplex4Mul(talshComplex4Mul(*left_arg,*right_arg),alpha));
+   }
+  }
  }
  return;
 }
@@ -286,19 +375,52 @@ __global__ void gpu_scalar_multiply__<talshComplex8>(const talshComplex8 * left_
 /** Scalar += Scalar * Scalar * Alpha **/
 {
  if(blockIdx.x == 0 && threadIdx.x == 0){
-  talshComplex8Add(*dest_arg,talshComplex8Mul(talshComplex8Mul(*left_arg,*right_arg),alpha));
+  if(left_conj != 0){
+   if(right_conj != 0){
+    *dest_arg=talshComplex8Add(*dest_arg,talshComplex8Mul(talshComplex8Mul(talshComplex8Conjg(*left_arg),talshComplex8Conjg(*right_arg)),alpha));
+   }else{
+    *dest_arg=talshComplex8Add(*dest_arg,talshComplex8Mul(talshComplex8Mul(talshComplex8Conjg(*left_arg),*right_arg),alpha));
+   }
+  }else{
+   if(right_conj != 0){
+    *dest_arg=talshComplex8Add(*dest_arg,talshComplex8Mul(talshComplex8Mul(*left_arg,talshComplex8Conjg(*right_arg)),alpha));
+   }else{
+    *dest_arg=talshComplex8Add(*dest_arg,talshComplex8Mul(talshComplex8Mul(*left_arg,*right_arg),alpha));
+   }
+  }
  }
  return;
 }
 //----------------------------------------------------------------------------
 // ARRAY RESCALING:
+// REAL:
 template <typename T>
 __global__ void gpu_array_scale__(size_t tsize, T * __restrict__ arr, T alpha)
 /** arr(:)*=alpha **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
- for(size_t l=_ti;l<tsize;l+=_gd){arr[l]*=alpha;}
+ for(size_t l = _ti; l < tsize; l += _gd) arr[l]*=alpha;
+ return;
+}
+// COMPLEX4:
+template <>
+__global__ void gpu_array_scale__<talshComplex4>(size_t tsize, talshComplex4 * __restrict__ arr, talshComplex4 alpha)
+/** arr(:)*=alpha **/
+{
+ size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
+ size_t _gd = gridDim.x*blockDim.x;
+ for(size_t l = _ti; l < tsize; l += _gd) arr[l]=talshComplex4Mul(arr[l],alpha);
+ return;
+}
+// COMPLEX8:
+template <>
+__global__ void gpu_array_scale__<talshComplex8>(size_t tsize, talshComplex8 * __restrict__ arr, talshComplex8 alpha)
+/** arr(:)*=alpha **/
+{
+ size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
+ size_t _gd = gridDim.x*blockDim.x;
+ for(size_t l = _ti; l < tsize; l += _gd) arr[l]=talshComplex8Mul(arr[l],alpha);
  return;
 }
 //--------------------------------------------------------------------------------------------------------

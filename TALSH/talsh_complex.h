@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Complex arithmetic header.
-REVISION: 2018/12/24
+REVISION: 2018/12/26
 
 Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -62,6 +62,8 @@ inline float talshComplex4Abs(talshComplex4 cmplx);
 inline double talshComplex8Abs(talshComplex8 cmplx);
 inline talshComplex4 talshComplex4Add(talshComplex4 x, talshComplex4 y);
 inline talshComplex8 talshComplex8Add(talshComplex8 x, talshComplex8 y);
+inline void talshComplex4AddEq(talshComplex4 * x, talshComplex4 y);
+inline void talshComplex8AddEq(talshComplex8 * x, talshComplex8 y);
 inline talshComplex4 talshComplex4Sub(talshComplex4 x, talshComplex4 y);
 inline talshComplex8 talshComplex8Sub(talshComplex8 x, talshComplex8 y);
 inline talshComplex4 talshComplex4Mul(talshComplex4 x, talshComplex4 y);
@@ -278,6 +280,42 @@ inline talshComplex8 talshComplex8Add(talshComplex8 x, talshComplex8 y)
  return talshComplex8Set(x.real+y.real,x.imag+y.imag);
 #endif
 #endif
+}
+
+#ifndef NO_GPU
+__host__ __device__ inline void talshComplex4AddEq(talshComplex4 * x, talshComplex4 y)
+#else
+inline void talshComplex4AddEq(talshComplex4 * x, talshComplex4 y)
+#endif
+{
+#ifndef NO_GPU
+ *x = cuCaddf(*x,y);
+#else
+#ifdef __cplusplus
+ *x = *x + y;
+#else
+ *x = talshComplex4Set(x->real+y.real,x->imag+y.imag);
+#endif
+#endif
+ return;
+}
+
+#ifndef NO_GPU
+__host__ __device__ inline void talshComplex8AddEq(talshComplex8 * x, talshComplex8 y)
+#else
+inline void talshComplex8AddEq(talshComplex8 * x, talshComplex8 y)
+#endif
+{
+#ifndef NO_GPU
+ *x = cuCadd(*x,y);
+#else
+#ifdef __cplusplus
+ *x = *x + y;
+#else
+ *x = talshComplex8Set(x->real+y.real,x->imag+y.imag);
+#endif
+#endif
+ return;
 }
 
 #ifndef NO_GPU
