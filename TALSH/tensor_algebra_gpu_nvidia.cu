@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2018/12/26
+REVISION: 2018/12/27
 
 Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -123,9 +123,9 @@ static int cuda_task_record(cudaTask_t *cuda_task, unsigned int coh_ctrl, unsign
 static int cuda_task_finalize(cudaTask_t *cuda_task);
 // CUDA KERNELS:
 template <typename T>
-__global__ void gpu_array_norm2__(size_t arr_size, const T * arr, volatile T * bnorm2);
+__global__ void gpu_array_norm2__(size_t tsize, const T * __restrict__ arr, volatile double * bnorm2);
 template <typename T>
-__global__ void gpu_array_init__(size_t arr_size, T * arr, T val);
+__global__ void gpu_array_init__(size_t tsize, T * arr, T val);
 template <typename T>
 __global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T * dest_arg, T alpha,
                                       int left_conj = 0, int right_conj = 0);
@@ -205,7 +205,7 @@ __device__ __constant__ static cuComplex cgemm_alpha={1.0f,0.0f};     //default 
 __device__ __constant__ static cuComplex cgemm_beta={1.0f,0.0f};      //default beta constant CGEMM
 __device__ __constant__ static cuDoubleComplex zgemm_alpha={1.0,0.0}; //default alpha constant ZGEMM
 __device__ __constant__ static cuDoubleComplex zgemm_beta={1.0,0.0};  //default beta constant ZGEMM
-// Infrastructure for functions <gpu_array_norm2__>:
+// Infrastructure for kernels <gpu_array_norm2__>:
 __device__ static int norm2_wr_lock=0; //write lock shared by all <gpu_array_norm2__> running on GPU
 // Infrastructure for kernels <gpu_array_dot_product__>:
 __device__ static int dot_product_wr_lock=0; //write lock shared by all <gpu_array_dot_product__> running on GPU
@@ -213,30 +213,30 @@ __device__ static int dot_product_wr_lock=0; //write lock shared by all <gpu_arr
 //-------------------------------------------------------------------------------------------------
 #ifndef NO_GPU
 //CUDA KERNELS:
-// SUM OF THE SQUARES OF ALL ARRAY ELEMENTS:
+// SUM OF THE SQUARES OF ABSOLUTE VALUES OF ALL ARRAY ELEMENTS:
 // REAL:
 template <typename T>
-__global__ void gpu_array_norm2__(size_t arr_size, const T * __restrict__ arr, volatile T * bnorm2)
-/** Computes the squared 2-norm of array arr(0:arr_size-1)
+__global__ void gpu_array_norm2__(size_t tsize, const T * __restrict__ arr, volatile double * bnorm2)
+/** Computes the squared 2-norm of array arr(0:tsize-1)
 INPUT:
- # arr_size - size of the array;
- # arr(0:arr_size-1) - array;
- # bnorm2 - must be zero!
+ # tsize - size of the array;
+ # arr(0:tsize-1) - array;
+ # bnorm2 - must be zero on entrance (resides on device as well);
 OUTPUT:
  # bnorm2 - squared 2-norm of the array (resides on device as well);
 **/
 {
  size_t i,n;
- T _thread_norm2;
- extern __shared__ double thread_norms2[]; //size = blockDim.x*sizeof(double)
+ double _thread_norm2;
+ extern __shared__ double thread_norms2[]; //size = blockDim.x*sizeof(double) Bytes per thread block
 
- n=gridDim.x*blockDim.x; _thread_norm2=static_cast<T>(0.0);
- for(i=blockIdx.x*blockDim.x+threadIdx.x;i<arr_size;i+=n){_thread_norm2+=arr[i]*arr[i];}
+ n=gridDim.x*blockDim.x; _thread_norm2=0.0;
+ for(i=blockIdx.x*blockDim.x+threadIdx.x;i<tsize;i+=n) _thread_norm2+=arr[i]*arr[i];
  thread_norms2[threadIdx.x]=_thread_norm2;
  __syncthreads();
- if(threadIdx.x == 0){
-  _thread_norm2=static_cast<T>(thread_norms2[0]);
-  for(i=1;i<blockDim.x;i++) _thread_norm2+=static_cast<T>(thread_norms2[i]);
+ if(threadIdx.x == 0){ //global reduction among thread blocks
+  _thread_norm2=thread_norms2[0];
+  for(i=1;i<blockDim.x;i++) _thread_norm2+=thread_norms2[i];
   i=1; while(i == 1){i=atomicMax(&norm2_wr_lock,1);} //waiting for the lock to unlock, then lock
   __threadfence();
   *bnorm2+=_thread_norm2;
@@ -248,35 +248,30 @@ OUTPUT:
 }
 // COMPLEX4:
 template <>
-__global__ void gpu_array_norm2__<talshComplex4>(size_t arr_size, const talshComplex4 *  __restrict__ arr,
-                                                 volatile talshComplex4 * bnorm2)
-/** Computes the squared 2-norm of array arr(0:arr_size-1)
+__global__ void gpu_array_norm2__<talshComplex4>(size_t tsize, const talshComplex4 * __restrict__ arr, volatile double * bnorm2)
+/** Computes the squared 2-norm of array arr(0:tsize-1)
 INPUT:
- # arr_size - size of the array;
- # arr(0:arr_size-1) - array;
- # bnorm2 - must be zero!
+ # tsize - size of the array;
+ # arr(0:tsize-1) - array;
+ # bnorm2 - must be zero on entrance (resides on device as well);
 OUTPUT:
  # bnorm2 - squared 2-norm of the array (resides on device as well);
 **/
 {
  size_t i,n;
- float _thread_norm2;
- extern __shared__ double thread_norms2[]; //size = blockDim.x*sizeof(double)
- talshComplex4 bn;
+ double _thread_norm2;
+ extern __shared__ double thread_norms2[]; //size = blockDim.x*sizeof(double) Bytes per thread block
 
- n=gridDim.x*blockDim.x; _thread_norm2=0.0f;
- for(i=blockIdx.x*blockDim.x+threadIdx.x;i<arr_size;i+=n){
-  _thread_norm2+=talshComplex4Abs(arr[i]);
- }
+ n=gridDim.x*blockDim.x; _thread_norm2=0.0;
+ for(i=blockIdx.x*blockDim.x+threadIdx.x;i<tsize;i+=n) _thread_norm2+=talshComplex4Asq(arr[i]);
  thread_norms2[threadIdx.x]=_thread_norm2;
  __syncthreads();
- if(threadIdx.x == 0){
-  _thread_norm2=static_cast<float>(thread_norms2[0]);
-  for(i=1;i<blockDim.x;++i) _thread_norm2+=static_cast<float>(thread_norms2[i]);
+ if(threadIdx.x == 0){ //global reduction among thread blocks (one thread per block)
+  _thread_norm2=thread_norms2[0];
+  for(i=1;i<blockDim.x;i++) _thread_norm2+=thread_norms2[i];
   i=1; while(i == 1){i=atomicMax(&norm2_wr_lock,1);} //waiting for the lock to unlock, then lock
   __threadfence();
-  bn=talshComplex4Add(*bnorm2,talshComplex4Set(_thread_norm2,0.0f));
-  *bnorm2=bn;
+  *bnorm2+=_thread_norm2;
   __threadfence();
   i=atomicExch(&norm2_wr_lock,0); //unlock
  }
@@ -285,49 +280,45 @@ OUTPUT:
 }
 // COMPLEX8:
 template <>
-__global__ void gpu_array_norm2__<talshComplex8>(size_t arr_size, const talshComplex8 * __restrict__ arr,
-                                                 volatile talshComplex8 * bnorm2)
-/** Computes the squared 2-norm of array arr(0:arr_size-1)
+__global__ void gpu_array_norm2__<talshComplex8>(size_t tsize, const talshComplex8 * __restrict__ arr, volatile double * bnorm2)
+/** Computes the squared 2-norm of array arr(0:tsize-1)
 INPUT:
- # arr_size - size of the array;
- # arr(0:arr_size-1) - array;
- # bnorm2 - must be zero!
+ # tsize - size of the array;
+ # arr(0:tsize-1) - array;
+ # bnorm2 - must be zero on entrance (resides on device as well);
 OUTPUT:
  # bnorm2 - squared 2-norm of the array (resides on device as well);
 **/
 {
  size_t i,n;
  double _thread_norm2;
- extern __shared__ double thread_norms2[]; //size = blockDim.x*sizeof(double)
- talshComplex8 bn;
+ extern __shared__ double thread_norms2[]; //size = blockDim.x*sizeof(double) Bytes per thread block
 
  n=gridDim.x*blockDim.x; _thread_norm2=0.0;
- for(i=blockIdx.x*blockDim.x+threadIdx.x;i<arr_size;i+=n){
-  _thread_norm2+=talshComplex8Abs(arr[i]);
- }
+ for(i=blockIdx.x*blockDim.x+threadIdx.x;i<tsize;i+=n) _thread_norm2+=talshComplex8Asq(arr[i]);
  thread_norms2[threadIdx.x]=_thread_norm2;
  __syncthreads();
- if(threadIdx.x == 0){
-  _thread_norm2=thread_norms2[0]; for(i=1;i<blockDim.x;++i) _thread_norm2+=thread_norms2[i];
+ if(threadIdx.x == 0){ //global reduction among thread blocks (one thread per block)
+  _thread_norm2=thread_norms2[0];
+  for(i=1;i<blockDim.x;i++) _thread_norm2+=thread_norms2[i];
   i=1; while(i == 1){i=atomicMax(&norm2_wr_lock,1);} //waiting for the lock to unlock, then lock
   __threadfence();
-  bn=talshComplex8Add(*bnorm2,talshComplex8Set(_thread_norm2,0.0));
-  *bnorm2=bn;
+  *bnorm2+=_thread_norm2;
   __threadfence();
   i=atomicExch(&norm2_wr_lock,0); //unlock
  }
  __syncthreads();
  return;
 }
-//---------------------------------------------------------------
+//------------------------------------------------------------
 // ARRAY INITIALIZATION:
 template <typename T>
-__global__ void gpu_array_init__(size_t arr_size, T * arr, T val)
-/** arr(:)=val **/
+__global__ void gpu_array_init__(size_t tsize, T * arr, T val)
+/** arr(0:tsize-1)=val **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
- for(size_t l = _ti; l < arr_size; l += _gd) arr[l] = val;
+ for(size_t l = _ti; l < tsize; l += _gd) arr[l] = val;
  return;
 }
 //---------------------------------------------------------------------------------------------------
@@ -396,7 +387,7 @@ __global__ void gpu_scalar_multiply__<talshComplex8>(const talshComplex8 * left_
 // REAL:
 template <typename T>
 __global__ void gpu_array_scale__(size_t tsize, T * __restrict__ arr, T alpha)
-/** arr(:)*=alpha **/
+/** arr(0:tsize-1)*=alpha **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
@@ -406,7 +397,7 @@ __global__ void gpu_array_scale__(size_t tsize, T * __restrict__ arr, T alpha)
 // COMPLEX4:
 template <>
 __global__ void gpu_array_scale__<talshComplex4>(size_t tsize, talshComplex4 * __restrict__ arr, talshComplex4 alpha)
-/** arr(:)*=alpha **/
+/** arr(0:tsize-1)*=alpha **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
@@ -416,7 +407,7 @@ __global__ void gpu_array_scale__<talshComplex4>(size_t tsize, talshComplex4 * _
 // COMPLEX8:
 template <>
 __global__ void gpu_array_scale__<talshComplex8>(size_t tsize, talshComplex8 * __restrict__ arr, talshComplex8 alpha)
-/** arr(:)*=alpha **/
+/** arr(0:tsize-1)*=alpha **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
