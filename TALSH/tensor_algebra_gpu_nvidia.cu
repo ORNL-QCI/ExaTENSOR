@@ -132,9 +132,10 @@ __global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T
 template <typename T>
 __global__ void gpu_array_scale__(size_t tsize, T * __restrict__ arr, T alpha);
 template <typename T>
-__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, T alpha);
+__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, T alpha, int left_conj = 0);
 template <typename T>
-__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, const T * __restrict__ scalar, T alpha);
+__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, const T * __restrict__ scalar,
+                                T alpha, int left_conj = 0);
 template <typename T>
 __global__ void gpu_array_dot_product__(size_t tsize, const T * __restrict__ arr1, const T * __restrict__ arr2, volatile T * dprod, T alpha);
 template <typename T>
@@ -414,24 +415,92 @@ __global__ void gpu_array_scale__<talshComplex8>(size_t tsize, talshComplex8 * _
  for(size_t l = _ti; l < tsize; l += _gd) arr[l]=talshComplex8Mul(arr[l],alpha);
  return;
 }
-//--------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------
 // ARRAY ADDITION:
+// REAL:
 template <typename T>
-__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, T alpha)
-/** arr0(:)+=arr1(:)*alpha **/
+__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, T alpha, int left_conj)
+/** arr0(0:tsize-1)+=arr1(0:tsize-1)*alpha **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
- for(size_t l=_ti;l<tsize;l+=_gd){arr0[l]+=(arr1[l]*alpha);}
+ for(size_t l = _ti; l < tsize; l += _gd) arr0[l]+=(arr1[l]*alpha);
  return;
 }
+// COMPLEX4:
+template <>
+__global__ void gpu_array_add__<talshComplex4>(size_t tsize, talshComplex4 * __restrict__ arr0, const talshComplex4 * __restrict__ arr1,
+                                               talshComplex4 alpha, int left_conj)
+/** arr0(0:tsize-1)+=arr1(0:tsize-1)*alpha **/
+{
+ size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
+ size_t _gd = gridDim.x*blockDim.x;
+ if(left_conj != 0){
+  for(size_t l = _ti; l < tsize; l += _gd) arr0[l]=talshComplex4Add(arr0[l],talshComplex4Mul(talshComplex4Conjg(arr1[l]),alpha));
+ }else{
+  for(size_t l = _ti; l < tsize; l += _gd) arr0[l]=talshComplex4Add(arr0[l],talshComplex4Mul(arr1[l],alpha));
+ }
+ return;
+}
+// COMPLEX8:
+template <>
+__global__ void gpu_array_add__<talshComplex8>(size_t tsize, talshComplex8 * __restrict__ arr0, const talshComplex8 * __restrict__ arr1,
+                                               talshComplex8 alpha, int left_conj)
+/** arr0(0:tsize-1)+=arr1(0:tsize-1)*alpha **/
+{
+ size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
+ size_t _gd = gridDim.x*blockDim.x;
+ if(left_conj != 0){
+  for(size_t l = _ti; l < tsize; l += _gd) arr0[l]=talshComplex8Add(arr0[l],talshComplex8Mul(talshComplex8Conjg(arr1[l]),alpha));
+ }else{
+  for(size_t l = _ti; l < tsize; l += _gd) arr0[l]=talshComplex8Add(arr0[l],talshComplex8Mul(arr1[l],alpha));
+ }
+ return;
+}
+//------------------------------------------------------------------------------------------------------------------------------
+// ARRAY ADDITION AND SCALING:
+// REAL:
 template <typename T>
-__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, const T * __restrict__ scalar, T alpha)
+__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, const T * __restrict__ scalar,
+                                T alpha, int left_conj)
+/** arr0(0:tsize-1)+=arr1(0:tsize-1)*scalar*alpha **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
  T pref = (*scalar) * alpha;
- for(size_t l=_ti;l<tsize;l+=_gd){arr0[l]+=(arr1[l]*pref);}
+ for(size_t l = _ti; l < tsize; l += _gd) arr0[l]+=(arr1[l]*pref);
+ return;
+}
+// COMPLEX4:
+template <>
+__global__ void gpu_array_add__<talshComplex4>(size_t tsize, talshComplex4 * __restrict__ arr0, const talshComplex4 * __restrict__ arr1,
+                                               const talshComplex4 * __restrict__ scalar, talshComplex4 alpha, int left_conj)
+/** arr0(0:tsize-1)+=arr1(0:tsize-1)*scalar*alpha **/
+{
+ size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
+ size_t _gd = gridDim.x*blockDim.x;
+ talshComplex4 pref = talshComplex4Mul(*scalar,alpha);
+ if(left_conj != 0){
+  for(size_t l = _ti; l < tsize; l += _gd) arr0[l]=talshComplex4Add(arr0[l],talshComplex4Mul(talshComplex4Conjg(arr1[l]),pref));
+ }else{
+  for(size_t l = _ti; l < tsize; l += _gd) arr0[l]=talshComplex4Add(arr0[l],talshComplex4Mul(arr1[l],pref));
+ }
+ return;
+}
+// COMPLEX8:
+template <>
+__global__ void gpu_array_add__<talshComplex8>(size_t tsize, talshComplex8 * __restrict__ arr0, const talshComplex8 * __restrict__ arr1,
+                                               const talshComplex8 * __restrict__ scalar, talshComplex8 alpha, int left_conj)
+/** arr0(0:tsize-1)+=arr1(0:tsize-1)*scalar*alpha **/
+{
+ size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
+ size_t _gd = gridDim.x*blockDim.x;
+ talshComplex8 pref = talshComplex8Mul(*scalar,alpha);
+ if(left_conj != 0){
+  for(size_t l = _ti; l < tsize; l += _gd) arr0[l]=talshComplex8Add(arr0[l],talshComplex8Mul(talshComplex8Conjg(arr1[l]),pref));
+ }else{
+  for(size_t l = _ti; l < tsize; l += _gd) arr0[l]=talshComplex8Add(arr0[l],talshComplex8Mul(arr1[l],pref));
+ }
  return;
 }
 //-------------------------------------------------------------------------------------------------------------

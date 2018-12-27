@@ -83,11 +83,11 @@ inline void talshComplex8DivEq(talshComplex8 * x, talshComplex8 y);
 //DEFINITIONS:
 //Construct a complex number:
 #ifndef NO_GPU
-__host__ __device__ inline talshComplex4 talshComplex4Set(float real, float imag)
+__host__ __device__ __forceinline__ talshComplex4 talshComplex4Set(float real, float imag)
 {
  return make_cuFloatComplex(real,imag);
 }
-__host__ __device__ inline talshComplex8 talshComplex8Set(double real, double imag)
+__host__ __device__ __forceinline__ talshComplex8 talshComplex8Set(double real, double imag)
 {
  return make_cuDoubleComplex(real,imag);
 }
@@ -117,11 +117,11 @@ talshComplex8 talshComplex8Set(double real, double imag)
 
 //Get the real component of a complex number:
 #ifndef NO_GPU
-__host__ __device__ inline float talshComplex4Real(talshComplex4 cmplx)
+__host__ __device__ __forceinline__ float talshComplex4Real(talshComplex4 cmplx)
 {
  return cuCrealf(cmplx);
 }
-__host__ __device__ inline double talshComplex8Real(talshComplex8 cmplx)
+__host__ __device__ __forceinline__ double talshComplex8Real(talshComplex8 cmplx)
 {
  return cuCreal(cmplx);
 }
@@ -149,11 +149,11 @@ double talshComplex8Real(talshComplex8 cmplx)
 
 //Get the imaginary component of a complex number:
 #ifndef NO_GPU
-__host__ __device__ inline float talshComplex4Imag(talshComplex4 cmplx)
+__host__ __device__ __forceinline__ float talshComplex4Imag(talshComplex4 cmplx)
 {
  return cuCimagf(cmplx);
 }
-__host__ __device__ inline double talshComplex8Imag(talshComplex8 cmplx)
+__host__ __device__ __forceinline__ double talshComplex8Imag(talshComplex8 cmplx)
 {
  return cuCimag(cmplx);
 }
@@ -181,11 +181,11 @@ double talshComplex8Imag(talshComplex8 cmplx)
 
 //Get the complex conjugate:
 #ifndef NO_GPU
-__host__ __device__ inline talshComplex4 talshComplex4Conjg(talshComplex4 cmplx)
+__host__ __device__ __forceinline__ talshComplex4 talshComplex4Conjg(talshComplex4 cmplx)
 {
  return cuConjf(cmplx);
 }
-__host__ __device__ inline talshComplex8 talshComplex8Conjg(talshComplex8 cmplx)
+__host__ __device__ __forceinline__ talshComplex8 talshComplex8Conjg(talshComplex8 cmplx)
 {
  return cuConj(cmplx);
 }
@@ -215,11 +215,11 @@ talshComplex8 talshComplex8Conjg(talshComplex8 cmplx)
 
 //Get the absolute magnitude of a complex number:
 #ifndef NO_GPU
-__host__ __device__ inline float talshComplex4Abs(talshComplex4 cmplx)
+__host__ __device__ __forceinline__ float talshComplex4Abs(talshComplex4 cmplx)
 {
  return cuCabsf(cmplx);
 }
-__host__ __device__ inline double talshComplex8Abs(talshComplex8 cmplx)
+__host__ __device__ __forceinline__ double talshComplex8Abs(talshComplex8 cmplx)
 {
  return cuCabs(cmplx);
 }
@@ -247,12 +247,12 @@ double talshComplex8Abs(talshComplex8 cmplx)
 
 //Get the squared magnitude of a complex number:
 #ifndef NO_GPU
-__host__ __device__ inline float talshComplex4Asq(talshComplex4 cmplx)
+__host__ __device__ __forceinline__ float talshComplex4Asq(talshComplex4 cmplx)
 {
  float rl = cuCrealf(cmplx); float im = cuCimagf(cmplx);
  return (rl*rl + im*im);
 }
-__host__ __device__ inline double talshComplex8Asq(talshComplex8 cmplx)
+__host__ __device__ __forceinline__ double talshComplex8Asq(talshComplex8 cmplx)
 {
  double rl = cuCreal(cmplx); double im = cuCimag(cmplx);
  return (rl*rl + im*im);
@@ -283,11 +283,11 @@ double talshComplex8Asq(talshComplex8 cmplx)
 
 //Add two complex numbers:
 #ifndef NO_GPU
-__host__ __device__ inline talshComplex4 talshComplex4Add(talshComplex4 x, talshComplex4 y)
+__host__ __device__ __forceinline__ talshComplex4 talshComplex4Add(talshComplex4 x, talshComplex4 y)
 {
  return cuCaddf(x,y);
 }
-__host__ __device__ inline talshComplex8 talshComplex8Add(talshComplex8 x, talshComplex8 y)
+__host__ __device__ __forceinline__ talshComplex8 talshComplex8Add(talshComplex8 x, talshComplex8 y)
 {
  return cuCadd(x,y);
 }
@@ -315,12 +315,12 @@ talshComplex8 talshComplex8Add(talshComplex8 x, talshComplex8 y)
 
 //Add two complex numbers in-place:
 #ifndef NO_GPU
-__host__ __device__ inline void talshComplex4AddEq(talshComplex4 * x, talshComplex4 y)
+__host__ __device__ __forceinline__ void talshComplex4AddEq(talshComplex4 * x, talshComplex4 y)
 {
  *x = cuCaddf(*x,y);
  return;
 }
-__host__ __device__ inline void talshComplex8AddEq(talshComplex8 * x, talshComplex8 y)
+__host__ __device__ __forceinline__ void talshComplex8AddEq(talshComplex8 * x, talshComplex8 y)
 {
  *x = cuCadd(*x,y);
  return;
@@ -353,11 +353,11 @@ void talshComplex8AddEq(talshComplex8 * x, talshComplex8 y)
 
 //Subtract two complex numbers:
 #ifndef NO_GPU
-__host__ __device__ inline talshComplex4 talshComplex4Sub(talshComplex4 x, talshComplex4 y)
+__host__ __device__ __forceinline__ talshComplex4 talshComplex4Sub(talshComplex4 x, talshComplex4 y)
 {
  return cuCsubf(x,y);
 }
-__host__ __device__ inline talshComplex8 talshComplex8Sub(talshComplex8 x, talshComplex8 y)
+__host__ __device__ __forceinline__ talshComplex8 talshComplex8Sub(talshComplex8 x, talshComplex8 y)
 {
  return cuCsub(x,y);
 }
@@ -385,11 +385,11 @@ talshComplex8 talshComplex8Sub(talshComplex8 x, talshComplex8 y)
 
 //Multiply two complex numbers:
 #ifndef NO_GPU
-__host__ __device__ inline talshComplex4 talshComplex4Mul(talshComplex4 x, talshComplex4 y)
+__host__ __device__ __forceinline__ talshComplex4 talshComplex4Mul(talshComplex4 x, talshComplex4 y)
 {
  return cuCmulf(x,y);
 }
-__host__ __device__ inline talshComplex8 talshComplex8Mul(talshComplex8 x, talshComplex8 y)
+__host__ __device__ __forceinline__ talshComplex8 talshComplex8Mul(talshComplex8 x, talshComplex8 y)
 {
  return cuCmul(x,y);
 }
@@ -421,11 +421,11 @@ talshComplex8 talshComplex8Mul(talshComplex8 x, talshComplex8 y)
 
 //Divide two complex numbers:
 #ifndef NO_GPU
-__host__ __device__ inline talshComplex4 talshComplex4Div(talshComplex4 x, talshComplex4 y)
+__host__ __device__ __forceinline__ talshComplex4 talshComplex4Div(talshComplex4 x, talshComplex4 y)
 {
  return cuCdivf(x,y);
 }
-__host__ __device__ inline talshComplex8 talshComplex8Div(talshComplex8 x, talshComplex8 y)
+__host__ __device__ __forceinline__ talshComplex8 talshComplex8Div(talshComplex8 x, talshComplex8 y)
 {
  return cuCdiv(x,y);
 }
