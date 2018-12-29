@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2018/12/27
+REVISION: 2018/12/29
 
 Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -130,17 +130,18 @@ template <typename T>
 __global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T * dest_arg, T alpha,
                                       int left_conj = 0, int right_conj = 0);
 template <typename T>
-__global__ void gpu_array_scale__(size_t tsize, T * __restrict__ arr, T alpha);
+__global__ void gpu_array_scale__(size_t tsize, T * arr, T alpha);
 template <typename T>
 __global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, T alpha, int left_conj = 0);
 template <typename T>
 __global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, const T * __restrict__ scalar,
                                 T alpha, int left_conj = 0);
 template <typename T>
-__global__ void gpu_array_dot_product__(size_t tsize, const T * __restrict__ arr1, const T * __restrict__ arr2, volatile T * dprod, T alpha);
+__global__ void gpu_array_dot_product__(size_t tsize, const T * arr1, const T * arr2, volatile T * dprod,
+                                        T alpha, int left_conj = 0, int right_conj = 0);
 template <typename T>
 __global__ void gpu_array_product__(size_t tsize1, const T * __restrict__ arr1, size_t tsize2, const T * __restrict__ arr2,
-                                    T * __restrict__ arr0, T alpha);
+                                    T * __restrict__ arr0, T alpha, int left_conj = 0, int right_conj = 0);
 template <typename T>
 __global__ void gpu_tensor_block_copy_dlf__(int dmo, int drc, int dim_num, int const_args_pos,
                                             const T * __restrict__ tens_in, T * __restrict__ tens_out);
@@ -383,11 +384,11 @@ __global__ void gpu_scalar_multiply__<talshComplex8>(const talshComplex8 * left_
  }
  return;
 }
-//----------------------------------------------------------------------------
+//---------------------------------------------------------------
 // ARRAY RESCALING:
 // REAL:
 template <typename T>
-__global__ void gpu_array_scale__(size_t tsize, T * __restrict__ arr, T alpha)
+__global__ void gpu_array_scale__(size_t tsize, T * arr, T alpha)
 /** arr(0:tsize-1)*=alpha **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
@@ -397,7 +398,7 @@ __global__ void gpu_array_scale__(size_t tsize, T * __restrict__ arr, T alpha)
 }
 // COMPLEX4:
 template <>
-__global__ void gpu_array_scale__<talshComplex4>(size_t tsize, talshComplex4 * __restrict__ arr, talshComplex4 alpha)
+__global__ void gpu_array_scale__<talshComplex4>(size_t tsize, talshComplex4 * arr, talshComplex4 alpha)
 /** arr(0:tsize-1)*=alpha **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
@@ -407,7 +408,7 @@ __global__ void gpu_array_scale__<talshComplex4>(size_t tsize, talshComplex4 * _
 }
 // COMPLEX8:
 template <>
-__global__ void gpu_array_scale__<talshComplex8>(size_t tsize, talshComplex8 * __restrict__ arr, talshComplex8 alpha)
+__global__ void gpu_array_scale__<talshComplex8>(size_t tsize, talshComplex8 * arr, talshComplex8 alpha)
 /** arr(0:tsize-1)*=alpha **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
@@ -503,64 +504,260 @@ __global__ void gpu_array_add__<talshComplex8>(size_t tsize, talshComplex8 * __r
  }
  return;
 }
-//-------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------
 // ARRAY DOT-PRODUCT:
+// REAL:
 template <typename T>
-__global__ void gpu_array_dot_product__(size_t tsize, const T * __restrict__ arr1, const T * __restrict__ arr2,
-                                        volatile T * dprod, T alpha)
-/** Scalar (GPU) += arr1(:) * arr2(:) * alpha **/
+__global__ void gpu_array_dot_product__(size_t tsize, const T * arr1, const T * arr2, volatile T * dprod,
+                                        T alpha, int left_conj, int right_conj)
+/** Scalar (GPU) += arr1(0:tsize-1) * arr2(0:tsize-1) * alpha **/
 {
- extern __shared__ char sh_buf[]; //size = blockDim.x * sizeof(T)
- T dpr;
+ extern __shared__ char sh_buf[]; //size = blockDim.x * sizeof(T) Bytes per thread block
  T *dprs;
+ T dpr;
  size_t l;
- int j,s;
+ unsigned int j,s;
+ int i;
 
  dprs=(T*)(&sh_buf[0]); //dynamic shared memory buffer
  dpr=static_cast<T>(0.0);
- for(l=blockIdx.x*blockDim.x+threadIdx.x;l<tsize;l+=gridDim.x*blockDim.x){dpr+=arr1[l]*arr2[l]*alpha;}
- dprs[threadIdx.x]=dpr;
+ for(l = blockIdx.x*blockDim.x+threadIdx.x; l < tsize; l += gridDim.x*blockDim.x) dpr+=arr1[l]*arr2[l];
+ dprs[threadIdx.x]=dpr*alpha;
  __syncthreads();
- s=blockDim.x;
+ s = blockDim.x;
  while(s > 1){
-  j=(s+1)/2;
-  if(threadIdx.x + j < s) dprs[threadIdx.x]+=dprs[threadIdx.x+j];
+  j = (s+1U)>>1;
+  if(threadIdx.x + j < s) dprs[threadIdx.x] += dprs[threadIdx.x+j];
   __syncthreads();
   s=j;
  }
  if(threadIdx.x == 0){
-  j=1; while(j){s=atomicMax(&dot_product_wr_lock,1); if(s == 0){*dprod+=dprs[0]; j=0;}}
+  i=1; while(i != 0){i=atomicMax(&dot_product_wr_lock,1); if(i == 0) *dprod+=dprs[0];}
   __threadfence();
-  s=atomicExch(&dot_product_wr_lock,0); //unlock
+  i=atomicExch(&dot_product_wr_lock,0); //unlock
+ }
+ __syncthreads();
+ return;
+}
+// COMPLEX4:
+template <>
+__global__ void gpu_array_dot_product__<talshComplex4>(size_t tsize, const talshComplex4 * arr1, const talshComplex4 * arr2,
+                                                       volatile talshComplex4 * dprod, talshComplex4 alpha,
+                                                       int left_conj, int right_conj)
+/** Scalar (GPU) += arr1(0:tsize-1) * arr2(0:tsize-1) * alpha **/
+{
+ extern __shared__ char sh_buf[]; //size = blockDim.x * sizeof(T) Bytes per thread block
+ talshComplex4 *dprs;
+ talshComplex4 dpr;
+ size_t l;
+ unsigned int j,s;
+ int i;
+
+ dprs=(talshComplex4*)(&sh_buf[0]); //dynamic shared memory buffer
+ dpr=talshComplex4Set(0.0f,0.0f);
+ if(left_conj != 0){
+  if(right_conj != 0){
+   for(l = blockIdx.x*blockDim.x+threadIdx.x; l < tsize; l += gridDim.x*blockDim.x){
+    dpr=talshComplex4Add(dpr,talshComplex4Mul(talshComplex4Conjg(arr1[l]),talshComplex4Conjg(arr2[l])));
+   }
+  }else{
+   for(l = blockIdx.x*blockDim.x+threadIdx.x; l < tsize; l += gridDim.x*blockDim.x){
+    dpr=talshComplex4Add(dpr,talshComplex4Mul(talshComplex4Conjg(arr1[l]),arr2[l]));
+   }
+  }
+ }else{
+  if(right_conj != 0){
+   for(l = blockIdx.x*blockDim.x+threadIdx.x; l < tsize; l += gridDim.x*blockDim.x){
+    dpr=talshComplex4Add(dpr,talshComplex4Mul(arr1[l],talshComplex4Conjg(arr2[l])));
+   }
+  }else{
+   for(l = blockIdx.x*blockDim.x+threadIdx.x; l < tsize; l += gridDim.x*blockDim.x){
+    dpr=talshComplex4Add(dpr,talshComplex4Mul(arr1[l],arr2[l]));
+   }
+  }
+ }
+ dprs[threadIdx.x]=talshComplex4Mul(dpr,alpha);
+ __syncthreads();
+ s = blockDim.x;
+ while(s > 1){
+  j = (s+1U)>>1;
+  if(threadIdx.x + j < s) dprs[threadIdx.x] = talshComplex4Add(dprs[threadIdx.x],dprs[threadIdx.x+j]);
+  __syncthreads();
+  s=j;
+ }
+ if(threadIdx.x == 0){
+  i=1; while(i != 0){
+   i=atomicMax(&dot_product_wr_lock,1);
+   if(i == 0){
+    dprod->x += talshComplex4Real(dprs[0]);
+    dprod->y += talshComplex4Imag(dprs[0]);
+   }
+  }
+  __threadfence();
+  i=atomicExch(&dot_product_wr_lock,0); //unlock
+ }
+ __syncthreads();
+ return;
+}
+// COMPLEX8:
+template <>
+__global__ void gpu_array_dot_product__<talshComplex8>(size_t tsize, const talshComplex8 * arr1, const talshComplex8 * arr2,
+                                                       volatile talshComplex8 * dprod, talshComplex8 alpha,
+                                                       int left_conj, int right_conj)
+/** Scalar (GPU) += arr1(0:tsize-1) * arr2(0:tsize-1) * alpha **/
+{
+ extern __shared__ char sh_buf[]; //size = blockDim.x * sizeof(T) Bytes per thread block
+ talshComplex8 *dprs;
+ talshComplex8 dpr;
+ size_t l;
+ unsigned int j,s;
+ int i;
+
+ dprs=(talshComplex8*)(&sh_buf[0]); //dynamic shared memory buffer
+ dpr=talshComplex8Set(0.0,0.0);
+ if(left_conj != 0){
+  if(right_conj != 0){
+   for(l = blockIdx.x*blockDim.x+threadIdx.x; l < tsize; l += gridDim.x*blockDim.x){
+    dpr=talshComplex8Add(dpr,talshComplex8Mul(talshComplex8Conjg(arr1[l]),talshComplex8Conjg(arr2[l])));
+   }
+  }else{
+   for(l = blockIdx.x*blockDim.x+threadIdx.x; l < tsize; l += gridDim.x*blockDim.x){
+    dpr=talshComplex8Add(dpr,talshComplex8Mul(talshComplex8Conjg(arr1[l]),arr2[l]));
+   }
+  }
+ }else{
+  if(right_conj != 0){
+   for(l = blockIdx.x*blockDim.x+threadIdx.x; l < tsize; l += gridDim.x*blockDim.x){
+    dpr=talshComplex8Add(dpr,talshComplex8Mul(arr1[l],talshComplex8Conjg(arr2[l])));
+   }
+  }else{
+   for(l = blockIdx.x*blockDim.x+threadIdx.x; l < tsize; l += gridDim.x*blockDim.x){
+    dpr=talshComplex8Add(dpr,talshComplex8Mul(arr1[l],arr2[l]));
+   }
+  }
+ }
+ dprs[threadIdx.x]=talshComplex8Mul(dpr,alpha);
+ __syncthreads();
+ s = blockDim.x;
+ while(s > 1){
+  j = (s+1U)>>1;
+  if(threadIdx.x + j < s) dprs[threadIdx.x] = talshComplex8Add(dprs[threadIdx.x],dprs[threadIdx.x+j]);
+  __syncthreads();
+  s=j;
+ }
+ if(threadIdx.x == 0){
+  i=1; while(i != 0){
+   i=atomicMax(&dot_product_wr_lock,1);
+   if(i == 0){
+    dprod->x += talshComplex8Real(dprs[0]);
+    dprod->y += talshComplex8Imag(dprs[0]);
+   }
+  }
+  __threadfence();
+  i=atomicExch(&dot_product_wr_lock,0); //unlock
  }
  __syncthreads();
  return;
 }
 //-------------------------------------------------------------------------------------------------------------------------
 // ARRAY DIRECT PRODUCT:
+// REAL:
 template <typename T>
 __global__ void gpu_array_product__(size_t tsize1, const T * __restrict__ arr1, size_t tsize2, const T * __restrict__ arr2,
-                                    T * __restrict__ arr0, T alpha)
+                                    T * __restrict__ arr0, T alpha, int left_conj, int right_conj)
 /** arr0[0:tsize2-1][0:tsize1-1]+=arr1[0:tsize1-1]*arr2[0:tsize2-1]*alpha **/
 {
  __shared__ T lbuf[THRDS_ARRAY_PRODUCT+1],rbuf[THRDS_ARRAY_PRODUCT];
  size_t _ib,_in,_jb,_jn,_tx,_jc;
+
  _tx=(size_t)threadIdx.x;
-//if(tsize1 >= THRDS_ARRAY_PRODUCT){ //large or medium size L
-  for(_jb=blockIdx.y*THRDS_ARRAY_PRODUCT;_jb<tsize2;_jb+=gridDim.y*THRDS_ARRAY_PRODUCT){
-   if(_jb+THRDS_ARRAY_PRODUCT > tsize2){_jn=tsize2-_jb;}else{_jn=THRDS_ARRAY_PRODUCT;}
-   if(_tx < _jn) rbuf[_tx]=arr2[_jb+_tx]*alpha;
-   for(_ib=blockIdx.x*THRDS_ARRAY_PRODUCT;_ib<tsize1;_ib+=gridDim.x*THRDS_ARRAY_PRODUCT){
-    if(_ib+THRDS_ARRAY_PRODUCT > tsize1){_in=tsize1-_ib;}else{_in=THRDS_ARRAY_PRODUCT;}
-    if(_tx < _in) lbuf[_tx]=arr1[_ib+_tx];
-    __syncthreads();
-    for(_jc=0;_jc<_jn;_jc++){if(_tx < _in) arr0[(_jb+_jc)*tsize1+_ib+_tx]+=lbuf[_tx]*rbuf[_jc];}
-    __syncthreads();
-   }
+ for(_jb = blockIdx.y*THRDS_ARRAY_PRODUCT; _jb < tsize2; _jb += gridDim.y*THRDS_ARRAY_PRODUCT){
+  if(_jb+THRDS_ARRAY_PRODUCT > tsize2){_jn=tsize2-_jb;}else{_jn=THRDS_ARRAY_PRODUCT;}
+  if(_tx < _jn) rbuf[_tx]=arr2[_jb+_tx]*alpha;
+  for(_ib = blockIdx.x*THRDS_ARRAY_PRODUCT; _ib < tsize1; _ib += gridDim.x*THRDS_ARRAY_PRODUCT){
+   if(_ib+THRDS_ARRAY_PRODUCT > tsize1){_in=tsize1-_ib;}else{_in=THRDS_ARRAY_PRODUCT;}
+   if(_tx < _in) lbuf[_tx]=arr1[_ib+_tx];
+   __syncthreads();
+   for(_jc = 0; _jc < _jn; _jc++){if(_tx < _in) arr0[(_jb+_jc)*tsize1+_ib+_tx]+=lbuf[_tx]*rbuf[_jc];}
+   __syncthreads();
   }
-//}else{ //small size L
-  //`Write
-//}
+ }
+ return;
+}
+// COMPLEX4:
+template <>
+__global__ void gpu_array_product__<talshComplex4>(size_t tsize1, const talshComplex4 * __restrict__ arr1,
+                                                   size_t tsize2, const talshComplex4 * __restrict__ arr2,
+                                                   talshComplex4 * __restrict__ arr0, talshComplex4 alpha,
+                                                   int left_conj, int right_conj)
+/** arr0[0:tsize2-1][0:tsize1-1]+=arr1[0:tsize1-1]*arr2[0:tsize2-1]*alpha **/
+{
+ __shared__ talshComplex4 lbuf[THRDS_ARRAY_PRODUCT+1],rbuf[THRDS_ARRAY_PRODUCT];
+ size_t _ib,_in,_jb,_jn,_tx,_jc,_ja;
+
+ _tx=(size_t)threadIdx.x;
+ for(_jb = blockIdx.y*THRDS_ARRAY_PRODUCT; _jb < tsize2; _jb += gridDim.y*THRDS_ARRAY_PRODUCT){
+  if(_jb+THRDS_ARRAY_PRODUCT > tsize2){_jn=tsize2-_jb;}else{_jn=THRDS_ARRAY_PRODUCT;}
+  if(right_conj != 0){
+   if(_tx < _jn) rbuf[_tx]=talshComplex4Mul(talshComplex4Conjg(arr2[_jb+_tx]),alpha);
+  }else{
+   if(_tx < _jn) rbuf[_tx]=talshComplex4Mul(arr2[_jb+_tx],alpha);
+  }
+  for(_ib = blockIdx.x*THRDS_ARRAY_PRODUCT; _ib < tsize1; _ib += gridDim.x*THRDS_ARRAY_PRODUCT){
+   if(_ib+THRDS_ARRAY_PRODUCT > tsize1){_in=tsize1-_ib;}else{_in=THRDS_ARRAY_PRODUCT;}
+   if(left_conj != 0){
+    if(_tx < _in) lbuf[_tx]=talshComplex4Conjg(arr1[_ib+_tx]);
+   }else{
+    if(_tx < _in) lbuf[_tx]=arr1[_ib+_tx];
+   }
+   __syncthreads();
+   for(_jc = 0; _jc < _jn; _jc++){
+    if(_tx < _in){
+     _ja = (_jb+_jc)*tsize1 + (_ib+_tx);
+     arr0[_ja]=talshComplex4Add(arr0[_ja],talshComplex4Mul(lbuf[_tx],rbuf[_jc]));
+    }
+   }
+   __syncthreads();
+  }
+ }
+ return;
+}
+// COMPLEX8:
+template <>
+__global__ void gpu_array_product__<talshComplex8>(size_t tsize1, const talshComplex8 * __restrict__ arr1,
+                                                   size_t tsize2, const talshComplex8 * __restrict__ arr2,
+                                                   talshComplex8 * __restrict__ arr0, talshComplex8 alpha,
+                                                   int left_conj, int right_conj)
+/** arr0[0:tsize2-1][0:tsize1-1]+=arr1[0:tsize1-1]*arr2[0:tsize2-1]*alpha **/
+{
+ __shared__ talshComplex8 lbuf[THRDS_ARRAY_PRODUCT+1],rbuf[THRDS_ARRAY_PRODUCT];
+ size_t _ib,_in,_jb,_jn,_tx,_jc,_ja;
+
+ _tx=(size_t)threadIdx.x;
+ for(_jb = blockIdx.y*THRDS_ARRAY_PRODUCT; _jb < tsize2; _jb += gridDim.y*THRDS_ARRAY_PRODUCT){
+  if(_jb+THRDS_ARRAY_PRODUCT > tsize2){_jn=tsize2-_jb;}else{_jn=THRDS_ARRAY_PRODUCT;}
+  if(right_conj != 0){
+   if(_tx < _jn) rbuf[_tx]=talshComplex8Mul(talshComplex8Conjg(arr2[_jb+_tx]),alpha);
+  }else{
+   if(_tx < _jn) rbuf[_tx]=talshComplex8Mul(arr2[_jb+_tx],alpha);
+  }
+  for(_ib = blockIdx.x*THRDS_ARRAY_PRODUCT; _ib < tsize1; _ib += gridDim.x*THRDS_ARRAY_PRODUCT){
+   if(_ib+THRDS_ARRAY_PRODUCT > tsize1){_in=tsize1-_ib;}else{_in=THRDS_ARRAY_PRODUCT;}
+   if(left_conj != 0){
+    if(_tx < _in) lbuf[_tx]=talshComplex8Conjg(arr1[_ib+_tx]);
+   }else{
+    if(_tx < _in) lbuf[_tx]=arr1[_ib+_tx];
+   }
+   __syncthreads();
+   for(_jc = 0; _jc < _jn; _jc++){
+    if(_tx < _in){
+     _ja = (_jb+_jc)*tsize1 + (_ib+_tx);
+     arr0[_ja]=talshComplex8Add(arr0[_ja],talshComplex8Mul(lbuf[_tx],rbuf[_jc]));
+    }
+   }
+   __syncthreads();
+  }
+ }
  return;
 }
 //----------------------------------------------------------------------------------------------------
