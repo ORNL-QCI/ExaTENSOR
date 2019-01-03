@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2018/12/29
+REVISION: 2019/01/03
 
 Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
@@ -140,8 +140,8 @@ template <typename T>
 __global__ void gpu_array_dot_product__(size_t tsize, const T * arr1, const T * arr2, volatile T * dprod,
                                         T alpha, int left_conj = 0, int right_conj = 0);
 template <typename T>
-__global__ void gpu_array_product__(size_t tsize1, const T * __restrict__ arr1, size_t tsize2, const T * __restrict__ arr2,
-                                    T * __restrict__ arr0, T alpha, int left_conj = 0, int right_conj = 0);
+__global__ void gpu_array_product__(size_t tsize1, const T * arr1, size_t tsize2, const T * arr2, T * arr0,
+                                    T alpha, int left_conj = 0, int right_conj = 0);
 template <typename T>
 __global__ void gpu_tensor_block_copy_dlf__(int dmo, int drc, int dim_num, int const_args_pos,
                                             const T * __restrict__ tens_in, T * __restrict__ tens_out);
@@ -149,8 +149,14 @@ template <typename T>
 __global__ void gpu_tensor_block_copy_scatter_dlf__(int dmo, int drc, int dim_num, int const_args_pos,
                                                     const T * __restrict__ tens_in, T * __restrict__ tens_out);
 template <typename T>
-__global__ void gpu_matrix_multiply_tn__(size_t ll, size_t lr, size_t lc, const T * __restrict__ arg1,
-                                         const T * __restrict__ arg2, T * __restrict__ arg0, T alpha);
+__global__ void gpu_matrix_multiply_tn__(size_t ll, size_t lr, size_t lc, const T * arg1, const T * arg2, T * arg0, T alpha);
+template <typename T>
+__global__ void gpu_matrix_multiply_nt__(size_t ll, size_t lr, size_t lc, const T * arg1, const T * arg2, T * arg0, T alpha);
+template <typename T>
+__global__ void gpu_matrix_multiply_nn__(size_t ll, size_t lr, size_t lc, const T * arg1, const T * arg2, T * arg0, T alpha);
+template <typename T>
+__global__ void gpu_matrix_multiply_tt__(size_t ll, size_t lr, size_t lc, const T * arg1, const T * arg2, T * arg0, T alpha);
+
 #endif /*NO_GPU*/
 //----------------------------------------------------------------------------------------------------
 //PARAMETERS:
@@ -212,7 +218,7 @@ __device__ static int norm2_wr_lock=0; //write lock shared by all <gpu_array_nor
 // Infrastructure for kernels <gpu_array_dot_product__>:
 __device__ static int dot_product_wr_lock=0; //write lock shared by all <gpu_array_dot_product__> running on GPU
 #endif /*NO_GPU*/
-//-------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------
 #ifndef NO_GPU
 //CUDA KERNELS:
 // SUM OF THE SQUARES OF ABSOLUTE VALUES OF ALL ARRAY ELEMENTS:
@@ -659,12 +665,12 @@ __global__ void gpu_array_dot_product__<talshComplex8>(size_t tsize, const talsh
  __syncthreads();
  return;
 }
-//-------------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------
 // ARRAY DIRECT PRODUCT:
 // REAL:
 template <typename T>
-__global__ void gpu_array_product__(size_t tsize1, const T * __restrict__ arr1, size_t tsize2, const T * __restrict__ arr2,
-                                    T * __restrict__ arr0, T alpha, int left_conj, int right_conj)
+__global__ void gpu_array_product__(size_t tsize1, const T * arr1, size_t tsize2, const T * arr2, T * arr0,
+                                    T alpha, int left_conj, int right_conj)
 /** arr0[0:tsize2-1][0:tsize1-1]+=arr1[0:tsize1-1]*arr2[0:tsize2-1]*alpha **/
 {
  __shared__ T lbuf[THRDS_ARRAY_PRODUCT+1],rbuf[THRDS_ARRAY_PRODUCT];
@@ -686,9 +692,9 @@ __global__ void gpu_array_product__(size_t tsize1, const T * __restrict__ arr1, 
 }
 // COMPLEX4:
 template <>
-__global__ void gpu_array_product__<talshComplex4>(size_t tsize1, const talshComplex4 * __restrict__ arr1,
-                                                   size_t tsize2, const talshComplex4 * __restrict__ arr2,
-                                                   talshComplex4 * __restrict__ arr0, talshComplex4 alpha,
+__global__ void gpu_array_product__<talshComplex4>(size_t tsize1, const talshComplex4 * arr1,
+                                                   size_t tsize2, const talshComplex4 * arr2,
+                                                   talshComplex4 * arr0, talshComplex4 alpha,
                                                    int left_conj, int right_conj)
 /** arr0[0:tsize2-1][0:tsize1-1]+=arr1[0:tsize1-1]*arr2[0:tsize2-1]*alpha **/
 {
@@ -724,9 +730,9 @@ __global__ void gpu_array_product__<talshComplex4>(size_t tsize1, const talshCom
 }
 // COMPLEX8:
 template <>
-__global__ void gpu_array_product__<talshComplex8>(size_t tsize1, const talshComplex8 * __restrict__ arr1,
-                                                   size_t tsize2, const talshComplex8 * __restrict__ arr2,
-                                                   talshComplex8 * __restrict__ arr0, talshComplex8 alpha,
+__global__ void gpu_array_product__<talshComplex8>(size_t tsize1, const talshComplex8 * arr1,
+                                                   size_t tsize2, const talshComplex8 * arr2,
+                                                   talshComplex8 * arr0, talshComplex8 alpha,
                                                    int left_conj, int right_conj)
 /** arr0[0:tsize2-1][0:tsize1-1]+=arr1[0:tsize1-1]*arr2[0:tsize2-1]*alpha **/
 {
@@ -1186,11 +1192,10 @@ OUTPUT:
  }
  return;
 }
-//----------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------------------------------
 // MATRIX MULTIPLICATION (slow):
 template <typename T>
-__global__ void gpu_matrix_multiply_tn__(size_t ll, size_t lr, size_t lc, const T * __restrict__ arg1,
-                                         const T * __restrict__ arg2, T * __restrict__ arg0, T alpha)
+__global__ void gpu_matrix_multiply_tn__(size_t ll, size_t lr, size_t lc, const T * arg1, const T * arg2, T * arg0, T alpha)
 /** arg0(0:ll-1,0:lr-1)+=arg1(0:lc-1,0:ll-1)*arg2(0:lc-1,0:lr-1)*alpha
 NOTES:
  # Thread block dimensions (.x and .y) must be equal to MAT_MULT_TILE_DIM(X,Y), respectively.
@@ -1241,8 +1246,8 @@ NOTES:
 }
 #endif //NO_GPU
 //----------------------------------------------------------------------------------------------
-//CUDA runtime (for Fortran):
 #ifndef NO_GPU
+//CUDA runtime (for Fortran):
 int cuda_get_device_count(int * dev_count)
 /** Returns the total number of NVIDIA GPUs found on the node. **/
 {
@@ -4367,12 +4372,14 @@ NOTES:
    based on argument residence and the current load of GPU(s).
 **/
 {
- int i,j,drank,lrank,rrank,tds_d,tds_l,tds_r,gpu_d,gpu_l,gpu_r,perm_d,perm_l,perm_r,ncd,nlu,nru,gpu_num,cur_gpu,targ_dev,bx,by,errc,stat;
+ int i,j,drank,lrank,rrank,tds_d,tds_l,tds_r,gpu_d,gpu_l,gpu_r,perm_d,perm_l,perm_r;
+ int ncd,nlu,nru,gpu_num,cur_gpu,targ_dev,bx,by,errc,stat,conj_l,conj_r;
  int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK]; //the 1st element is the sign of the permutation
  size_t vol_d,vol_l,vol_r,dsize,lsize,rsize,lc,ll,lr,pofs;
  unsigned int coh;
  const unsigned int TWO_BITS_SET = 3; //two right bits are set
  void *darg,*larg,*rarg,*alpha_p,*beta_p;
+ talshComplex4 scale_cmplx4;
  talshComplex8 scale_cmplx8;
  cudaStream_t *cuda_stream;
  cudaEvent_t *cuda_start,*cuda_comput,*cuda_output,*cuda_finish,*dep_event;
@@ -4450,10 +4457,17 @@ NOTES:
   conj_bits = conj_bits ^ 7; //XOR with 0b111 will invert bits
  }
  if(dtens->data_kind == C4 || dtens->data_kind == C8){ //conjugation may apply to complex data kinds
-  if(conj_bits & 2) left_conj = CUBLAS_OP_N;
-  if(conj_bits & 4) right_conj = CUBLAS_OP_T;
+  conj_l = 0; if((conj_bits & 2) != 0) conj_l=1; //left tensor argument conjugation flag
+  conj_r = 0; if((conj_bits & 4) != 0) conj_r=1; //right tensor argument conjugation flag
+#ifndef NO_BLAS
+  if(conj_l != 0) left_conj = CUBLAS_OP_N;
+  if(conj_r != 0) right_conj = CUBLAS_OP_T;
+#endif
  }else{
-  conj_bits=0; left_conj = CUBLAS_OP_T; right_conj = CUBLAS_OP_N; //default is TN GEMM (and no conjugation for real data kinds)
+  conj_bits = 0; conj_l = 0; conj_r = 0;
+#ifndef NO_BLAS
+  left_conj = CUBLAS_OP_T; right_conj = CUBLAS_OP_N; //default is TN GEMM (and no conjugation for real data kinds)
+#endif
  }
 //Activate the right GPU:
  if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE){gpu_num=tens_op_best_gpu(dtens,ltens,rtens);}else{gpu_num=gpu_id;}
@@ -4550,7 +4564,11 @@ NOTES:
  if(cuda_mmend == NULL){errc=cuda_task_record(cuda_task,coh_ctrl,10); errc=gpu_activate(cur_gpu); return 10;}
 #endif
 //Determine the volume and required matricization permutation for each tensor argument:
- get_contr_permutations(lrank,rrank,cptrn,conj_bits,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
+ if(drank > 0 && lrank > 0 && rrank > 0 && drank < (lrank + rrank)){ //GEMM mapped tensor contraction: {TN,NT,NN,TT}
+  get_contr_permutations(lrank,rrank,cptrn,conj_bits,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
+ }else{ //custom kernel mapped tensor contraction (complex conjugation does not require modified permutations)
+  get_contr_permutations(lrank,rrank,cptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
+ }
  if(errc){i=cuda_task_record(cuda_task,coh_ctrl,11); i=gpu_activate(cur_gpu); return 11;}
  for(i=0;i<drank;i++) cuda_task->tens_args[0].prmn_p[i]=dprm[1+i]; //ignore the permutaion sign
  perm_d=non_trivial_prmn(drank,cuda_task->tens_args[0].prmn_p);    //trivial or not
@@ -4987,7 +5005,7 @@ NOTES:
   rarg=rtens->dst_rsc->gmem_p;
  }
 //Schedule the appropriate computation kernel:
-// Set up prefactor:
+// Set up the prefactor (in mapped Host memory):
  errc=0;
  switch(dtens->data_kind){
   case R4:
@@ -5056,9 +5074,15 @@ NOTES:
    case R8:
     gpu_scalar_multiply__<<<1,1,0,*cuda_stream>>>((double*)larg,(double*)rarg,(double*)darg,scale_real);
     break;
+   case C4:
+    scale_cmplx4 = talshComplex4Set((float)scale_real,(float)scale_imag);
+    gpu_scalar_multiply__<<<1,1,0,*cuda_stream>>>((talshComplex4*)larg,(talshComplex4*)rarg,(talshComplex4*)darg,
+                                                  scale_cmplx4,conj_l,conj_r);
+    break;
    case C8:
     scale_cmplx8 = talshComplex8Set(scale_real,scale_imag);
-    gpu_scalar_multiply__<<<1,1,0,*cuda_stream>>>((talshComplex8*)larg,(talshComplex8*)rarg,(talshComplex8*)darg,scale_cmplx8);
+    gpu_scalar_multiply__<<<1,1,0,*cuda_stream>>>((talshComplex8*)larg,(talshComplex8*)rarg,(talshComplex8*)darg,
+                                                  scale_cmplx8,conj_l,conj_r);
     break;
    default:
     errc=cuda_task_record(cuda_task,coh_ctrl,64); errc=gpu_activate(cur_gpu); return 64;
@@ -5073,6 +5097,16 @@ NOTES:
    case R8:
     gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(double*)(darg),(double*)(rarg),(double*)(larg),scale_real);
     break;
+   case C4:
+    scale_cmplx4 = talshComplex4Set((float)scale_real,(float)scale_imag);
+    gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(talshComplex4*)(darg),(talshComplex4*)(rarg),
+                                                           (talshComplex4*)(larg),scale_cmplx4,conj_r);
+    break;
+   case C8:
+    scale_cmplx8 = talshComplex8Set(scale_real,scale_imag);
+    gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(talshComplex8*)(darg),(talshComplex8*)(rarg),
+                                                           (talshComplex8*)(larg),scale_cmplx8,conj_r);
+    break;
    default:
     errc=cuda_task_record(cuda_task,coh_ctrl,65); errc=gpu_activate(cur_gpu); return 65;
   }
@@ -5085,6 +5119,16 @@ NOTES:
     break;
    case R8:
     gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(double*)(darg),(double*)(larg),(double*)(rarg),scale_real);
+    break;
+   case C4:
+    scale_cmplx4 = talshComplex4Set((float)scale_real,(float)scale_imag);
+    gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(talshComplex4*)(darg),(talshComplex4*)(larg),
+                                                           (talshComplex4*)(rarg),scale_cmplx4,conj_l);
+    break;
+   case C8:
+    scale_cmplx8 = talshComplex8Set(scale_real,scale_imag);
+    gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(talshComplex8*)(darg),(talshComplex8*)(larg),
+                                                           (talshComplex8*)(rarg),scale_cmplx8,conj_l);
     break;
    default:
     errc=cuda_task_record(cuda_task,coh_ctrl,66); errc=gpu_activate(cur_gpu); return 66;
@@ -5100,6 +5144,16 @@ NOTES:
    case R8:
     gpu_array_dot_product__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(double),*cuda_stream>>>
                              (vol_l,(double*)larg,(double*)rarg,(double*)darg,scale_real);
+    break;
+   case C4:
+    scale_cmplx4 = talshComplex4Set((float)scale_real,(float)scale_imag);
+    gpu_array_dot_product__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(talshComplex4),*cuda_stream>>>
+                             (vol_l,(talshComplex4*)larg,(talshComplex4*)rarg,(talshComplex4*)darg,scale_cmplx4,conj_l,conj_r);
+    break;
+   case C8:
+    scale_cmplx8 = talshComplex8Set(scale_real,scale_imag);
+    gpu_array_dot_product__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(talshComplex8),*cuda_stream>>>
+                             (vol_l,(talshComplex8*)larg,(talshComplex8*)rarg,(talshComplex8*)darg,scale_cmplx8,conj_l,conj_r);
     break;
    default:
     errc=cuda_task_record(cuda_task,coh_ctrl,67); errc=gpu_activate(cur_gpu); return 67;
@@ -5117,6 +5171,16 @@ NOTES:
     gpu_array_product__<<<blcks,THRDS_ARRAY_PRODUCT,0,*cuda_stream>>>
                           (vol_l,(double*)larg,vol_r,(double*)rarg,(double*)darg,scale_real);
     break;
+   case C4:
+    scale_cmplx4 = talshComplex4Set((float)scale_real,(float)scale_imag);
+    gpu_array_product__<<<blcks,THRDS_ARRAY_PRODUCT,0,*cuda_stream>>>
+                          (vol_l,(talshComplex4*)larg,vol_r,(talshComplex4*)rarg,(talshComplex4*)darg,scale_cmplx4,conj_l,conj_r);
+    break;
+   case C8:
+    scale_cmplx8 = talshComplex8Set(scale_real,scale_imag);
+    gpu_array_product__<<<blcks,THRDS_ARRAY_PRODUCT,0,*cuda_stream>>>
+                          (vol_l,(talshComplex8*)larg,vol_r,(talshComplex8*)rarg,(talshComplex8*)darg,scale_cmplx8,conj_l,conj_r);
+    break;
    default:
     errc=cuda_task_record(cuda_task,coh_ctrl,68); errc=gpu_activate(cur_gpu); return 68;
   }
@@ -5129,11 +5193,21 @@ NOTES:
    switch(dtens->data_kind){
     case R4:
      err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
-                    (float*)alpha_p,(float*)larg,(int)lc,(float*)rarg,(int)lc,(float*)beta_p,(float*)darg,(int)ll);
+                (float*)alpha_p,(float*)larg,(int)lc,(float*)rarg,(int)lc,(float*)beta_p,(float*)darg,(int)ll);
      break;
     case R8:
      err_cublas=cublasDgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
-                    (double*)alpha_p,(double*)larg,(int)lc,(double*)rarg,(int)lc,(double*)beta_p,(double*)darg,(int)ll);
+                (double*)alpha_p,(double*)larg,(int)lc,(double*)rarg,(int)lc,(double*)beta_p,(double*)darg,(int)ll);
+     break;
+    case C4:
+     err_cublas=cublasCgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                (talshComplex4*)alpha_p,(talshComplex4*)larg,(int)lc,(talshComplex4*)rarg,(int)lc,(talshComplex4*)beta_p,
+                (talshComplex4*)darg,(int)ll);
+     break;
+    case C8:
+     err_cublas=cublasZgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                (talshComplex8*)alpha_p,(talshComplex8*)larg,(int)lc,(talshComplex8*)rarg,(int)lc,(talshComplex8*)beta_p,
+                (talshComplex8*)darg,(int)ll);
      break;
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,70); errc=gpu_activate(cur_gpu); return 70;
