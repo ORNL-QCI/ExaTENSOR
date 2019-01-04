@@ -1,8 +1,8 @@
 /** ExaTensor::TAL-SH: Complex arithmetic header.
-REVISION: 2018/12/27
+REVISION: 2019/01/04
 
-Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 This file is part of ExaTensor.
 
@@ -95,11 +95,11 @@ __host__ __device__ __forceinline__ talshComplex8 talshComplex8Set(double real, 
 #ifdef __cplusplus
 inline talshComplex4 talshComplex4Set(float real, float imag)
 {
- return result(real,imag);
+ return talshComplex4(real,imag);
 }
 inline talshComplex8 talshComplex8Set(double real, double imag)
 {
- return result(real,imag);
+ return talshComplex8(real,imag);
 }
 #else
 talshComplex4 talshComplex4Set(float real, float imag)
