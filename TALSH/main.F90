@@ -396,7 +396,6 @@
          cnrm=talshTensorImageNorm1_cpu(ctens); dnrm=talshTensorImageNorm1_cpu(dtens)
          write(*,'(1x,"Resulting tensor 1-norms: ",D25.14,1x,D25.14)') cnrm,dnrm
 !Inspect individual tensor elements:
-         prod=prod*dble(DIM_EXT)*dble(DIM_EXT) !LR+ value
          write(*,'(1x,"Getting access to ctens tensor body: ")',ADVANCE='NO')
          ierr=talsh_tensor_get_body_access(ctens,body_p,C8,0,DEV_HOST)
          tens_vol=talsh_tensor_volume(ctens)
