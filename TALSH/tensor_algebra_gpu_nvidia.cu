@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/01/04
+REVISION: 2019/01/05
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -3774,10 +3774,10 @@ NOTES:
  if(gpu_num != cur_gpu) errc=gpu_activate(cur_gpu);
  return stat; //either 0 (success) or NOT_CLEAN (warning)
 }
-//-------------------------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------
 // TENSOR ADDITION (non-blocking):
-__host__ int gpu_tensor_block_add(const int *cptrn, tensBlck_t *ltens, tensBlck_t *dtens,
-                                  unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id, double scale_real, double scale_imag)
+__host__ int gpu_tensor_block_add(const int *cptrn, tensBlck_t *ltens, tensBlck_t *dtens, unsigned int coh_ctrl,
+                                  cudaTask_t *cuda_task, int gpu_id, double scale_real, double scale_imag, int conj_bits)
 /**
 dtens(:)+=ltens(:)*scalar
 INPUT:
@@ -3790,6 +3790,7 @@ INPUT:
  # gpu_id - suggested GPU ID on which the operation is to be scheduled (-1: defaults to the optimal one);
  # scale_real - real part of the GEMM alpha coefficient (defaults to 1.0);
  # scale_imag - imaginary part of the GEMM alpha coefficient (defaults to 0.0);
+ # conj_bits - tensor argument complex conjugation bits, one bit per argument: {0:D,1:L};
 OUTPUT:
  # dtens - updated destination tensor;
  # cuda_task - recorded CUDA task (either successfully scheduled or failed).
@@ -3805,12 +3806,14 @@ NOTES:
    based on argument residence and the current load of GPU(s).
 **/
 {
- int i,j,drank,lrank,tds_d,tds_l,gpu_d,gpu_l,perm_d,perm_l,ncd,nlu,nru,gpu_num,cur_gpu,targ_dev,bx,errc,stat;
+ int i,j,drank,lrank,tds_d,tds_l,gpu_d,gpu_l,perm_d,perm_l,ncd,nlu,nru,gpu_num,cur_gpu,targ_dev,bx,errc,stat,conj_l;
  int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1]; //the 1st element is the sign of the permutation
  size_t vol_d,vol_l,dsize,lsize;
  unsigned int coh;
  const unsigned int TWO_BITS_SET = 3; //two right bits are set
  void *darg,*larg;
+ talshComplex4 scale_cmplx4;
+ talshComplex8 scale_cmplx8;
  cudaStream_t *cuda_stream;
  cudaEvent_t *cuda_start,*cuda_comput,*cuda_output,*cuda_finish,*dep_event;
 #ifdef GPU_FINE_TIMING
@@ -3853,6 +3856,12 @@ NOTES:
   }
  }
  for(i=0;i<drank;i++) if(dprm[i] != 1) return -27;
+//Check argument complex conjugation bits:
+ conj_bits = conj_bits & 3; //keep only first two bits, one per tensor argument {0:D,1:L}
+ if(conj_bits & 1){ //destination tensor argument conjugation = inverse conjugation of the left argument
+  conj_bits = conj_bits ^ 3; //XOR with 0b111 will invert bits
+ }
+ conj_l = 0; if((conj_bits & 2) != 0) conj_l = 1; //left argument conjugation flag
 //Activate the right GPU:
  if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE){gpu_num=tens_op_best_gpu(dtens,ltens);}else{gpu_num=gpu_id;}
  if(gpu_is_mine(gpu_num) <= GPU_OFF) return -28; //GPU is not mine or error
@@ -4140,6 +4149,16 @@ NOTES:
      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(double*)(dtens->dst_rsc->gmem_p),(double*)(dtens->tmp_rsc->gmem_p));
      break;
+    case C4:
+     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
+       (talshComplex4*)(dtens->dst_rsc->gmem_p),(talshComplex4*)(dtens->tmp_rsc->gmem_p));
+     break;
+    case C8:
+     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
+       (talshComplex8*)(dtens->dst_rsc->gmem_p),(talshComplex8*)(dtens->tmp_rsc->gmem_p));
+     break;
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,38); errc=gpu_activate(cur_gpu); return 38;
    }
@@ -4167,6 +4186,16 @@ NOTES:
      gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(double*)(dtens->dst_rsc->gmem_p),(double*)(dtens->tmp_rsc->gmem_p));
      break;
+    case C4:
+     gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
+      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
+       (talshComplex4*)(dtens->dst_rsc->gmem_p),(talshComplex4*)(dtens->tmp_rsc->gmem_p));
+     break;
+    case C8:
+     gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
+      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
+       (talshComplex8*)(dtens->dst_rsc->gmem_p),(talshComplex8*)(dtens->tmp_rsc->gmem_p));
+     break;
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,39); errc=gpu_activate(cur_gpu); return 39;
    }
@@ -4189,6 +4218,16 @@ NOTES:
     case R8:
      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
       (0,0,lrank,cuda_task->tens_args[1].const_mem_entry,(double*)(ltens->dst_rsc->gmem_p),(double*)(ltens->tmp_rsc->gmem_p));
+     break;
+    case C4:
+     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+      (0,0,lrank,cuda_task->tens_args[1].const_mem_entry,
+       (talshComplex4*)(ltens->dst_rsc->gmem_p),(talshComplex4*)(ltens->tmp_rsc->gmem_p));
+     break;
+    case C8:
+     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+      (0,0,lrank,cuda_task->tens_args[1].const_mem_entry,
+       (talshComplex8*)(ltens->dst_rsc->gmem_p),(talshComplex8*)(ltens->tmp_rsc->gmem_p));
      break;
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,40); errc=gpu_activate(cur_gpu); return 40;
@@ -4216,6 +4255,16 @@ NOTES:
     case R8:
      gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
       (0,0,lrank,cuda_task->tens_args[1].const_mem_entry,(double*)(ltens->dst_rsc->gmem_p),(double*)(ltens->tmp_rsc->gmem_p));
+     break;
+    case C4:
+     gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
+      (0,0,lrank,cuda_task->tens_args[1].const_mem_entry,
+       (talshComplex4*)(ltens->dst_rsc->gmem_p),(talshComplex4*)(ltens->tmp_rsc->gmem_p));
+     break;
+    case C8:
+     gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
+      (0,0,lrank,cuda_task->tens_args[1].const_mem_entry,
+       (talshComplex8*)(ltens->dst_rsc->gmem_p),(talshComplex8*)(ltens->tmp_rsc->gmem_p));
      break;
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,41); errc=gpu_activate(cur_gpu); return 41;
@@ -4246,6 +4295,14 @@ NOTES:
   case R8:
    gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(double*)darg,(double*)larg,scale_real);
    break;
+  case C4:
+   scale_cmplx4 = talshComplex4Set((float)scale_real,(float)scale_imag);
+   gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(talshComplex4*)darg,(talshComplex4*)larg,scale_cmplx4,conj_l);
+   break;
+  case C8:
+   scale_cmplx8 = talshComplex8Set(scale_real,scale_imag);
+   gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(talshComplex8*)darg,(talshComplex8*)larg,scale_cmplx8,conj_l);
+   break;
   default:
    errc=cuda_task_record(cuda_task,coh_ctrl,48); errc=gpu_activate(cur_gpu); return 48;
  }
@@ -4271,6 +4328,16 @@ NOTES:
     case R8:
      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
       (1,0,drank,cuda_task->tens_args[0].const_mem_entry,(double*)(dtens->tmp_rsc->gmem_p),(double*)(dtens->dst_rsc->gmem_p));
+     break;
+    case C4:
+     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+      (1,0,drank,cuda_task->tens_args[0].const_mem_entry,
+       (talshComplex4*)(dtens->tmp_rsc->gmem_p),(talshComplex4*)(dtens->dst_rsc->gmem_p));
+     break;
+    case C8:
+     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+      (1,0,drank,cuda_task->tens_args[0].const_mem_entry,
+       (talshComplex8*)(dtens->tmp_rsc->gmem_p),(talshComplex8*)(dtens->dst_rsc->gmem_p));
      break;
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,54); errc=gpu_activate(cur_gpu); return 54;
@@ -4299,6 +4366,16 @@ NOTES:
     case R8:
      gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
       (1,0,drank,cuda_task->tens_args[0].const_mem_entry,(double*)(dtens->tmp_rsc->gmem_p),(double*)(dtens->dst_rsc->gmem_p));
+     break;
+    case C4:
+     gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
+      (1,0,drank,cuda_task->tens_args[0].const_mem_entry,
+       (talshComplex4*)(dtens->tmp_rsc->gmem_p),(talshComplex4*)(dtens->dst_rsc->gmem_p));
+     break;
+    case C8:
+     gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
+      (1,0,drank,cuda_task->tens_args[0].const_mem_entry,
+       (talshComplex8*)(dtens->tmp_rsc->gmem_p),(talshComplex8*)(dtens->dst_rsc->gmem_p));
      break;
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,55); errc=gpu_activate(cur_gpu); return 55;
@@ -4452,7 +4529,10 @@ NOTES:
  }
  for(i=0;i<drank;i++) if(dprm[i] != 1) return -27;
 //Check argument complex conjugation bits:
- conj_bits = conj_bits & 7; //keep only first three bits, one per tensor argument
+#ifndef NO_BLAS
+ left_conj=CUBLAS_OP_T; right_conj=CUBLAS_OP_N; //default is TN GEMM
+#endif
+ conj_bits = conj_bits & 7; //keep only first three bits, one per tensor argument {0:D,1:L,2:R}
  if(conj_bits & 1){ //destination tensor argument conjugation = inverse conjugation of left and right tensor arguments
   conj_bits = conj_bits ^ 7; //XOR with 0b111 will invert bits
  }
@@ -4460,14 +4540,11 @@ NOTES:
   conj_l = 0; if((conj_bits & 2) != 0) conj_l=1; //left tensor argument conjugation flag
   conj_r = 0; if((conj_bits & 4) != 0) conj_r=1; //right tensor argument conjugation flag
 #ifndef NO_BLAS
-  if(conj_l != 0) left_conj = CUBLAS_OP_N;
-  if(conj_r != 0) right_conj = CUBLAS_OP_T;
+  if(conj_l != 0) left_conj = CUBLAS_OP_C;
+  if(conj_r != 0) right_conj = CUBLAS_OP_C;
 #endif
  }else{
-  conj_bits = 0; conj_l = 0; conj_r = 0;
-#ifndef NO_BLAS
-  left_conj = CUBLAS_OP_T; right_conj = CUBLAS_OP_N; //default is TN GEMM (and no conjugation for real data kinds)
-#endif
+  conj_bits = 0; conj_l = 0; conj_r = 0; //no conjugation for real data kinds
  }
 //Activate the right GPU:
  if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE){gpu_num=tens_op_best_gpu(dtens,ltens,rtens);}else{gpu_num=gpu_id;}
@@ -5260,14 +5337,26 @@ NOTES:
                 (double*)alpha_p,(double*)larg,(int)lc,(double*)rarg,(int)lc,(double*)beta_p,(double*)darg,(int)ll);
      break;
     case C4:
-     err_cublas=cublasCgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
-                (talshComplex4*)alpha_p,(talshComplex4*)larg,(int)lc,(talshComplex4*)rarg,(int)lc,(talshComplex4*)beta_p,
-                (talshComplex4*)darg,(int)ll);
+     if(conj_r){
+      err_cublas=cublasCgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                 (talshComplex4*)alpha_p,(talshComplex4*)larg,(int)lc,(talshComplex4*)rarg,(int)lr,(talshComplex4*)beta_p,
+                 (talshComplex4*)darg,(int)ll);
+     }else{
+      err_cublas=cublasCgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                 (talshComplex4*)alpha_p,(talshComplex4*)larg,(int)lc,(talshComplex4*)rarg,(int)lc,(talshComplex4*)beta_p,
+                 (talshComplex4*)darg,(int)ll);
+     }
      break;
     case C8:
-     err_cublas=cublasZgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
-                (talshComplex8*)alpha_p,(talshComplex8*)larg,(int)lc,(talshComplex8*)rarg,(int)lc,(talshComplex8*)beta_p,
-                (talshComplex8*)darg,(int)ll);
+     if(conj_r){
+      err_cublas=cublasZgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                 (talshComplex8*)alpha_p,(talshComplex8*)larg,(int)lc,(talshComplex8*)rarg,(int)lr,(talshComplex8*)beta_p,
+                 (talshComplex8*)darg,(int)ll);
+     }else{
+      err_cublas=cublasZgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                 (talshComplex8*)alpha_p,(talshComplex8*)larg,(int)lc,(talshComplex8*)rarg,(int)lc,(talshComplex8*)beta_p,
+                 (talshComplex8*)darg,(int)ll);
+     }
      break;
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,70); errc=gpu_activate(cur_gpu); return 70;
@@ -5285,7 +5374,7 @@ NOTES:
     case R8:
      gpu_matrix_multiply_tn__<<<blcks,thrds,0,*cuda_stream>>>(ll,lr,lc,(double*)larg,(double*)rarg,(double*)darg,scale_real);
      break;
-    default:
+    default: //`Add complex cases with and without conjugation
      errc=cuda_task_record(cuda_task,coh_ctrl,72); errc=gpu_activate(cur_gpu); return 72;
    }
 #ifndef NO_BLAS

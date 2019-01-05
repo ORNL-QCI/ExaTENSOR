@@ -1,9 +1,9 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/22
+!REVISION: 2019/01/05
 
-!Copyright (C) 2013-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2013-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -4094,7 +4094,7 @@
 	  endif
 	 endif
  !Apply conjugation if needed (swap contracted and uncontracted positions):
-         if(left_conj) then
+         if(left_conj.and..FALSE.) then !left argument is already processed as a transposed matrix
           do i=1,lrank
            if(lprm(i).le.ncd) then
             lprm(i)=lprm(i)+nlu

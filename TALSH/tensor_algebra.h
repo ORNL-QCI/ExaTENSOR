@@ -2,10 +2,10 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2018/12/20
+REVISION: 2019/01/05
 
-Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 This file is part of ExaTensor.
 
@@ -477,8 +477,8 @@ int cuda_get_device_count(int * dev_count);
 //  NV-TAL tensor operations:
  int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int coh_ctrl, cudaTask_t *cuda_task, void *dev_mem = NULL);
  int gpu_tensor_block_init(tensBlck_t *dtens, double val, unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id = -1);
- int gpu_tensor_block_add(const int *cptrn, tensBlck_t *ltens, tensBlck_t *dtens, unsigned int coh_ctrl,
-                          cudaTask_t *cuda_task, int gpu_id = -1, double scale_real = 1.0, double scale_imag = 0.0);
+ int gpu_tensor_block_add(const int *cptrn, tensBlck_t *ltens, tensBlck_t *dtens, unsigned int coh_ctrl, cudaTask_t *cuda_task,
+                          int gpu_id = -1, double scale_real = 1.0, double scale_imag = 0.0, int conj_bits = 0);
  int gpu_tensor_block_contract_dlf(const int *cptrn, tensBlck_t *ltens, tensBlck_t *rtens, tensBlck_t *dtens,
                                    unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id = -1,
                                    double scale_real = 1.0, double scale_imag = 0.0, int conj_bits = 0);
