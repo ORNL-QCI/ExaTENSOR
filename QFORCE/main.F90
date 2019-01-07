@@ -1,10 +1,10 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/06
+!REVISION: 2019/01/07
 
-!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -449,7 +449,8 @@
          implicit none
          integer(INTL), parameter:: TEST_SPACE_DIM=64
          integer(INTD), parameter:: BRANCHING_FACTOR=3
-         integer(INTD), parameter:: TENSOR_DATA_KIND=EXA_DATA_KIND_R8
+         integer(INTD), parameter:: TENSOR_DATA_KIND=EXA_DATA_KIND_C8
+         complex(8), parameter:: left_val=(1.234d-3,-2.567d-4),right_val=(-9.743d-4,3.576d-3)
          type(color_symmetry_t):: basis_symmetry(1:TEST_SPACE_DIM)
          type(subspace_basis_t):: basis
          class(h_space_t), pointer:: ao_space
@@ -541,14 +542,14 @@
   !ltens:
            write(6,'("Initializing tensor ltens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_init(ltens,(1d-3,0d0))
+           ierr=exatns_tensor_init(ltens,left_val)
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
   !rtens:
            write(6,'("Initializing tensor rtens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_init(rtens,(1d-2,0d0))
+           ierr=exatns_tensor_init(rtens,right_val)
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
@@ -566,10 +567,10 @@
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
- !Contract tensors:
-           write(6,'("Contracting etens+=dtens*dtens ... ")',ADVANCE='NO'); flush(6)
+ !Contract tensors to get the norm:
+           write(6,'("Contracting etens+=dtens+*dtens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_contract(etens,dtens,dtens,'E()+=D(a,b,c,d)*D(a,b,c,d)')
+           ierr=exatns_tensor_contract(etens,dtens,dtens,'E()+=D+(a,b,c,d)*D(a,b,c,d)')
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
@@ -588,6 +589,7 @@
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_get_scalar() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: Value = (",D21.14,1x,D21.14,"):",F16.4," sec")') etens_value,tmf-tms; flush(6)
+           write(6,'("Reference = ")') 4d0*(abs(left_val)**2)*(abs(right_val)**2)*(real(TEST_SPACE_DIM,8)**8); flush(6)
  !Destroy tensors:
   !rtens:
            write(6,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)
