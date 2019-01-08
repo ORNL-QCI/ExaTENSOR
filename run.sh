@@ -10,9 +10,9 @@ export QF_PATH=/home/dima/src/ExaTensor #full path to ExaTENSOR root directory
 export QF_NUM_PROCS=4             #total number of MPI processes
 export QF_PROCS_PER_NODE=4        #number of MPI processes per logical node (logical nodes are created by node resource isolation)
 export QF_CORES_PER_PROCESS=1     #number of physical CPU cores per MPI process (no less than 1)
-export QF_MEM_PER_PROCESS=512     #host RAM memory limit per MPI process in MB
+export QF_MEM_PER_PROCESS=1576    #host RAM memory limit per MPI process in MB
 export QF_NVMEM_PER_PROCESS=0     #non-volatile memory limit per MPI process in MB
-export QF_HOST_BUFFER_SIZE=256    #host buffer size per MPI process in MB (must be less than QF_MEM_PER_PROCESS)
+export QF_HOST_BUFFER_SIZE=1024   #host buffer size per MPI process in MB (must be less than QF_MEM_PER_PROCESS)
 export QF_GPUS_PER_PROCESS=0      #number of discrete NVIDIA GPU's per MPI process (optional)
 export QF_MICS_PER_PROCESS=0      #number of discrete Intel Xeon Phi's per MPI process (optional)
 export QF_AMDS_PER_PROCESS=0      #number of discrete AMD GPU's per MPI process (optional)
@@ -102,6 +102,7 @@ ulimit -s unlimited
 #jsrun -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x #>& qforce.log
 #jsrun --smpiargs="-mca common_pami_use_odp 1" -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x #>& qforce.log
 #jsrun -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone nvprof -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x #>& qforce.log
+#jsrun --smpiargs="-mca common_pami_use_odp 1" -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone nvprof -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x #>& qforce.log
 
 #nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x #>& qforce.log
 

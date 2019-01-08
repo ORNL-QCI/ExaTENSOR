@@ -1,9 +1,9 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/13 (started 2015/03/18)
+!REVISION: 2019/01/08 (started 2015/03/18)
 
-!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -119,12 +119,12 @@
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
         logical, parameter, private:: LAZY_LOCKING=.TRUE.                 !lazy MPI window locking
-        logical, parameter, private:: TEST_AND_FLUSH=.TRUE.               !MPI_Test() will call MPI_Win_flush() on completion when entry reference count becomes 0 (not necessary)
+        logical, parameter, private:: TEST_AND_FLUSH=.FALSE.              !MPI_Test() will call MPI_Win_flush() on completion when entry reference count becomes 0 (not necessary)
         integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27    !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096     !max number of outstanding one-sided data transfer requests per process
         integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0           !default communication tag (for P2P MPI communications)
-       !integer(INT_MPI), parameter, private:: MPI_ASSER=MPI_MODE_NOCHECK !MPI assertion for locking
-        integer(INT_MPI), parameter, private:: MPI_ASSER=0                !MPI assertion for locking
+        integer(INT_MPI), parameter, private:: MPI_ASSER=MPI_MODE_NOCHECK !MPI assertion for locking
+       !integer(INT_MPI), parameter, private:: MPI_ASSER=0                !MPI assertion for locking
   !Lock types:
         integer(INT_MPI), parameter, public:: NO_LOCK=0        !no MPI lock (must be zero)
         integer(INT_MPI), parameter, public:: SHARED_LOCK=1    !shared MPI lock (must be positive)
