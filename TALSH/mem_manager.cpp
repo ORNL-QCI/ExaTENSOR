@@ -401,6 +401,21 @@ Negative return status means that an error occurred. **/
 }
 #endif /*NO_GPU*/
 
+void print_blck_buf_sizes_host()
+{
+ int dpth,i;
+ size_t *bsz;
+
+ printf("\n#INFO(TALSH:mem_manager): Host Buffer structure:\n");
+ printf(" Host Buffer base address: %p\n",arg_buf_host);
+ printf(" Host Buffer size (bytes): %llu\n",arg_buf_host_size);
+ printf(" Block sizes (bytes) at levels:\n");
+ dpth=get_blck_buf_sizes_host(bsz);
+ for(i=0;i<dpth;++i) printf("  Level %d: %llu\n",i,bsz[i]);
+ fflush(stdout);
+ return;
+}
+
 static int get_buf_entry(ab_conf_t ab_conf, size_t bsize, void *arg_buf_ptr, size_t *ab_occ, size_t ab_occ_size,
                          const size_t *blck_sizes, char **entry_ptr, int *entry_num)
 /** This function finds an appropriate argument buffer entry in any given argument buffer **/
@@ -722,6 +737,11 @@ int get_buf_entry_from_address(int dev_id, const void * addr)
    //if(DEBUG) printf("\n#DEBUG(mem_manager:get_buf_entry_from_address): Address %p -> Buffer entry %d\n",addr,ben); //debug
    if(buf_offset != ab_get_offset(*ab_conf,lev,buf_offset/blck_sz[lev],blck_sz)) return -4; //check
   }else{
+   if(VERBOSE){
+    printf("\n#ERROR(TALSH:mem_manager:get_buf_entry_from_address): Wrong buffer address alignment: %p\n",addr);
+    print_blck_buf_sizes_host();
+    fflush(stdout);
+   }
    return -5; //address is not aligned to any buffer entry base
   }
  }
