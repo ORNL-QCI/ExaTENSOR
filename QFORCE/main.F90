@@ -589,7 +589,7 @@
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_get_scalar() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: Value = (",D21.14,1x,D21.14,"):",F16.4," sec")') etens_value,tmf-tms; flush(6)
-           write(6,'("Reference = ")') 4d0*(abs(left_val)**2)*(abs(right_val)**2)*(real(TEST_SPACE_DIM,8)**8); flush(6)
+           write(6,'("Reference = ",D21.14)') 4d0*(abs(left_val)**2)*(abs(right_val)**2)*(real(TEST_SPACE_DIM,8)**8); flush(6)
  !Destroy tensors:
   !rtens:
            write(6,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)
