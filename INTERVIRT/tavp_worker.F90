@@ -1,9 +1,9 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/13
+!REVISION: 2019/01/07
 
-!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -1182,6 +1182,12 @@
             this%pinned=.FALSE.
             this%dev_id=DEV_NULL
            else
+            if(VERBOSE) then
+!$OMP CRITICAL (IO)
+             write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_resrc_t.free_buffer): mem_free failed with error ",i11)') errc
+             flush(CONS_OUT)
+!$OMP END CRITICAL (IO)
+            endif
             errc=-2
            endif
           else
