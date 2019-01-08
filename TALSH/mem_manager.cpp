@@ -404,12 +404,13 @@ Negative return status means that an error occurred. **/
 void print_blck_buf_sizes_host()
 {
  int dpth,i;
- size_t *bsz;
+ size_t bsz[BLCK_BUF_DEPTH_HOST];
 
  printf("\n#INFO(TALSH:mem_manager): Host Buffer structure:\n");
  printf(" Host Buffer base address: %p\n",arg_buf_host);
  printf(" Host Buffer size (bytes): %llu\n",arg_buf_host_size);
  printf(" Block sizes (bytes) at levels:\n");
+ fflush(stdout);
  dpth=get_blck_buf_sizes_host(bsz);
  for(i=0;i<dpth;++i) printf("  Level %d: %llu\n",i,bsz[i]);
  fflush(stdout);
@@ -692,19 +693,27 @@ int get_buf_entry_from_address(int dev_id, const void * addr)
  dev_num=decode_device_id(dev_id,&dev_kind); if(dev_num < 0) return -2; //invalid device id
  switch(dev_kind){
   case DEV_HOST:
-   ab_conf=&ab_conf_host;
-   buf_size=arg_buf_host_size;
-   buf_offset=((size_t)(((const char*)(addr))-((const char*)(arg_buf_host))));
-   blck_sz=&(blck_sizes_host[0]);
-   occ=abh_occ;
+   if((size_t)((const char*)(addr)) >= (size_t)((const char*)(arg_buf_host))){
+    ab_conf=&ab_conf_host;
+    buf_size=arg_buf_host_size;
+    buf_offset=((size_t)(((const char*)(addr))-((const char*)(arg_buf_host))));
+    blck_sz=&(blck_sizes_host[0]);
+    occ=abh_occ;
+   }else{
+    return ben;
+   }
    break;
 #ifndef NO_GPU
   case DEV_NVIDIA_GPU:
-   ab_conf=&(ab_conf_gpu[dev_num]);
-   buf_size=arg_buf_gpu_size[dev_num];
-   buf_offset=((size_t)(((const char*)(addr))-((const char*)(arg_buf_gpu[dev_num]))));
-   blck_sz=&(blck_sizes_gpu[dev_num][0]);
-   occ=abg_occ[dev_num];
+   if((size_t)((const char*)(addr)) >= (size_t)((const char*)(arg_buf_gpu[dev_num]))){
+    ab_conf=&(ab_conf_gpu[dev_num]);
+    buf_size=arg_buf_gpu_size[dev_num];
+    buf_offset=((size_t)(((const char*)(addr))-((const char*)(arg_buf_gpu[dev_num]))));
+    blck_sz=&(blck_sizes_gpu[dev_num][0]);
+    occ=abg_occ[dev_num];
+   }else{
+    return ben;
+   }
    break;
 #endif
 #ifndef NO_PHI
