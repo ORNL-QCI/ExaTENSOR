@@ -1118,7 +1118,10 @@ an error code != 0, among which are also TRY_LATER and DEVICE_UNABLE. **/
    errc=-1; //invalid device id
   }
  }
- if(LOGGING > 0) printf("#DEBUG(TALSH:mem_manager:mem_allocate): Allocation of %llu bytes error %d: Address %p\n",bytes,errc,*mem_ptr);
+ if(LOGGING){
+  printf("#DEBUG(TALSH:mem_manager:mem_allocate): Allocation of %llu bytes error %d: Address %p\n",bytes,errc,*mem_ptr);
+  fflush(stdout);
+ }
  return errc;
 }
 
@@ -1165,7 +1168,10 @@ int mem_free(int dev_id, void ** mem_ptr)
        errc=-5; //invalid device kind
      }
     }else{
-     if(VERBOSE) printf("#ERROR(TALSH:mem_manager:mem_free): Unidentified address %p for device %d: Error %d\n",*mem_ptr,dev_id,buf_entry);
+     if(VERBOSE){
+      printf("#ERROR(TALSH:mem_manager:mem_free): Unidentified address %p for device %d: Error %d\n",*mem_ptr,dev_id,buf_entry);
+      fflush(stdout);
+     }
      errc=-4; //unidentified address
     }
    }else{
@@ -1177,7 +1183,10 @@ int mem_free(int dev_id, void ** mem_ptr)
  }else{
   errc=-1;
  }
- if(LOGGING) printf("#DEBUG(TALSH:mem_manager:mem_free): Deallocation of pointer %p error %d",*mem_ptr,errc);
+ if(LOGGING){
+  printf("#DEBUG(TALSH:mem_manager:mem_free): Deallocation of pointer %p error %d",*mem_ptr,errc);
+  fflush(stdout);
+ }
  if(errc == 0) *mem_ptr=NULL;
  return errc;
 }
