@@ -1,10 +1,10 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/12/05
+!REVISION: 2019/01/10
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -33,7 +33,7 @@
 !Thus, there are W data processors, M metadata processors, and 1 driver.
        use tavp_manager, tens_instr_mng_t=>tens_instr_t
        use tavp_worker, tens_instr_wrk_t=>tens_instr_t
-       use virta
+       use virta !publicly exports many other modules
        implicit none
        private
        public EXA_NO_ROLE,EXA_DRIVER,EXA_MANAGER,EXA_WORKER,EXA_HELPER !process roles
@@ -136,6 +136,7 @@
        type(vector_iter_t), private:: instr_log
        integer(INTL), protected:: num_tens_instr_issued=0 !number of tensor instructions issued by the Driver (excludes control and auxiliary instructions)
        integer(INTL), protected:: num_tens_instr_synced=0 !number of tensor instructions synchronized on completion (excludes control and auxiliary instructions)
+       real(8), private:: start_time_stamp=0d0            !start time stamp for the TAVP
  !Reusable bytecode buffers (for Driver):
        type(pack_env_t), private:: bytecode_out !outgoing bytecode buffer
        type(pack_env_t), private:: bytecode_in  !incoming bytecode buffer
@@ -405,12 +406,13 @@
         call dil_global_comm_barrier(errc); if(errc.ne.0) then; call dil_process_finish(errc); ierr=-12; return; endif
 !Mark the ExaTENSOR runtime active:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_ON,EXA_SUCCESS,num_procs,0_INTL)
-!Live TAVP life:
+!Live TAVP life (only Driver returns immediately):
         ierr=EXA_SUCCESS
         if(process_role.eq.EXA_DRIVER) then
          ierr=instr_log%init(instructions); if(ierr.ne.GFC_SUCCESS) ierr=-13
          call bytecode_out%reserve_mem(ierr); if(ierr.ne.0) ierr=-14
          call bytecode_in%reserve_mem(ierr); if(ierr.ne.0) ierr=-15
+         if(ierr.eq.0) start_time_stamp=time_sys_sec()
          return !Driver process returns immediately, it will later call exatns_stop()
         elseif(process_role.eq.EXA_MANAGER) then
          call tavp_mng_reset_output(jo)
@@ -685,7 +687,8 @@
         class(tens_instr_mng_t), pointer:: tens_instr
 
         ierr=EXA_SUCCESS
-        write(jo,'("#MSG(exatensor): New Instruction: STOP ExaTENSOR: IP = ")',ADVANCE='NO'); flush(jo)
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: STOP ExaTENSOR: IP = ")',ADVANCE='NO')&
+        &time_sys_sec()-start_time_stamp; flush(jo)
 !Send the STOP instruction to the root TAVP-MNG and wait for completion:
         tens_instr=>add_new_instruction(ip,ierr)
         if(ierr.eq.0) then
@@ -744,7 +747,9 @@
         class(*), pointer:: instr
         logical:: new
 
-        ierr=EXA_SUCCESS; call comm_hl%clean(ierr)
+        ierr=EXA_SUCCESS
+        write(jo,'("[",F11.4,"]#MSG(exatensor): Instruction execution synced")') time_sys_sec()-start_time_stamp; flush(jo)
+        call comm_hl%clean(ierr)
         if(ierr.eq.0) then
          wloop: do while(num_tens_instr_synced.lt.num_tens_instr_issued)
           new=bytecode_in%receive(comm_hl,ierr,0,TAVP_COLLECT_TAG,drv_mng_comm) !receive bytecode from the root TAVP-MNG
@@ -828,7 +833,8 @@
         class(tens_instr_mng_t), pointer:: tens_instr
 
         ierr=EXA_SUCCESS
-        write(jo,'("#MSG(exatensor): New Instruction: DUMP TENSOR CACHE: IP = ")',ADVANCE='NO'); flush(jo)
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: DUMP TENSOR CACHE: IP = ")',ADVANCE='NO')&
+        &time_sys_sec()-start_time_stamp; flush(jo)
         tens_instr=>add_new_instruction(ip,ierr)
         if(ierr.eq.0) then
          write(jo,'(i11)') ip; flush(jo) !new instruction id number
@@ -1016,7 +1022,8 @@
         integer(INTL):: ip
 
         ierr=EXA_SUCCESS
-        write(jo,'("#MSG(exatensor): New Instruction: CREATE TENSOR: IP = ")',ADVANCE='NO'); flush(jo)
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: CREATE TENSOR: IP = ")',ADVANCE='NO')&
+        &time_sys_sec()-start_time_stamp; flush(jo)
         if(.not.tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor object:
@@ -1121,7 +1128,8 @@
         integer(INTL):: ip
 
         ierr=EXA_SUCCESS
-        write(jo,'("#MSG(exatensor): New Instruction: DESTROY TENSOR: IP = ")',ADVANCE='NO'); flush(jo)
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP = ")',ADVANCE='NO')&
+        &time_sys_sec()-start_time_stamp; flush(jo)
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor instruction:
@@ -1291,7 +1299,8 @@
         complex(8):: scal
 
         ierr=EXA_SUCCESS
-        write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP = ")',ADVANCE='NO'); flush(jo)
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP = ")',ADVANCE='NO')&
+        &time_sys_sec()-start_time_stamp; flush(jo)
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor transformation (initialization) object:
@@ -1354,7 +1363,8 @@
         integer(INTL):: ip
 
         ierr=EXA_SUCCESS
-        write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP = ")',ADVANCE='NO'); flush(jo)
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP = ")',ADVANCE='NO')&
+        &time_sys_sec()-start_time_stamp; flush(jo)
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor transformation (initialization) object:
@@ -1418,7 +1428,8 @@
         integer(INTL):: ip
 
         ierr=EXA_SUCCESS
-        write(jo,'("#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP = ")',ADVANCE='NO'); flush(jo)
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP = ")',ADVANCE='NO')&
+        &time_sys_sec()-start_time_stamp; flush(jo)
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor transformation object:
@@ -1664,7 +1675,8 @@
         logical:: check
 
         ierr=EXA_SUCCESS
-        write(jo,'("#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP = ")',ADVANCE='NO'); flush(jo)
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP = ")',ADVANCE='NO')&
+        &time_sys_sec()-start_time_stamp; flush(jo)
         check=tensor0%is_set(errc); if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-12
         check=tensor1%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-11
         check=tensor2%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-10

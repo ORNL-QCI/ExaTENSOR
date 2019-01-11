@@ -8,10 +8,10 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/06
+!REVISION: 2019/01/10
 
-!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -78,6 +78,7 @@
         use gfc_base           !GFC base
         use gfc_dictionary     !GFC dictionary
         use gfc_vector         !GFC vector
+        use timers             !timers
         implicit none
         public
 !PARAMETERS:

@@ -349,7 +349,7 @@ $(NAME): $(OBJS) ./OBJ/test_intra.o $(MY_LIB)
 ./OBJ/tensor_recursive.o: tensor_recursive.F90 ../TALSH/OBJ/tensor_algebra.o ../TALSH/OBJ/talshf.o ../UTILITY/OBJ/stsubs.o ../UTILITY/OBJ/timers.o ../UTILITY/OBJ/combinatoric.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_range.o ../GFC/OBJ/gfc_list.o ../GFC/OBJ/gfc_vector.o ../GFC/OBJ/gfc_vec_tree.o ../GFC/OBJ/gfc_dictionary.o ../GFC/OBJ/multords.o ./OBJ/subspaces.o ../DDSS/OBJ/pack_prim.o ../DDSS/OBJ/distributed.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tensor_recursive.F90 -o ./OBJ/tensor_recursive.o
 
-./OBJ/virta.o: virta.F90 ../UTILITY/OBJ/dil_basic.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_dictionary.o ../TALSH/OBJ/talshf.o ../DDSS/OBJ/service_mpi.o ../DDSS/OBJ/pack_prim.o ../DDSS/OBJ/distributed.o ../DSVP/OBJ/dsvp_base.o ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o
+./OBJ/virta.o: virta.F90 ../UTILITY/OBJ/dil_basic.o ../UTILITY/OBJ/timers.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_dictionary.o ../TALSH/OBJ/talshf.o ../DDSS/OBJ/service_mpi.o ../DDSS/OBJ/pack_prim.o ../DDSS/OBJ/distributed.o ../DSVP/OBJ/dsvp_base.o ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o
 	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
 
