@@ -748,7 +748,6 @@
         logical:: new
 
         ierr=EXA_SUCCESS
-        write(jo,'("[",F11.4,"]#MSG(exatensor): Instruction execution synced")') time_sys_sec()-start_time_stamp; flush(jo)
         call comm_hl%clean(ierr)
         if(ierr.eq.0) then
          wloop: do while(num_tens_instr_synced.lt.num_tens_instr_issued)
@@ -793,6 +792,7 @@
         else
          ierr=EXA_ERR_UNABLE_COMPLETE
         endif
+        write(jo,'("[",F11.4,"]#MSG(exatensor): Instruction execution synced")') time_sys_sec()-start_time_stamp; flush(jo)
         return
        end function exatns_sync
 !----------------------------------------------------------------
