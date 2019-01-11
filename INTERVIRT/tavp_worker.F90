@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/08
+!REVISION: 2019/01/11
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -102,6 +102,7 @@
         integer(INTD), private:: MAX_RESOURCER_INTAKE=512 !max number of instructions in Resourcer's main queue
         integer(INTD), private:: MAX_RESOURCER_INSTR=64   !max number of instructions during a single new resource allocation phase before passing resourced instructions to Communicator
         real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3  !max time spent in a single new resource allocation phase
+        real(8), private:: MAX_RESOURCER_WAIT_TIME=30d0   !max waiting time (sec) upon which Resourcer will start complaining if no instructions are issued
  !Communicator:
         logical, private:: COMMUNICATOR_REQUEST=.TRUE.          !switches between normal and request-based one-sided communication semantics
         logical, private:: COMMUNICATOR_BLOCKING=.FALSE.        !switches between blocking and non-blocking one-sided communication semantics
@@ -6320,7 +6321,7 @@
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,ier,thid,n,num_staged,opcode,sts,errcode,uid
-         integer:: rsc_timer
+         integer:: rsc_timer,wait_timer
          logical:: active,stopping,auxiliary,deferd,mainq,dependent,blocked,passed,expired,moved_fwd,mem_block,unfinished_acc
          type(tens_instr_t):: instr_fence
          class(tens_instr_t), pointer:: instr,parent
@@ -6345,16 +6346,16 @@
 !Reset counters:
          this%num_active=0
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-91
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-93
 !Initialize the staged list:
-         ier=this%stg_list%init(this%staged_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-90
+         ier=this%stg_list%init(this%staged_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-92
 !Initialize the deferred list:
-         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-89
+         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-91
 !Initialize the release list:
-         ier=this%rls_list%init(this%release_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-88
+         ier=this%rls_list%init(this%release_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-90
 !Create a special FENCE instruction:
          call instr_fence%tens_instr_ctor(TAVP_INSTR_CTRL_RESUME,ier,iid=0_INTL,stat=DS_INSTR_SPECIAL)
-         if(ier.ne.0.and.errc.eq.0) errc=-87
+         if(ier.ne.0.and.errc.eq.0) errc=-89
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -6363,14 +6364,25 @@
 !$OMP ATOMIC UPDATE
           tavp%units_active=tavp%units_active+1
 !$OMP FLUSH
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-86
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-88
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-85
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-87
          endif
 !Work loop:
-         ier=timer_start(rsc_timer,MAX_RESOURCER_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-84
+         ier=timer_start(wait_timer,MAX_RESOURCER_WAIT_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-86
+         ier=timer_start(rsc_timer,MAX_RESOURCER_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-85
          active=(errc.eq.0); stopping=(.not.active); deferd=.FALSE.; mainq=.FALSE.; mem_block=.FALSE.; num_staged=0
          wloop: do while(active)
+ !Test for possible stalling due to persistent memory resource starvation:
+          expired=timer_expired(wait_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-84; exit wloop; endif
+          if(expired) then
+!$OMP CRITICAL (IO)
+           write(CONS_OUT,'("#WARNING(TAVP-WRK:Resourcer)[",i6,"]: No instruction has been issued recently: Memory block = ",l1)')&
+           &impir,mem_block
+!$OMP END CRITICAL (IO)
+           flush(CONS_OUT)
+           ier=timer_reset(wait_timer,MAX_RESOURCER_WAIT_TIME)
+          endif
  !Process the deferred queue (check data dependencies and try acquiring resources for tensor operands again):
           ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-83; exit wloop; endif
           deferd=.FALSE.; ier=this%def_list%get_status()
@@ -6418,6 +6430,7 @@
                call instr%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
+              ier=timer_reset(wait_timer,MAX_RESOURCER_WAIT_TIME)
               ier=this%def_list%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-74; exit wloop; endif
               num_staged=num_staged+1
              elseif(ier.eq.TRY_LATER) then !required resources are still unavailable
@@ -6578,6 +6591,7 @@
                  call instr%print_it(dev_id=CONS_OUT)
                  flush(CONS_OUT)
                 endif
+                ier=timer_reset(wait_timer,MAX_RESOURCER_WAIT_TIME)
                 ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-43; exit wloop; endif
                 num_staged=num_staged+1
                elseif(ier.eq.TRY_LATER) then !required resources are not currently available: issue into the deferred list
@@ -6765,8 +6779,9 @@
           endif
           active=((.not.stopping).or.deferd.or.mainq)
          enddo wloop
-!Destroy the timer:
+!Destroy timers:
          ier=timer_destroy(rsc_timer); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-3
+         ier=timer_destroy(wait_timer); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-3
 !Retire the special FENCE instruction:
          call instr_fence%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
 !Record the error:
