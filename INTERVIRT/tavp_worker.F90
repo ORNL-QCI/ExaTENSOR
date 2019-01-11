@@ -9176,21 +9176,24 @@
                  do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
                  i=index(str_ptrn(1:cpl),'*R()'); if(i.gt.0) cpl=i-1
                  if(cpl.gt.0) then
-                  errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,copy_ctrl=COPY_MT,&
-                  &talsh_task=tens_instr%talsh_task)
-                  if(errc.ne.TALSH_SUCCESS) then
-                   if(errc.eq.TRY_LATER) then
-                    ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-10
-                   else
-                    if(VERBOSE) then
+                  if(.not.COMMUNICATOR_NO_UPLOAD) then !ignore local Accumulates if tensor uploading is disabled
+                   errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,copy_ctrl=COPY_MT,&
+                   &talsh_task=tens_instr%talsh_task)
+                   if(errc.ne.TALSH_SUCCESS) then
+                    if(errc.eq.TRY_LATER) then
+                     ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-10
+                    else
+                     if(VERBOSE) then
 !$OMP CRITICAL (IO)
-                     call talsh_task_print_info(tens_instr%talsh_task)
-                     write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)') errc
+                      call talsh_task_print_info(tens_instr%talsh_task)
+                      write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)')&
+                      &errc
 !$OMP END CRITICAL (IO)
-                     flush(CONS_OUT)
-                     !write(6,*) dev,str_ptrn(1:cpl); call talsh_tensor_print_info(tens0); call talsh_tensor_print_info(tens1) !debug
+                      flush(CONS_OUT)
+                      !write(6,*) dev,str_ptrn(1:cpl); call talsh_tensor_print_info(tens0); call talsh_tensor_print_info(tens1) !debug
+                     endif
+                     errc=-9
                     endif
-                    errc=-9
                    endif
                   endif
                  else
