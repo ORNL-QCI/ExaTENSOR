@@ -113,7 +113,8 @@
         logical, private:: COMMUNICATOR_NO_FETCH=.FALSE.        !DEBUG: Turns off all data fetches
         logical, private:: COMMUNICATOR_NO_UPLOAD=.FALSE.       !DEBUG: Turns off all data uploads
  !Dispatcher:
-        logical, private:: DISPATCHER_CPU_PARALLEL=.TRUE.       !parallel vs serial execution of numerical tasks on CPU
+        logical, private:: DISPATCHER_CPU_PARALLEL=.TRUE.       !parallel vs serial execution of numerical operations on CPU
+        logical, private:: DISPATCHER_SYNC_WAIT=.FALSE.         !wait versus test semantics for insruction execution synchronization
         integer(INTD), private:: MAX_DISPATCHER_INTAKE=64       !max number of instructions taken from the port at a time
         real(8), private:: DISPATCHER_DEFERRED_PAUSE=1d-4       !enforced pause to a Dispatcher before issuing the next instruction after the previous one has been deferred
         logical, private:: ACCELERATOR_ONLY=.TRUE.              !DEBUG: if TRUE, all tensor contractions will be executed on accelerators
@@ -8386,7 +8387,7 @@
            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-14; exit wloop; endif !trap
            sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
-           completed=this%sync_instr(tens_instr,ier)
+           completed=this%sync_instr(tens_instr,ier,wait=DISPATCHER_SYNC_WAIT)
            if(ier.ne.0.and.errc.eq.0) then
             if(VERBOSE) then
 !$OMP CRITICAL (IO)
