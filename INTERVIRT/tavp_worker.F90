@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/11
+!REVISION: 2019/01/12
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -7953,6 +7953,8 @@
 !$OMP END CRITICAL (IO)
           flush(CONS_OUT)
          endif
+!Print DDSS statistics:
+         call ddss_print_stat(ier,dev_out=CONS_OUT); if(ier.ne.0.and.errc.eq.0) errc=-15
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
 !Destroy the global addressing space:

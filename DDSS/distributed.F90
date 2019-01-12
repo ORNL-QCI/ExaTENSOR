@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/08 (started 2015/03/18)
+!REVISION: 2019/01/12 (started 2015/03/18)
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -309,9 +309,15 @@
 !GLOBAL DATA:
  !MPI one-sided data transfer bookkeeping (master thread only):
         type(RankWinList_t), target, private:: RankWinRefs !container for active one-sided communications initiated at the local origin
+ !MPI one-sided data transfer statistics:
+        real(8), private:: comm_bytes_in=0d0  !amount of data (bytes) one-sided communicated in by the process
+        real(8), private:: comm_bytes_out=0d0 !amount of data (bytes) one-sided communicated out by the process
+        real(8), private:: comm_time_in=0d0   !time (sec) spent in incoming one-sided communications
+        real(8), private:: comm_time_out=0d0  !time (sec) spent in outgoing one-sided communications
 !FUNCTION VISIBILITY:
  !Global:
         public data_type_size
+        public ddss_update_stat
         public ddss_print_stat
  !Auxiliary:
         private get_mpi_int_datatype
@@ -431,6 +437,34 @@
         if(present(ierr)) ierr=errc
         return
         end function data_type_size
+!----------------------------------------------
+        subroutine ddss_update_stat(descr,ierr)
+         implicit none
+         class(DataDescr_t), intent(in):: descr           !in: active data descriptor
+         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+         integer(INT_MPI):: errc,dir
+         integer(INT_COUNT):: data_size
+
+         dir=descr%get_comm_stat(errc)
+         if(errc.eq.0) then
+          data_size=descr%data_size(errc)
+          if(errc.eq.0) then
+           if(dir.eq.DDSS_COMM_READ) then
+            comm_bytes_in=comm_bytes_in+real(data_size,8)
+            comm_time_in=comm_time_in+real(descr%TimeSynced-descr%TimeStarted,8)
+           elseif(dir.eq.DDSS_COMM_WRITE) then
+            comm_bytes_out=comm_bytes_out+real(data_size,8)
+            comm_time_out=comm_time_out+real(descr%TimeSynced-descr%TimeStarted,8)
+           else
+            errc=2
+           endif
+          else
+           errc=1
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ddss_update_stat
 !-----------------------------------------------
         subroutine ddss_print_stat(ierr,dev_out)
 !Prints the current DDSS communication statistics.
@@ -441,6 +475,13 @@
 
         errc=0
         if(present(dev_out)) then; devo=dev_out; else; devo=jo; endif
+        write(devo,'("#INFO(DDSS): Incoming one-sided communication effective bandwidth (GB/s) = ",F10.3)')&
+        &comm_bytes_in/(comm_time_in*(1024d0*1024d0*1024d0))
+        write(devo,'("#INFO(DDSS): Outgoing one-sided communication effective bandwidth (GB/s) = ",F10.3)')&
+        &comm_bytes_out/(comm_time_out*(1024d0*1024d0*1024d0))
+        write(devo,'("#INFO(DDSS): Incoming one-sided communication volume (GB) = ",F12.3)') comm_bytes_in/(1024d0*1024d0*1024d0)
+        write(devo,'("#INFO(DDSS): Outgoing one-sided communication volume (GB) = ",F12.3)') comm_bytes_out/(1024d0*1024d0*1024d0)
+        flush(devo)
         call RankWinRefs%print_all(errc,devo)
         if(present(ierr)) ierr=errc
         return
@@ -1664,6 +1705,7 @@
              endif
              if(errc.eq.0) then
               this%TimeSynced=time_sys_sec()
+              call ddss_update_stat(this)
               this%StatMPI=MPI_STAT_COMPLETED_ORIG
               rw_entry%RefCount=rw_entry%RefCount-1
              else
@@ -1694,6 +1736,7 @@
              endif
              if(errc.eq.0) then
               this%TimeSynced=time_sys_sec()
+              call ddss_update_stat(this)
               this%StatMPI=MPI_STAT_COMPLETED
               rw_entry%RefCount=rw_entry%RefCount-1
              else
@@ -1737,6 +1780,7 @@
             endif
             if(errc.eq.0) then
              this%TimeSynced=time_sys_sec()
+             call ddss_update_stat(this)
              this%StatMPI=MPI_STAT_COMPLETED
              rw_entry%RefCount=rw_entry%RefCount-1
             else
@@ -1823,6 +1867,7 @@
              if(errc.eq.0) then
               if(compl) then
                this%TimeSynced=time_sys_sec()
+               call ddss_update_stat(this)
                this%StatMPI=MPI_STAT_COMPLETED_ORIG
                rw_entry%RefCount=rw_entry%RefCount-1
                DataDescrTestData=.TRUE.
@@ -1837,6 +1882,7 @@
              endif
             else
              this%TimeSynced=time_sys_sec()
+             call ddss_update_stat(this)
              this%StatMPI=MPI_STAT_COMPLETED_ORIG
              rw_entry%RefCount=rw_entry%RefCount-1
              DataDescrTestData=.TRUE.
@@ -1952,6 +1998,7 @@
              call MPI_Wait(this%ReqHandle,mpi_stat,errc)
              if(errc.eq.0) then
               this%TimeSynced=time_sys_sec()
+              call ddss_update_stat(this)
               this%StatMPI=MPI_STAT_COMPLETED_ORIG
               rw_entry%RefCount=rw_entry%RefCount-1
               if(LOGGING.gt.0) then
@@ -1964,6 +2011,7 @@
              endif
             else
              this%TimeSynced=time_sys_sec()
+             call ddss_update_stat(this)
              this%StatMPI=MPI_STAT_COMPLETED_ORIG
              rw_entry%RefCount=rw_entry%RefCount-1
              if(LOGGING.gt.0) then
