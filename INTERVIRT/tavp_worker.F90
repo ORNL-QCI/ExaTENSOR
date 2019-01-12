@@ -8561,16 +8561,20 @@
            if(errc.eq.DSVP_SUCCESS) then
             flops=tens_instr%get_flops(errc,arint,words)
             if(errc.eq.0) then
+             iproc=>this%microcode(opcode)%instr_proc
              if(present(dev_id)) then
               devid=dev_id; dev_num=talsh_kind_dev_id(devid,dev_kind)
              else
               devid=map_tensor_instruction(dev_kind,dev_num)
              endif
-             iproc=>this%microcode(opcode)%instr_proc
              if(associated(iproc)) then
               call iproc(this,tens_instr,ier,devid)
+              if(ier.eq.TRY_LATER) then
+               devid=map_tensor_instruction_rnd(dev_kind,dev_num)
+               call iproc(this,tens_instr,ier,devid)
+              endif
              else
-              ier=0
+              ier=0 !`Why?
              endif
              if(ier.eq.0) then
               select case(dev_kind)
@@ -8622,7 +8626,7 @@
            real(8):: min_load
 
            devk=DEV_HOST; devn=0 !defaults to (multicore) HOST
-           if(opcode.eq.TAVP_INSTR_TENS_CONTRACT) then
+           if(opcode.eq.TAVP_INSTR_TENS_CONTRACT.or.(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE.and.ACCELERATOR_ONLY)) then
             if(ACCELERATOR_ONLY.or.(flops.ge.TAVP_WRK_FLOPS_HEAVY.and.arint.ge.TAVP_WRK_COST_TO_SIZE)) then
              dev_list=>NULL(); curr_load=>NULL()
              if(allocated(this%gpu_list)) then
@@ -8647,6 +8651,32 @@
            dev=talsh_flat_dev_id(devk,devn)
            return
           end function map_tensor_instruction
+
+          function map_tensor_instruction_rnd(devk,devn) result(dev)
+           integer(INTD):: dev                 !out: flat device id
+           integer(INTD), intent(in):: devk    !in: device kind
+           integer(INTD), intent(inout):: devn !inout: device number within its kind [0..max]
+           integer(INTD):: jn
+           real(8):: jrn
+
+           call random_number(jrn); jn=0
+           select case(devk)
+           case(DEV_HOST)
+           case(DEV_NVIDIA_GPU)
+            jn=size(this%gpu_list)
+           case(DEV_INTEL_MIC)
+            jn=size(this%mic_list)
+           case(DEV_AMD_GPU)
+            jn=size(this%amd_list)
+           end select
+           if(jn.gt.0) then
+            devn=int(jrn*real(jn,8)); if(devn.eq.jn) devn=devn-1
+           else
+            devn=0
+           endif
+           dev=talsh_flat_dev_id(devk,devn)
+           return
+          end function map_tensor_instruction_rnd
 
         end subroutine TAVPWRKDispatcherIssueInstr
 !---------------------------------------------------------------------------------
@@ -9180,7 +9210,7 @@
                  i=index(str_ptrn(1:cpl),'*R()'); if(i.gt.0) cpl=i-1
                  if(cpl.gt.0) then
                   if(.not.COMMUNICATOR_NO_UPLOAD) then !ignore local Accumulates if tensor uploading is disabled
-                   errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,copy_ctrl=COPY_MT,&
+                   errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,copy_ctrl=COPY_TT,&
                    &talsh_task=tens_instr%talsh_task)
                    if(errc.ne.TALSH_SUCCESS) then
                     if(errc.eq.TRY_LATER) then
