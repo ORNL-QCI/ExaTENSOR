@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/12
+!REVISION: 2019/01/14
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -109,9 +109,9 @@
         logical, private:: COMMUNICATOR_OPT_ACC=.TRUE.          !optimized (reduced) accumulation mechanism
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=3  !max number of outstanding prefetching instructions issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=3     !max number of outstanding uploading instructions issued by Communicator
-        real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
-        logical, private:: COMMUNICATOR_NO_FETCH=.FALSE.        !DEBUG: Turns off all data fetches
-        logical, private:: COMMUNICATOR_NO_UPLOAD=.FALSE.       !DEBUG: Turns off all data uploads
+        real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-1     !max time (sec) spent by Communicator in each subphase
+        logical, private:: COMMUNICATOR_NO_FETCH=.FALSE.        !DEBUG: Turns off all remote data fetches
+        logical, private:: COMMUNICATOR_NO_UPLOAD=.FALSE.       !DEBUG: Turns off all data uploads (includes local Accumulates)
  !Dispatcher:
         logical, private:: DISPATCHER_CPU_PARALLEL=.TRUE.       !parallel vs serial execution of numerical operations on CPU
         logical, private:: DISPATCHER_SYNC_WAIT=.FALSE.         !wait versus test semantics for insruction execution synchronization
@@ -7628,7 +7628,7 @@
          integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTD):: errc,ier,thid,n,num_fetch,num_upload,opcode,sts,errcode,uid
          integer:: com_timer
-         logical:: active,stopping,really_stopping,delivered
+         logical:: active,stopping,really_stopping,delivered,expired
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
          class(tens_instr_t), pointer:: tens_instr
@@ -7645,15 +7645,15 @@
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-65
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-68
 !Initialize the prefetch queue:
-         ier=this%fet_list%init(this%prefetch_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-64
+         ier=this%fet_list%init(this%prefetch_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-67
 !Initialize the upload queue:
-         ier=this%upl_list%init(this%upload_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-63
+         ier=this%upl_list%init(this%upload_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-66
 !Initialize the dispatch queue:
-         ier=this%dsp_list%init(this%dispatch_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-62
+         ier=this%dsp_list%init(this%dispatch_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-65
 !Initialize the retire queue:
-         ier=this%ret_list%init(this%retire_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-61
+         ier=this%ret_list%init(this%retire_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-64
 !Initialize the global addressing space and set up tensor argument cache:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -7669,25 +7669,25 @@
             flush(CONS_OUT)
            endif
           else
-           if(errc.eq.0) errc=-60
+           if(errc.eq.0) errc=-63
           endif
 !Sync with other TAVP units:
 !$OMP FLUSH
 !$OMP ATOMIC UPDATE
           tavp%units_active=tavp%units_active+1
 !$OMP FLUSH
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-59
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-62
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-58
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-61
          endif
 !Work loop:
-         ier=timer_start(com_timer,MAX_COMMUNICATOR_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-57
+         ier=timer_start(com_timer,MAX_COMMUNICATOR_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-60
          active=(errc.eq.0); stopping=(.not.active); really_stopping=.FALSE.
          num_fetch=0; num_upload=0 !number of outstanding prefetches and uploads
          wloop: do while(active)
  !Get new instructions from Resourcer (port 0) into the prefetch queue:
-          ier=this%fet_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-56; exit wloop; endif
-          ier=this%unload_port(0,this%fet_list,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-55; exit wloop; endif
+          ier=this%fet_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-59; exit wloop; endif
+          ier=this%unload_port(0,this%fet_list,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-58; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
 !$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," received ",i9," instructions from Resourcer")')&
@@ -7697,17 +7697,17 @@
            flush(CONS_OUT)
           endif
  !Initiate input prefetch:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-54; exit wloop; endif
-          ier=this%dsp_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-53; exit wloop; endif
-          ier=this%fet_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-52; exit wloop; endif
-          do while(this%fet_list%get_status().eq.GFC_IT_ACTIVE.and.num_fetch.lt.MAX_COMMUNICATOR_PREFETCHES)
-           if(stopping.and.errc.eq.0) then; errc=-51; exit wloop; endif !trap: no instruction can follow STOP
-           uptr=>this%fet_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-50; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-57; exit wloop; endif
+          ier=this%dsp_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-56; exit wloop; endif
+          ier=this%fet_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-55; exit wloop; endif
+          floop: do while(this%fet_list%get_status().eq.GFC_IT_ACTIVE.and.num_fetch.lt.MAX_COMMUNICATOR_PREFETCHES)
+           if(stopping.and.errc.eq.0) then; errc=-54; exit wloop; endif !trap: no instruction can follow STOP
+           uptr=>this%fet_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-53; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-49; exit wloop; endif !trap
-           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-48; exit wloop; endif
-           if(sts.ne.DS_INSTR_INPUT_WAIT.and.errc.eq.0) then; errc=-47; exit wloop; endif !trap
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-46; exit wloop; endif
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-52; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-51; exit wloop; endif
+           if(sts.ne.DS_INSTR_INPUT_WAIT.and.errc.eq.0) then; errc=-50; exit wloop; endif !trap
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-49; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
             if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.opcode.ne.TAVP_INSTR_TENS_DESTROY.and.opcode.ne.TAVP_INSTR_TENS_ACCUMULATE) then
              call this%prefetch_input(tens_instr,ier)
@@ -7721,11 +7721,11 @@
                call tens_instr%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
-              ier=this%fet_list%move_elem(this%iqueue); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-45; exit wloop; endif
+              ier=this%fet_list%move_elem(this%iqueue); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-48; exit wloop; endif
               num_fetch=num_fetch+1
              else
               if(ier.eq.TRY_LATER) then
-               ier=this%fet_list%next(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-44; exit wloop; endif
+               ier=this%fet_list%next(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-47; exit wloop; endif
               else
                if(VERBOSE) then
 !$OMP CRITICAL (IO)
@@ -7734,28 +7734,28 @@
                 call tens_instr%print_it(dev_id=CONS_OUT)
                 flush(CONS_OUT)
                endif
-               errc=-43; exit wloop
+               errc=-46; exit wloop
               endif
              endif
             else
              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,errcode)
-             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-42; exit wloop; endif
+             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-45; exit wloop; endif
              tens_instr%timings%time_fetch_started=time_sys_sec()
              tens_instr%timings%time_fetch_synced=time_sys_sec()
-             ier=this%fet_list%move_elem(this%dsp_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-41; exit wloop; endif
+             ier=this%fet_list%move_elem(this%dsp_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-44; exit wloop; endif
             endif
            else !aux/ctrl instruction (ready for dispatch)
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
             call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,errcode)
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-40; exit wloop; endif
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-43; exit wloop; endif
             tens_instr%timings%time_fetch_started=time_sys_sec()
             tens_instr%timings%time_fetch_synced=time_sys_sec()
-            ier=this%fet_list%move_elem(this%dsp_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif
+            ier=this%fet_list%move_elem(this%dsp_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-42; exit wloop; endif
            endif
-          enddo
+          enddo floop
  !Get completed instructions from Dispatcher (port 1) into the upload queue:
-          ier=this%upl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
-          ier=this%unload_port(1,this%upl_list,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-37; exit wloop; endif
+          ier=this%upl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-41; exit wloop; endif
+          ier=this%unload_port(1,this%upl_list,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-40; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
 !$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," received ",i9," instructions from Dispatcher")')&
@@ -7765,17 +7765,19 @@
            flush(CONS_OUT)
           endif
  !Initiate output upload:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-36; exit wloop; endif
-          ier=this%ret_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-35; exit wloop; endif
-          ier=this%upl_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-34; exit wloop; endif
-          do while(this%upl_list%get_status().eq.GFC_IT_ACTIVE.and.num_upload.lt.MAX_COMMUNICATOR_UPLOADS)
-           if(really_stopping.and.errc.eq.0) then; errc=-33; exit wloop; endif !trap
-           uptr=>this%upl_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif
+          ier=this%ret_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
+          ier=this%upl_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-37; exit wloop; endif
+          ier=timer_reset(com_timer,MAX_COMMUNICATOR_PHASE_TIME)
+          if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-36; exit wloop; endif
+          uloop: do while(this%upl_list%get_status().eq.GFC_IT_ACTIVE.and.num_upload.lt.MAX_COMMUNICATOR_UPLOADS)
+           if(really_stopping.and.errc.eq.0) then; errc=-35; exit wloop; endif !trap
+           uptr=>this%upl_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-34; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-31; exit wloop; endif !trap
-           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
-           if(sts.ne.DS_INSTR_COMPLETED.and.errc.eq.0) then; errc=-29; exit wloop; endif !trap
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-33; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
+           if(sts.ne.DS_INSTR_COMPLETED.and.errc.eq.0) then; errc=-31; exit wloop; endif !trap
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
             if(tens_instr%get_num_out_operands().gt.0.and.opcode.ne.TAVP_INSTR_TENS_CREATE) then !TENS_CREATE does not require remote upload
              call this%upload_output(tens_instr,ier)
@@ -7789,11 +7791,11 @@
                call tens_instr%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
-              ier=this%upl_list%move_elem(this%iqueue); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
+              ier=this%upl_list%move_elem(this%iqueue); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
               num_upload=num_upload+1
              else
               if(ier.eq.TRY_LATER) then
-               ier=this%upl_list%next(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
+               ier=this%upl_list%next(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
               else
                if(VERBOSE) then
 !$OMP CRITICAL (IO)
@@ -7802,30 +7804,36 @@
                 call tens_instr%print_it(dev_id=CONS_OUT)
                 flush(CONS_OUT)
                endif
-               errc=-25; exit wloop
+               errc=-27; exit wloop
               endif
              endif
             else
              call tens_instr%set_status(DS_INSTR_UPLOADED,ier,errcode)
-             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
+             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
              tens_instr%timings%time_upload_started=time_sys_sec()
              tens_instr%timings%time_upload_synced=time_sys_sec()
-             ier=this%upl_list%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
+             ier=this%upl_list%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
             endif
            else !aux/ctrl instruction
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) really_stopping=.TRUE. !STOP instruction is back from Dispatcher => no instruction will follow
             call tens_instr%set_status(DS_INSTR_UPLOADED,ier,errcode)
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
             tens_instr%timings%time_upload_started=time_sys_sec()
             tens_instr%timings%time_upload_synced=time_sys_sec()
-            ier=this%upl_list%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+            ier=this%upl_list%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
            endif
-          enddo
+           expired=timer_expired(com_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+           if(expired) then
+            ier=timer_reset(com_timer,MAX_COMMUNICATOR_PHASE_TIME)
+            if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+            exit uloop
+           endif
+          enddo uloop
  !Test outstanding communication completion (both fetch and upload):
           ier=this%dsp_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
           ier=this%ret_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
-          do while(this%iqueue%get_status().eq.GFC_IT_ACTIVE)
+          tloop: do while(this%iqueue%get_status().eq.GFC_IT_ACTIVE)
            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-16; exit wloop; endif !trap
@@ -7892,7 +7900,7 @@
            else
             if(errc.eq.0) then; errc=-7; exit wloop; endif
            endif
-          enddo
+          enddo tloop
  !Pass ready instructions to Dispatcher (port 0) for execution:
           ier=this%dsp_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
           if(this%dsp_list%get_status().eq.GFC_IT_ACTIVE) then

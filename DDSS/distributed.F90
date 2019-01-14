@@ -492,10 +492,14 @@
 
         errc=0
         if(present(dev_out)) then; devo=dev_out; else; devo=jo; endif
-        write(devo,'("#INFO(DDSS): Incoming one-sided communication effective bandwidth (GB/s) = ",F10.3)')&
-        &comm_bytes_in/(comm_time_in*(1024d0*1024d0*1024d0))
-        write(devo,'("#INFO(DDSS): Outgoing one-sided communication effective bandwidth (GB/s) = ",F10.3)')&
-        &comm_bytes_out/(comm_time_out*(1024d0*1024d0*1024d0))
+        if(comm_time_in.gt.0d0) then
+         write(devo,'("#INFO(DDSS): Incoming one-sided communication effective bandwidth (GB/s) = ",F10.3)')&
+         &comm_bytes_in/(comm_time_in*(1024d0*1024d0*1024d0))
+        endif
+        if(comm_time_out.gt.0d0) then
+         write(devo,'("#INFO(DDSS): Outgoing one-sided communication effective bandwidth (GB/s) = ",F10.3)')&
+         &comm_bytes_out/(comm_time_out*(1024d0*1024d0*1024d0))
+        endif
         write(devo,'("#INFO(DDSS): Incoming one-sided communication volume (GB) = ",F12.3)') comm_bytes_in/(1024d0*1024d0*1024d0)
         write(devo,'("#INFO(DDSS): Outgoing one-sided communication volume (GB) = ",F12.3)') comm_bytes_out/(1024d0*1024d0*1024d0)
         flush(devo)
