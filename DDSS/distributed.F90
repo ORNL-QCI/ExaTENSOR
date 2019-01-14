@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/12 (started 2015/03/18)
+!REVISION: 2019/01/14 (started 2015/03/18)
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -442,25 +442,42 @@
          implicit none
          class(DataDescr_t), intent(in):: descr           !in: active data descriptor
          integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-         integer(INT_MPI):: errc,dir
+         integer(INT_MPI):: errc,dir,rk,cm,mr
          integer(INT_COUNT):: data_size
 
-         dir=descr%get_comm_stat(errc)
-         if(errc.eq.0) then
-          data_size=descr%data_size(errc)
+         if(descr%is_set(errc,rk,cm)) then
           if(errc.eq.0) then
-           if(dir.eq.DDSS_COMM_READ) then
-            comm_bytes_in=comm_bytes_in+real(data_size,8)
-            comm_time_in=comm_time_in+real(descr%TimeSynced-descr%TimeStarted,8)
-           elseif(dir.eq.DDSS_COMM_WRITE) then
-            comm_bytes_out=comm_bytes_out+real(data_size,8)
-            comm_time_out=comm_time_out+real(descr%TimeSynced-descr%TimeStarted,8)
+           call MPI_Comm_rank(cm,mr,errc)
+           if(errc.eq.MPI_SUCCESS) then
+            if(mr.ne.rk) then !remote communication
+             dir=descr%get_comm_stat(errc)
+             if(errc.eq.0) then
+              data_size=descr%data_size(errc)
+              if(errc.eq.0) then
+               if(dir.eq.DDSS_COMM_READ) then
+                comm_bytes_in=comm_bytes_in+real(data_size,8)
+                comm_time_in=comm_time_in+real(descr%TimeSynced-descr%TimeStarted,8)
+               elseif(dir.eq.DDSS_COMM_WRITE) then
+                comm_bytes_out=comm_bytes_out+real(data_size,8)
+                comm_time_out=comm_time_out+real(descr%TimeSynced-descr%TimeStarted,8)
+               else
+                errc=6
+               endif
+              else
+               errc=5
+              endif
+             else
+              errc=4
+             endif
+            endif
            else
-            errc=2
+            errc=3
            endif
           else
-           errc=1
+           errc=2
           endif
+         else
+          errc=1
          endif
          if(present(ierr)) ierr=errc
          return
