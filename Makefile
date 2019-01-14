@@ -63,6 +63,7 @@ export PATH_CUDA ?= /usr/local/cuda
  export PATH_CUDA_INC ?= $(PATH_CUDA)/include
  export PATH_CUDA_LIB ?= $(PATH_CUDA)/lib64
  export PATH_CUDA_BIN ?= $(PATH_CUDA)/bin
+ export CUDA_HOST_COMPILER ?= /usr/bin/g++
 # cuTT path (only if you use cuTT library):
 export PATH_CUTT ?= /home/dima/src/cutt
 
