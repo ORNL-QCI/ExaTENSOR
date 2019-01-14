@@ -316,7 +316,7 @@ FFLAGS_INTEL_PRF = -c -std08 -g -O3 -fpp -vec-threshold4 -traceback -qopenmp -mk
 FFLAGS_CRAY_DEV = -c -g $(LA_INC)
 FFLAGS_CRAY_OPT = -c -O3 $(LA_INC)
 FFLAGS_CRAY_PRF = -c -g -O3 $(LA_INC)
-FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g -Og $(LA_INC)
+FFLAGS_GNU_DEV = -c -fopenmp -g -Og -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -ffpe-trap=invalid,zero,overflow $(LA_INC)
 FFLAGS_GNU_OPT = -c -fopenmp -O3 $(LA_INC)
 FFLAGS_GNU_PRF = -c -fopenmp -g -O3 $(LA_INC)
 FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -Mallocatable=03 -g -O0 $(LA_INC)
