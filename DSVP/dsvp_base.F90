@@ -1,9 +1,9 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/11/12
+!REVISION: 2019/01/15
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -1064,6 +1064,7 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
 
 !!!$OMP ATOMIC READ SEQ_CST
+!$OMP FLUSH(this)
 !$OMP ATOMIC READ
          compl_time=this%time_completed
          if(present(ierr)) ierr=DSVP_SUCCESS
@@ -1080,6 +1081,7 @@
 !!!$OMP ATOMIC WRITE SEQ_CST
 !$OMP ATOMIC WRITE
          this%time_completed=compl_time
+!$OMP FLUSH(this)
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
         end subroutine DSInstrSetCompletionTime
