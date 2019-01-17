@@ -46,22 +46,22 @@ export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.1.0
  export PATH_OPENMPI_BIN ?= $(PATH_OPENMPI)/bin
 
 #BLAS library (whichever you have chosen above):
-# Set this if you do not have a vendor provided BLAS (default Linux BLAS):
+# Set this path if you have chosen ATLAS (default Linux BLAS):
 export PATH_BLAS_ATLAS ?= /usr/lib
-# Set this if you have a vendor provided BLAS that you have specified above:
-#  MKL BLAS:
+# Set these if you have a vendor provided BLAS that you have specified above:
+#  MKL BLAS (if you have chosen MKL):
 export PATH_BLAS_MKL ?= /opt/intel/mkl/lib/intel64
 export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64_lin
 export PATH_BLAS_MKL_INC ?= /opt/intel/mkl/include/intel64/lp64
-#  ACML BLAS:
+#  ACML BLAS (if you have chosen ACML):
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
-#  ESSL BLAS (also set PATH_IBM_XL_CPP, PATH_IBM_XL_FOR, PATH_IBM_XL_SMP below):
+#  ESSL BLAS (if you have chosen ESSL, also set PATH_IBM_XL_CPP, PATH_IBM_XL_FOR, PATH_IBM_XL_SMP below):
 export PATH_BLAS_ESSL ?= /sw/summit/essl/6.1.0-1/essl/6.1/lib64
 
 #IBM XL (only set these if you use IBM XL and/or ESSL):
-export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-beta6/xlC/16.1.1/lib
-export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-beta6/xlf/16.1.1/lib
-export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-beta6/xlsmp/5.1.1/lib
+export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-1/xlC/16.1.1/lib
+export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-1/xlf/16.1.1/lib
+export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-1/xlsmp/5.1.1/lib
 
 #CUDA (only set this if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda

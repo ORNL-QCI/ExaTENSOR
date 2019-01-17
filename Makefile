@@ -6,11 +6,11 @@ export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT|PRF]:
-export BUILD_TYPE ?= DEV
+export BUILD_TYPE ?= OPT
 #MPI Library: [MPICH|OPENMPI]:
-export MPILIB ?= MPICH
+export MPILIB ?= OPENMPI
 #BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
-export BLASLIB ?= NONE
+export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
 #Nvidia GPU architecture (two digits):
@@ -21,7 +21,7 @@ export EXA_OS ?= LINUX
 #ADJUST EXTRAS (optional):
 #Fast GPU tensor transpose (cuTT library): [YES|NO]:
 export WITH_CUTT ?= NO
-#Disable actual build: [YES|NO]:
+#Disable actual build (debug): [YES|NO]:
 export EXA_NO_BUILD ?= NO
 
 #SET YOUR LOCAL PATHS (for unwrapped non-Cray builds):
@@ -39,23 +39,23 @@ export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.1.0
  export PATH_OPENMPI_LIB ?= $(PATH_OPENMPI)/lib
  export PATH_OPENMPI_BIN ?= $(PATH_OPENMPI)/bin
 
-#BLAS library (whichever you want to use, set one):
-# Set this if you do not have a vendor provided BLAS (default Linux BLAS):
+#BLAS library (whichever you have chosen above):
+# Set this path if you have chosen ATLAS (default Linux BLAS):
 export PATH_BLAS_ATLAS ?= /usr/lib
-# Set this if you have vendor provided BLAS (choose):
-#  MKL BLAS:
+# Set these if you have chosen vendor provided BLAS:
+#  MKL BLAS (if you have chosen MKL):
 export PATH_BLAS_MKL ?= /opt/intel/mkl/lib/intel64
 export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64_lin
 export PATH_BLAS_MKL_INC ?= /opt/intel/mkl/include/intel64/lp64
-#  ACML BLAS:
+#  ACML BLAS (if you have chosen ACML):
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
-#  ESSL BLAS (also set PATH_IBM_XL_CPP, PATH_IBM_XL_FOR, PATH_IBM_XL_SMP below):
+#  ESSL BLAS (if you have chosen ESSL, also set PATH_IBM_XL_CPP, PATH_IBM_XL_FOR, PATH_IBM_XL_SMP below):
 export PATH_BLAS_ESSL ?= /sw/summit/essl/6.1.0-1/essl/6.1/lib64
 
 #IBM XL (only set these if you use IBM XL and/or ESSL):
-export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-beta6/xlC/16.1.1/lib
-export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-beta6/xlf/16.1.1/lib
-export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-beta6/xlsmp/5.1.1/lib
+export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-1/xlC/16.1.1/lib
+export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-1/xlf/16.1.1/lib
+export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-1/xlsmp/5.1.1/lib
 
 #CUDA (only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
