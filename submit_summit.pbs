@@ -81,4 +81,7 @@ ulimit -s unlimited
 
 cp $EXA_PATH/Qforce.x ./
 
-jsrun --smpiargs='-mca common_pami_use_odp 1' -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x >& qforce.log
+#One MPI process per node (on only one socket):
+jsrun --smpiargs='-mca common_pami_use_odp 1' -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x
+#Two MPI processes per node (one MPI process per socket):
+#jsrun --smpiargs='-mca common_pami_use_odp 1' -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./exec_exa.sh
