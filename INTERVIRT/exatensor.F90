@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/01/10
+!REVISION: 2019/01/17
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -539,58 +539,63 @@
            allocate(tavp_mng_conf%description,SOURCE=tavpname(1:len_trim(tavpname)),STAT=jerr)
            if(jerr.eq.0) then
             tavp_mng_conf%tavp_id=my_rank !global MPI rank
-            aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr) !parent TAVP
+            tavp_mng_conf%level=comp_system%get_hier_level(int(my_rank,INTL),jerr) !level of hierachy: [0..lowest]
             if(jerr.eq.0) then
-             if(aid.lt.0) then !root manager (no parent)
-              tavp_mng_conf%source_comm=drv_mng_comm
-              tavp_mng_conf%source_rank=0 !assumes a single Driver process
-             else !intermediate manager
-              tavp_mng_conf%source_comm=role_comm
-              tavp_mng_conf%source_rank=tavp_role_rank(int(aid,INTD))
-             endif
-             tavp_mng_conf%retire_comm=tavp_mng_conf%source_comm
-             tavp_mng_conf%retire_rank=tavp_mng_conf%source_rank
-             lid=comp_system%get_cousin_id(int(my_rank,INTL),LEFT_SIBLING,jerr,ring=.TRUE.)
+             aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr) !parent TAVP
              if(jerr.eq.0) then
-              if(lid.lt.0) lid=int(my_rank,INTL) !self-reference (root node)
-              rid=comp_system%get_cousin_id(int(my_rank,INTL),RIGHT_SIBLING,jerr,ring=.TRUE.)
+              if(aid.lt.0) then !root manager (no parent)
+               tavp_mng_conf%source_comm=drv_mng_comm
+               tavp_mng_conf%source_rank=0 !assumes a single Driver process
+              else !intermediate manager
+               tavp_mng_conf%source_comm=role_comm
+               tavp_mng_conf%source_rank=tavp_role_rank(int(aid,INTD))
+              endif
+              tavp_mng_conf%retire_comm=tavp_mng_conf%source_comm
+              tavp_mng_conf%retire_rank=tavp_mng_conf%source_rank
+              lid=comp_system%get_cousin_id(int(my_rank,INTL),LEFT_SIBLING,jerr,ring=.TRUE.)
               if(jerr.eq.0) then
-               if(rid.lt.0) rid=int(my_rank,INTL) !self-reference (root node)
-               tavp_mng_conf%ring_comm=role_comm
-               tavp_mng_conf%ring_send_rank=tavp_role_rank(int(rid,INTD),jr) !self-reference for the root manager
-               tavp_mng_conf%ring_recv_rank=tavp_role_rank(int(lid,INTD),jl) !self-reference for the root manager
-               if(jl.eq.process_role.and.jr.eq.process_role) then !tree nodes on the same level must be of the same kind
-                nch=comp_system%get_num_children(int(my_rank,INTL),jerr)
-                if(jerr.eq.0.and.nch.gt.0) then
-                 if(allocated(tavp_mng_conf%dispatch_rank)) deallocate(tavp_mng_conf%dispatch_rank)
-                 allocate(tavp_mng_conf%dispatch_rank(1:nch)); allocate(chid(1:nch))
-                 nch=comp_system%get_children_ids(int(my_rank,INTL),chid,jerr)
-                 if(jerr.eq.0) then
-                  ji=tavp_role_rank(int(chid(1),INTD),jrl)
-                  if(jrl.eq.EXA_MANAGER) then
-                   tavp_mng_conf%dispatch_comm=role_comm
-                  elseif(jrl.eq.EXA_WORKER) then
-                   tavp_mng_conf%dispatch_comm=mng_wrk_comm
-                  else
-                   jerr=-10
-                  endif
+               if(lid.lt.0) lid=int(my_rank,INTL) !self-reference (root node)
+               rid=comp_system%get_cousin_id(int(my_rank,INTL),RIGHT_SIBLING,jerr,ring=.TRUE.)
+               if(jerr.eq.0) then
+                if(rid.lt.0) rid=int(my_rank,INTL) !self-reference (root node)
+                tavp_mng_conf%ring_comm=role_comm
+                tavp_mng_conf%ring_send_rank=tavp_role_rank(int(rid,INTD),jr) !self-reference for the root manager
+                tavp_mng_conf%ring_recv_rank=tavp_role_rank(int(lid,INTD),jl) !self-reference for the root manager
+                if(jl.eq.process_role.and.jr.eq.process_role) then !tree nodes on the same level must be of the same kind
+                 nch=comp_system%get_num_children(int(my_rank,INTL),jerr)
+                 if(jerr.eq.0.and.nch.gt.0) then
+                  if(allocated(tavp_mng_conf%dispatch_rank)) deallocate(tavp_mng_conf%dispatch_rank)
+                  allocate(tavp_mng_conf%dispatch_rank(1:nch)); allocate(chid(1:nch))
+                  nch=comp_system%get_children_ids(int(my_rank,INTL),chid,jerr)
                   if(jerr.eq.0) then
-                   do ji=1,int(nch,INTD)
-                    tavp_mng_conf%dispatch_rank(ji)=tavp_role_rank(int(chid(ji),INTD))
-                   enddo
-                   tavp_mng_conf%collect_comm=tavp_mng_conf%dispatch_comm
-                   call tavp%configure(tavp_mng_conf,jerr); if(jerr.ne.0) jerr=-9
+                   ji=tavp_role_rank(int(chid(1),INTD),jrl)
+                   if(jrl.eq.EXA_MANAGER) then
+                    tavp_mng_conf%dispatch_comm=role_comm
+                   elseif(jrl.eq.EXA_WORKER) then
+                    tavp_mng_conf%dispatch_comm=mng_wrk_comm
+                   else
+                    jerr=-11
+                   endif
+                   if(jerr.eq.0) then
+                    do ji=1,int(nch,INTD)
+                     tavp_mng_conf%dispatch_rank(ji)=tavp_role_rank(int(chid(ji),INTD))
+                    enddo
+                    tavp_mng_conf%collect_comm=tavp_mng_conf%dispatch_comm
+                    call tavp%configure(tavp_mng_conf,jerr); if(jerr.ne.0) jerr=-10
+                   endif
+                  else
+                   jerr=-9
                   endif
+                  deallocate(chid)
                  else
                   jerr=-8
                  endif
-                 deallocate(chid)
                 else
+                 write(jo,'("#FATAL(exatensor): Unbalanced Node Aggregation Trees are not supported yet! ")',ADVANCE='NO')
+                 write(jo,'("All nodes at the same tree level must be of the same kind! Adjust the number of MPI processes!")')
                  jerr=-7
                 endif
                else
-                write(jo,'("#FATAL(exatensor): Unbalanced Node Aggregation Trees are not supported yet! ")',ADVANCE='NO')
-                write(jo,'("All nodes at the same tree level must be of the same kind! Adjust the number of MPI processes!")')
                 jerr=-6
                endif
               else

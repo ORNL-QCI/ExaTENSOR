@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/15
+!REVISION: 2019/01/17
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -8759,7 +8759,15 @@
            endif
            ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-5
           else
-           if(errc.ne.TALSH_SUCCESS) errc=-4
+           if(errc.ne.TALSH_SUCCESS) then
+            if(VERBOSE) then
+!$OMP CRITICAL (IO)
+             write(CONS_OUT,'("#ERROR(TAVP-WRK:Dispatcher.sync_instr): TALSH task completion error ",i11)') errc
+!$OMP END CRITICAL (IO)
+             flush(CONS_OUT)
+            endif
+            errc=-4
+           endif
           endif
          endif
          if(errc.eq.0.and.res) then

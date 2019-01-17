@@ -1,9 +1,9 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/11
+!REVISION: 2019/01/17
 
-!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -131,6 +131,8 @@
  !Dispatcher:
         logical, private:: DISPATCH_RANDOM=.FALSE.              !activates random dispatch for affinity-less tensor instructions
         logical, private:: DISPATCH_BALANCE=.TRUE.              !activates load-balanced dispatch for affinity-less tensor instructions (DISPATCH_RANDOM must be off)
+        real(8), private:: DISPATCH_BALANCE_BIAS=32d0           !bias for the balancing function
+        real(8), private:: DISPATCH_BALANCE_KURT=3d-1           !inverse kurtosis for the balancing function
         integer(INTD), private:: MAX_ISSUE_INSTR=256            !max number of tensor instructions in the bytecode issued to a child node
         integer(INTD), private:: MIN_ISSUE_INSTR=128            !min number of tensor instructions being currently processed by a child node
  !Collector:
@@ -404,6 +406,7 @@
 #endif
          type(tavp_mng_decoder_t), private:: cdecoder              !DSVU: decodes processed bytecode from the lower-level TAVPs for the collector
          type(tavp_mng_collector_t), private:: collector           !DSVU: collects processed tensor instructions from the lower-level TAVPs and updates argument cache
+         integer(INTD), private:: level                            !TAVP-MNG level in the TAVP hierarchy: [0..lowest]
          contains
           procedure, public:: configure=>TAVPMNGConfigure              !configures the TAVP-MNG DSVP
           procedure, public:: register_instr=>TAVPMNGRegisterInstr     !registers a new child instruction (subinstruction)
@@ -416,6 +419,7 @@
         type, extends(dsv_conf_t), public:: tavp_mng_conf_t
          character(:), allocatable, public:: description       !TAVP description
          integer(INTD), public:: tavp_id                       !TAVP id
+         integer(INTD), public:: level                         !TAVP-MNG level in the TAVP hierarchy: [0..lowest]
          integer(INTD), public:: source_comm                   !MPI communicator of the bytecode source (higher-level manager)
          integer(INTD), public:: source_rank                   !MPI process rank of the bytecode source (higher-level manager)
          integer(INTD), public:: retire_comm                   !MPI communicator of the retired bytecode destination (higher-level manager)
@@ -5332,6 +5336,8 @@
 
          function map_by_arg_order(alt,jerr) result(chnl)
           !Selects the dispatch channel by argument locality with argument priority 0,1,2,3,...
+          !Work stealing balancing function: t=1/(1+exp(-k*(delta-b))), where
+          !delta is the load imbalance, b is DISPATCH_BALANCE_BIAS, and k is DISPATCH_BALANCE_KURT
           implicit none
           integer(INTD):: chnl              !out: primary dispatch channel
           integer(INTD), intent(out):: alt  !out: alternative dispatch channel
@@ -5339,7 +5345,7 @@
           integer(INTD):: ja,jj
           integer(INTL):: min_instr
           logical:: jf
-          real(8):: rnd
+          real(8):: rnd,bal
 
           jerr=0; chnl=-1; alt=-1
  !Determine the alternative channel first (based on dispatch load balancing):
@@ -5366,7 +5372,9 @@
           else
            if(opcode.eq.TAVP_INSTR_TENS_CONTRACT.and.DISPATCH_BALANCE) then !work stealing for certain tensor operations
             call random_number(rnd)
-            if(rnd.lt.1d0/(1d0+exp(-(5d-1)*real((this%dispatch_count(chnl)-this%dispatch_count(alt))-4,8)))) chnl=alt
+            bal=1d0/&
+            &(1d0+exp(-DISPATCH_BALANCE_KURT*(real(this%dispatch_count(chnl)-this%dispatch_count(alt),8)-DISPATCH_BALANCE_BIAS)))
+            if(rnd.lt.bal) chnl=alt
            endif
           endif
           return
@@ -6448,7 +6456,8 @@
                                 if(errc.eq.DSVP_SUCCESS) then
                                  call this%set_unit(this%collector,errc)
                                  if(errc.eq.DSVP_SUCCESS) then
- !Set the DSVP id and description:
+ !Set the DSVP id, level, and description:
+                                  this%level=conf%level
                                   call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
                                   if(errc.ne.DSVP_SUCCESS) errc=-26
                                  else

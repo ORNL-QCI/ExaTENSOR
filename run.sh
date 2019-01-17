@@ -34,7 +34,8 @@ export OMP_WAIT_POLICY=PASSIVE         #idle thread behavior
 export OMP_PLACES_DEFAULT=threads                                      #default thread binding to CPU logical cores
 export OMP_PLACES_EOS="{1},{3},{5},{7,9},{0:16:2},{11},{13},{15}"      #Eos 16-core hyperthreaded Intel Xeon thread binding (even logical cores do computing)
 export OMP_PLACES_TITAN="{1},{3},{5},{7,9},{0:8:2},{11},{13},{15}"     #Titan 16-core 8-FPU AMD thread binding (even logical cores do computing)
-export OMP_PLACES_POWER9="{0:4},{4:4},{8:4},{12:4},{28:56},{16:4},{20:4},{24:4}" #Summit 21-core SMT4 Power9 socket thread binding (even logical cores do computing)
+#export OMP_PLACES_POWER9="{0:4},{4:4},{8:4},{12:4},{28:56},{16:4},{20:4},{24:4}" #Summit 21-core SMT4 Power9 socket thread binding (even logical cores do computing)
+export OMP_PLACES_POWER9="{0},{4},{8},{12},{28:56},{16},{20},{24}"     #Summit 21-core SMT4 Power9 socket thread binding (even logical cores do computing)
 export OMP_PLACES_KNL="{1},{3},{5},{7,9},{0:128:2},{11},{13},{15}"     #Percival 64-core SMT4 KNL thread binding (even logical cores do computing)
 export OMP_PLACES=$OMP_PLACES_DEFAULT
 export OMP_PROC_BIND="close,spread,spread" #nest1: Functional threads (DSVU)
@@ -77,14 +78,16 @@ export MPICH_RMA_OVER_DMAPP=1                #CRAY: DMAPP backend for CRAY-MPICH
 #export MPICH_RANK_REORDER_DISPLAY=1
 
 #Summit specific:
-export PAMI_IBV_ADAPTER_AFFINITY=1
-export PAMI_IBV_DEVICE_NAME="mlx5_0:1,mlx5_3:1"
-export PAMI_IBV_ENABLE_OOO_AR=1      #adaptive routing is default
-export PAMI_IBV_DISABLE_ODP=0        #ODP (requires CAPI for performance)
-export PAMI_ENABLE_STRIPING=1        #increases network bandwidth, also increases latency
-unset PAMI_IBV_ENABLE_DCT
-#export PAMI_IBV_ENABLE_DCT=1        #reduces MPI_Init() time at large scale
-#export PAMI_IBV_DEBUG_CQE=1         #CQE error debugging
+#export PAMI_IBV_ADAPTER_AFFINITY=1
+#export PAMI_IBV_DEVICE_NAME="mlx5_0:1,mlx5_3:1"
+export PAMI_IBV_ENABLE_OOO_AR=1                 #adaptive routing is default
+export PAMI_IBV_DISABLE_ODP=0                   #ODP (requires CAPI for performance)
+export PAMI_ENABLE_STRIPING=1                   #increases network bandwidth, also increases latency
+export PAMI_IBV_ENABLE_DCT=1                    #reduces MPI_Init() time at large scale
+#unset PAMI_IBV_ENABLE_DCT
+#export PAMI_IBV_QP_SERVICE_LEVEL=8
+#export PAMI_PMIX_DATACACHE=1
+#export PAMI_IBV_DEBUG_CQE=1                    #CQE error debugging
 #export PAMI_IBV_DEBUG_QP_TIMEOUT=22
 #export PAMI_IBV_DEBUG_RNR_RETRY=9
 #export OMPI_LD_PRELOAD_POSTPEND=$OLCF_SPECTRUM_MPI_ROOT/lib/libmpitrace.so
