@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/14 (started 2015/03/18)
+!REVISION: 2019/01/18 (started 2015/03/18)
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -233,6 +233,7 @@
          integer(INT_MPI), private:: ReqHandle=MPI_REQUEST_NULL !MPI request handle (for MPI communications with a request handle)
          real(8), private:: TimeStarted=-1d0      !time stamp of communication initiation
          real(8), private:: TimeSynced=-1d0       !time stamp of communication synchronization
+         type(object_lock_t), private:: ObjLock   !object lock
          contains
           procedure, private:: clean=>DataDescrClean            !clean a data descriptor
           procedure, private:: init=>DataDescrInit              !set up a data descriptor (initialization)
@@ -257,9 +258,12 @@
           procedure, private:: DataDescrUnpack                  !unpacks the DataDescr_t object from SimplePack_t (simple packet)
           generic, public:: unpack=>DataDescrUnpackNew,DataDescrUnpackInt,DataDescrUnpack
           procedure, public:: print_it=>DataDescrPrint          !prints the data descriptor
+          procedure, public:: lock=>DataDescrLock               !locks the data descriptor
+          procedure, public:: unlock=>DataDescrUnlock           !unlocks the data descriptor
+          final:: DataDescrDtor                                 !dtor
         end type DataDescr_t
         integer(INT_MPI), parameter, private:: DataDescr_PACK_LEN=6+WinMPI_PACK_LEN !packed length of DataDescr_t (in packing integers)
-        type(DataDescr_t), parameter, public:: data_descr_rnd_=& !random DataDescr_t object for internal testing only
+        type(DataDescr_t), public:: data_descr_rnd_=&           !random DataDescr_t object for internal testing only
             &DataDescr_t(C_NULL_PTR,13,win_mpi_rnd_,1024_INT_ADDR,256_INT_COUNT,R8,0_8,MPI_STAT_NONE,0)
  !Simple packet (plain integer array):
         type, public:: SimplePack_t
@@ -377,6 +381,9 @@
         private DataDescrUnpackInt
         private DataDescrUnpack
         private DataDescrPrint
+        private DataDescrLock
+        private DataDescrUnlock
+        public DataDescrDtor
  !SimplePack_t:
         private SimplePackReserve
         private SimplePackBufLen
@@ -440,7 +447,7 @@
 !----------------------------------------------
         subroutine ddss_update_stat(descr,ierr)
          implicit none
-         class(DataDescr_t), intent(in):: descr           !in: active data descriptor
+         class(DataDescr_t), intent(inout):: descr        !in: active data descriptor
          integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
          integer(INT_MPI):: errc,dir,rk,cm,mr
          integer(INT_COUNT):: data_size
@@ -1500,8 +1507,10 @@
         integer(INT_MPI):: errc
 
         errc=0
+        call this%lock()
         this%RankMPI=-1
         call this%WinMPI%clean(errc); if(errc.ne.0) errc=1
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrClean
@@ -1522,6 +1531,7 @@
         if(process_rank.ge.0) then
          if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
           if(data_vol.gt.0) then
+           call this%lock()
            elem_size=data_type_size(data_type,errc)
            if(errc.eq.0.and.elem_size.gt.0) then
             this%LocPtr=loc_ptr
@@ -1538,6 +1548,7 @@
            else
             errc=2
            endif
+           call this%unlock()
           else
            errc=3
           endif
@@ -1556,14 +1567,16 @@
 !Returns TRUE if the data descriptor is set, FALSE otherwise.
          implicit none
          logical:: ans                                       !out: answer
-         class(DataDescr_t), intent(in):: this               !in: data descriptor
+         class(DataDescr_t), intent(inout):: this            !in: data descriptor
          integer(INT_MPI), intent(out), optional:: ierr      !out: error code (0:success)
          integer(INT_MPI), intent(out), optional:: proc_rank !out: MPI process rank
          integer(INT_MPI), intent(out), optional:: mpi_comm  !out: MPI communicator
 
+         call this%lock()
          ans=(this%RankMPI.ge.0)
          if(ans.and.present(proc_rank)) proc_rank=this%RankMPI
          if(ans.and.present(mpi_comm)) mpi_comm=this%WinMPI%CommMPI
+         call this%unlock()
          if(present(ierr)) ierr=0
          return
         end function DataDescrIsSet
@@ -1572,16 +1585,18 @@
 !Returns the type of the data associated with the data descriptor.
         implicit none
         integer(INT_MPI):: data_typ                      !out: data type
-        class(DataDescr_t), intent(in):: this            !in: data descriptor
+        class(DataDescr_t), intent(inout):: this         !in: data descriptor
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
 
         errc=0
+        call this%lock()
         if(this%RankMPI.ge.0) then
          data_typ=this%DataType
         else
          data_typ=NO_TYPE; errc=-1
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end function DataDescrDataType
@@ -1590,16 +1605,18 @@
 !Returns the volume of the data associated with the data descriptor.
         implicit none
         integer(INT_COUNT):: data_vol                    !out: data volume (number of typed elements)
-        class(DataDescr_t), intent(in):: this            !in: data descriptor
+        class(DataDescr_t), intent(inout):: this         !in: data descriptor
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
 
         errc=0
+        call this%lock()
         if(this%RankMPI.ge.0) then
          data_vol=this%DataVol
         else
          data_vol=-1; errc=-1
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end function DataDescrDataVol
@@ -1608,17 +1625,19 @@
 !Returns the size (in bytes) of the data associated with the data descriptor.
         implicit none
         integer(INT_COUNT):: data_size                   !out: data size in bytes
-        class(DataDescr_t), intent(in):: this            !in: data descriptor
+        class(DataDescr_t), intent(inout):: this         !in: data descriptor
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
 
         errc=0
+        call this%lock()
         if(this%RankMPI.ge.0) then
          data_size=this%DataVol*int(data_type_size(this%DataType,errc),INT_COUNT)
          if(errc.ne.0) data_size=-1
         else
          data_size=-1; errc=-1
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end function DataDescrDataSize
@@ -1628,16 +1647,18 @@
 !corresponds to remote data, the result is undefined.
          implicit none
          type(C_PTR):: data_ptr                         !out: data pointer
-         class(DataDescr_t), intent(in):: this          !in: data descriptor
+         class(DataDescr_t), intent(inout):: this       !in: data descriptor
          integer(INT_MPI), intent(out), optional:: ierr !out: error code (0:success)
          integer(INT_MPI):: errc
 
          errc=0
+         call this%lock()
          if(this%RankMPI.ge.0) then
           data_ptr=this%LocPtr
          else
           data_ptr=C_NULL_PTR; errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function DataDescrGetDataPtr
@@ -1646,12 +1667,13 @@
 !Returns the current communication status of the data descriptor.
          implicit none
          integer(INT_MPI):: sts                         !out: communication status: {DDSS_COMM_NONE,DDSS_COMM_READ,DDSS_COMM_WRITE}
-         class(DataDescr_t), intent(in):: this          !in: data descriptor
+         class(DataDescr_t), intent(inout):: this       !in: data descriptor
          integer(INT_MPI), intent(out), optional:: ierr !out: error code (0:success)
          integer(INT_MPI), intent(out), optional:: req  !out: MPI communication request handle, if set
          integer(INT_MPI):: errc,creq
 
          errc=0; sts=DDSS_COMM_NONE; creq=MPI_REQUEST_NULL
+         call this%lock()
          if(this%StatMPI.eq.MPI_STAT_PROGRESS_NRM.or.this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then
           if(this%TransID.gt.0) then
            sts=DDSS_COMM_READ
@@ -1664,6 +1686,7 @@
          elseif(this%StatMPI.eq.MPI_STAT_ONESIDED_ERR) then
           errc=-1
          endif
+         call this%unlock()
          if(present(req)) req=creq
          if(present(ierr)) ierr=errc
          return
@@ -1688,6 +1711,7 @@
 
         errc=0; synced=.FALSE.
         if(present(local)) then; lcl=local; else; lcl=.FALSE.; endif !default is flushing both at the origin and target
+        call this%lock()
         if(this%RankMPI.ge.0) then
          if(this%StatMPI.eq.MPI_STAT_PROGRESS_NRM.or.this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then !first flush
           rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc) !get the (rank,window) entry
@@ -1833,6 +1857,7 @@
         else
          errc=8
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrFlushData
@@ -1840,11 +1865,12 @@
         subroutine DataDescrSyncData(this,ierr)
 !Synchronizes the private and public views of the data in case the data was modified locally.
         implicit none
-        class(DataDescr_t), intent(in):: this            !inout: data descriptor
+        class(DataDescr_t), intent(inout):: this         !inout: data descriptor
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
 
         errc=0
+        call this%lock()
         if(this%RankMPI.ge.0) then
          if(DEBUG.ge.2) then
           write(jo,'("#DEBUG[",i7,"]: WIN_SYNC: ",i11)') impir,this%WinMPI%Window !debug
@@ -1855,6 +1881,7 @@
         else
          errc=-1
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrSyncData
@@ -1872,6 +1899,7 @@
         real(8):: tm
 
         errc=0; DataDescrTestData=.FALSE.
+        call this%lock()
         if(this%RankMPI.ge.0) then
          if(this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then
           rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc) !get the (rank,window) entry
@@ -1988,6 +2016,7 @@
         else
          errc=8
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end function DataDescrTestData
@@ -2004,6 +2033,7 @@
         real(8):: tm
 
         errc=0
+        call this%lock()
         if(this%RankMPI.ge.0) then
          if(this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then
           rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc) !get the (rank,window) entry
@@ -2114,6 +2144,7 @@
         else
          errc=8
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrWaitData
@@ -2138,6 +2169,7 @@
 
         errc=0
         if(present(async)) then; asnc=async; else; asnc=MPI_ASYNC_NOT; endif !default is synchronous communication
+        call this%lock()
         if(asnc.eq.MPI_ASYNC_NOT.or.asnc.eq.MPI_ASYNC_NRM.or.asnc.eq.MPI_ASYNC_REQ) then
          if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
           if(this%RankMPI.ge.0) then
@@ -2209,6 +2241,7 @@
         else
          errc=16
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
 
@@ -2552,6 +2585,7 @@
 
         errc=0
         if(present(async)) then; asnc=async; else; asnc=MPI_ASYNC_NOT; endif !default is synchronous communication
+        call this%lock()
         if(asnc.eq.MPI_ASYNC_NOT.or.asnc.eq.MPI_ASYNC_NRM.or.asnc.eq.MPI_ASYNC_REQ) then
          if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
           if(this%RankMPI.ge.0) then
@@ -2623,6 +2657,7 @@
         else
          errc=16
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
 
@@ -2961,7 +2996,7 @@
 !It is the user responsibility to provide a large enough packet buffer.
         use extern_names, only: c_ptr_value
         implicit none
-        class(DataDescr_t), intent(in):: this                        !in: data descriptor
+        class(DataDescr_t), intent(inout):: this                     !in: data descriptor
         integer(ELEM_PACK_SIZE), intent(inout), contiguous, target:: packet(0:) !out: plain integer packet (length + descriptor data)
         integer(INT_MPI), intent(inout), optional:: ierr             !out: error code (0:success)
         integer(INT_COUNT), intent(out), optional:: pack_len         !out: total packet length (in packing integers)
@@ -2974,6 +3009,7 @@
         type(C_PTR):: cptr
 
         errc=0; if(present(pack_len)) pack_len=0
+        call this%lock()
         packet(0)=0; pl=0
         pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,isize_p); isize_p=c_ptr_value(this%LocPtr)
         pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%RankMPI
@@ -2988,6 +3024,7 @@
         else
          errc=1
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrPackInt
@@ -2995,16 +3032,19 @@
         subroutine DataDescrPackNew(this,packet,ierr)
 !Packs an object into a packet.
          implicit none
-         class(DataDescr_t), intent(in):: this          !in: data descriptor
+         class(DataDescr_t), intent(inout):: this       !in: data descriptor
          class(obj_pack_t), intent(inout):: packet      !inout: packet
          integer(INT_MPI), intent(out), optional:: ierr !out: error code
          integer(INT_MPI):: errc
 
+         errc=0
+         call this%lock()
          call pack_builtin(packet,this%RankMPI,errc)
          if(errc.eq.PACK_SUCCESS) call this%WinMPI%pack(packet,errc)
          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%Offset,errc)
          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%DataVol,errc)
          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%DataType,errc)
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end subroutine DataDescrPackNew
@@ -3016,7 +3056,7 @@
 !It is the user responsibility to provide a large enough packet buffer.
         use extern_names, only: c_ptr_value
         implicit none
-        class(DataDescr_t), intent(in):: this                !in: data descriptor
+        class(DataDescr_t), intent(inout):: this             !in: data descriptor
         class(SimplePack_t), intent(inout), target:: packet  !out: plain integer packet (length + descriptor data)
         integer(INT_MPI), intent(inout), optional:: ierr     !out: error code (0:success)
         integer(INT_COUNT), intent(out), optional:: pack_len !out: total packet length (in packing integers)
@@ -3029,6 +3069,7 @@
         type(C_PTR):: cptr
 
         errc=0; if(present(pack_len)) pack_len=0
+        call this%lock()
         if(packet%buf_len().lt.1+DataDescr_PACK_LEN) call packet%reserve_mem(int(1+DataDescr_PACK_LEN,INT_MPI),errc)
         if(errc.eq.0) then
          packet%Packet(0)=0; pl=0
@@ -3053,6 +3094,7 @@
         else
          errc=1
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrPack
@@ -3065,11 +3107,14 @@
          integer(INT_MPI), intent(out), optional:: ierr !out: error code
          integer(INT_MPI):: errc
 
+         errc=0
+         call this%lock()
          call unpack_builtin(packet,this%RankMPI,errc)
          if(errc.eq.PACK_SUCCESS) call this%WinMPI%unpack(packet,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%Offset,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataVol,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataType,errc)
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end subroutine DataDescrUnpackNew
@@ -3091,6 +3136,7 @@
         type(C_PTR):: cptr
 
         errc=0
+        call this%lock()
         cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p)
         if(present(pack_len)) pack_len=1+len_p
         if(len_p.eq.DataDescr_PACK_LEN) then
@@ -3109,6 +3155,7 @@
         else
          errc=1
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrUnpackInt
@@ -3130,6 +3177,7 @@
         type(C_PTR):: cptr
 
         errc=0
+        call this%lock()
         if(packet%body_len().ge.DataDescr_PACK_LEN) then
          cptr=c_loc(packet%Packet(0)); call c_f_pointer(cptr,len_p)
          if(present(pack_len)) pack_len=1+len_p
@@ -3152,6 +3200,7 @@
         else
          errc=-1
         endif
+        call this%unlock()
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrUnpack
@@ -3161,7 +3210,7 @@
         use stsubs, only: numchar
 !       use extern_names, only: print_c_ptr
         implicit none
-        class(DataDescr_t), intent(in):: this            !in: object to print
+        class(DataDescr_t), intent(inout):: this         !in: object to print
         integer(INT_MPI), intent(in), optional:: dev_out !in: output device
         integer(INT_MPI), intent(in), optional:: space   !in: left alignment
         character(32):: sfmt
@@ -3170,6 +3219,7 @@
 
         devo=jo; if(present(dev_out)) devo=dev_out
         sp=0; if(present(space)) sp=space
+        call this%lock()
         if(sp.gt.0) then; call numchar(int(sp),fl,sfmt); sfmt(fl+1:fl+2)='x,'; fl=fl+2; else; fl=0; endif
         write(devo,'('//sfmt(1:fl)//'"#Printing DataDescr_t object:")')
 !       write(devo,'('//sfmt(1:fl)//'"  C pointer at data origin: ")',ADVANCE='NO'); write(devo,*) this%LocPtr
@@ -3181,8 +3231,36 @@
         write(devo,'('//sfmt(1:fl)//'"  Current data transfer ID: ",i18)') this%TransID
         write(devo,'('//sfmt(1:fl)//'"  MPI status              : ",i18)') this%StatMPI
         write(devo,'('//sfmt(1:fl)//'"  MPI request handle      : ",i18)') this%ReqHandle
+        call this%unlock()
         return
         end subroutine DataDescrPrint
+!-------------------------------------
+        subroutine DataDescrLock(this)
+        implicit none
+        class(DataDescr_t), intent(inout):: this
+
+        call this%ObjLock%lock()
+!$OMP FLUSH(this)
+        return
+        end subroutine DataDescrLock
+!---------------------------------------
+        subroutine DataDescrUnlock(this)
+        implicit none
+        class(DataDescr_t), intent(inout):: this
+
+!$OMP FLUSH(this)
+        call this%ObjLock%unlock()
+        return
+        end subroutine DataDescrUnlock
+!-------------------------------------
+        subroutine DataDescrDtor(this)
+        implicit none
+        type(DataDescr_t):: this
+
+!$OMP FLUSH(this)
+        call this%clean()
+        return
+        end subroutine DataDescrDtor
 !==========================================================
         subroutine SimplePackReserve(this,vol,ierr,ext_buf)
 !Reserves a new memory buffer. If the memory buffer had already been reserved,

@@ -1,9 +1,9 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/02
+!REVISION: 2019/01/18
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -3578,15 +3578,18 @@
         subroutine TensLayoutSetLocation(this,data_descr,ierr)
 !Sets the phyiscal location of the tensor body.
          implicit none
-         class(tens_layout_t), intent(inout):: this  !inout: tensor body layout
-         class(DataDescr_t), intent(in):: data_descr !in: DDSS data descriptor for the tensor body (will be cloned)
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tens_layout_t), intent(inout):: this     !inout: tensor body layout
+         class(DataDescr_t), intent(inout):: data_descr !in: DDSS data descriptor for the tensor body (will be cloned)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
          if(this%layout.ne.TEREC_LAY_NONE) then
           if(data_descr%is_set().and.(.not.allocated(this%data_descr))) then
+           call data_descr%lock()
            allocate(this%data_descr,SOURCE=data_descr,STAT=errc); if(errc.ne.0) errc=TEREC_MEM_ALLOC_FAILED
+           call data_descr%unlock()
+!$OMP FLUSH(this)
           else
            errc=TEREC_INVALID_ARGS
           endif
@@ -3638,7 +3641,7 @@
         subroutine TensLayoutPackBase(this,packet,ierr)
 !Packs the object into a packet.
          implicit none
-         class(tens_layout_t), intent(in):: this     !in: tensor body layout
+         class(tens_layout_t), intent(inout):: this  !in: tensor body layout
          class(obj_pack_t), intent(inout):: packet   !inout: packet
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -3690,7 +3693,7 @@
 !Returns a C pointer to the stored tensor body.
          implicit none
          type(C_PTR):: body_p                        !out: C pointer to the tensor body
-         class(tens_layout_t), intent(in):: this     !in: tensor layout
+         class(tens_layout_t), intent(inout):: this  !in: tensor layout
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          logical:: locd
@@ -3717,7 +3720,7 @@
 !Returns the size of the stored tensor body in bytes.
          implicit none
          integer(INTL):: body_size                   !out: tensor body size in bytes
-         class(tens_layout_t), intent(in):: this     !in: tensor layout
+         class(tens_layout_t), intent(inout):: this  !in: tensor layout
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,dtk,dts
          logical:: locd
@@ -3841,9 +3844,9 @@
         subroutine TensLayoutFdimsPack(this,packet,ierr)
 !Packs the object into a packet.
          implicit none
-         class(tens_layout_fdims_t), intent(in):: this !in: tensor body layout
-         class(obj_pack_t), intent(inout):: packet     !inout: packet
-         integer(INTD), intent(out), optional:: ierr   !out: error code
+         class(tens_layout_fdims_t), intent(inout):: this !in: tensor body layout
+         class(obj_pack_t), intent(inout):: packet        !inout: packet
+         integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
          call this%pack_base(packet,errc)
@@ -4061,7 +4064,7 @@
         subroutine TensBodyPack(this,packet,ierr)
 !Packs the object into a packet.
          implicit none
-         class(tens_body_t), intent(in):: this       !in: tensor body
+         class(tens_body_t), intent(inout):: this    !in: tensor body
          class(obj_pack_t), intent(inout):: packet   !inout: packet
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: i,errc
@@ -4280,9 +4283,9 @@
         subroutine TensBodySetLocation(this,data_descr,ierr)
 !Sets the physical location of the tensor body via a DDSS data descriptor.
          implicit none
-         class(tens_body_t), intent(inout):: this         !inout: tensor body
-         class(DataDescr_t), intent(in):: data_descr      !in: DDSS data descriptor for tensor body (will be cloned)
-         integer(INTD), intent(out), optional:: ierr      !out: error code
+         class(tens_body_t), intent(inout):: this       !inout: tensor body
+         class(DataDescr_t), intent(inout):: data_descr !in: DDSS data descriptor for tensor body (will be cloned)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc
          logical:: layd,locd
 
@@ -4702,7 +4705,7 @@
         subroutine TensRcrsvPack(this,packet,ierr)
 !Packs the object into a packet.
          implicit none
-         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         class(tens_rcrsv_t), intent(inout):: this   !in: tensor
          class(obj_pack_t), intent(inout):: packet   !inout: packet
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -5091,9 +5094,9 @@
         subroutine TensRcrsvSetLocation(this,data_descr,ierr)
 !Sets the physical location of the tensor body data via a DDSS data descriptor.
          implicit none
-         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor
-         class(DataDescr_t), intent(in):: data_descr !in: DDSS data descriptor for tensor body (will be cloned)
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tens_rcrsv_t), intent(inout):: this      !inout: tensor
+         class(DataDescr_t), intent(inout):: data_descr !in: DDSS data descriptor for tensor body (will be cloned)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc,unres
          logical:: shpd,layd,locd
 
@@ -5272,7 +5275,7 @@
 !       at all for tensors without layout.
          implicit none
          type(tens_descr_t):: tens_descr                !out: tensor descriptor
-         class(tens_rcrsv_t), intent(in):: this         !in: tensor
+         class(tens_rcrsv_t), intent(inout):: this      !in: tensor
          integer(INTD), intent(out), optional:: ierr    !out: error code
          logical, intent(in), optional:: skip_location  !in: if TRUE, the tensor location will be omitted (defaults to FALSE), ignored if <only_signature>=TRUE or <only_header>=TRUE
          logical, intent(in), optional:: only_header    !in: if TRUE, the tensor body info (layout and location) will be omitted (defaults to FALSE), ignored if <only_signature>=TRUE

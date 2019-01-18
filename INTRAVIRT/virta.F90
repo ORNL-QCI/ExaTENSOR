@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/10
+!REVISION: 2019/01/18
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -1790,7 +1790,7 @@
          implicit none
          class(tens_cache_entry_t), pointer:: tens_entry_p !out: pointer to the found tensor cache entry or NULL
          class(tens_cache_t), intent(inout):: this         !in: tensor cache
-         class(tens_rcrsv_t), intent(in):: tensor          !in: tensor to look up (via its descriptor as the key)
+         class(tens_rcrsv_t), intent(inout):: tensor       !in: tensor to look up (via its descriptor as the key)
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,res
          class(*), pointer:: uptr

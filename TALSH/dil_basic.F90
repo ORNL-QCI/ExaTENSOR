@@ -1,8 +1,8 @@
 !BASIC FORTRAN PARAMETERS (Fortran-2003)
-!REVISION: 2018/12/07
+!REVISION: 2019/01/18
 
-!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -21,6 +21,9 @@
 
        module dil_basic
         use, intrinsic:: ISO_C_BINDING
+#ifndef NO_OMP
+        use omp_lib
+#endif
         implicit none
         public
 
@@ -125,5 +128,60 @@
 
 !BASIC CONSTANTS:
         character(C_CHAR), parameter, public:: CHAR_NULL=achar(0) !null character
+
+!OBJECT LOCK:
+        type, public:: object_lock_t
+#ifndef NO_OMP
+         integer(omp_nest_lock_kind), allocatable, private:: lock_omp
+#endif
+        contains
+         procedure, public:: lock=>ObjectLockLock
+         procedure, public:: unlock=>ObjectLockUnlock
+         final:: object_lock_dtor
+        end type object_lock_t
+        private ObjectLockLock
+        private ObjectLockUnlock
+        public object_lock_dtor
+
+       contains
+
+![object_lock_t]======================
+        subroutine ObjectLockLock(this)
+         implicit none
+         class(object_lock_t), intent(inout):: this
+#ifndef NO_OMP
+!$OMP FLUSH(this)
+         if(.not.allocated(this%lock_omp)) then
+          allocate(this%lock_omp)
+          call omp_init_nest_lock(this%lock_omp)
+!$OMP FLUSH(this)
+         endif
+         call omp_set_nest_lock(this%lock_omp)
+#endif
+         return
+        end subroutine ObjectLockLock
+!---------------------------------------
+        subroutine ObjectLockUnlock(this)
+         implicit none
+         class(object_lock_t), intent(inout):: this
+#ifndef NO_OMP
+!$OMP FLUSH(this)
+         if(allocated(this%lock_omp)) call omp_unset_nest_lock(this%lock_omp)
+#endif
+         return
+        end subroutine ObjectLockUnlock
+!----------------------------------------
+        subroutine object_lock_dtor(this)
+         implicit none
+         type(object_lock_t):: this
+#ifndef NO_OMP
+!$OMP FLUSH(this)
+         if(allocated(this%lock_omp)) then
+          call omp_destroy_nest_lock(this%lock_omp)
+          deallocate(this%lock_omp)
+         endif
+#endif
+         return
+        end subroutine object_lock_dtor
 
        end module dil_basic
