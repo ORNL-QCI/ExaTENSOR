@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/18 (started 2015/03/18)
+!REVISION: 2019/01/19 (started 2015/03/18)
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -237,6 +237,7 @@
          contains
           procedure, private:: clean=>DataDescrClean            !clean a data descriptor
           procedure, private:: init=>DataDescrInit              !set up a data descriptor (initialization)
+          procedure, public:: clone=>DataDescrClone             !clones a data descriptor
           procedure, public:: is_set=>DataDescrIsSet            !returns TRUE if the data descriptor is set, FALSE otherwise
           procedure, public:: data_type=>DataDescrDataType      !returns the type of the data associated with the data descriptor
           procedure, public:: data_volume=>DataDescrDataVol     !returns the data volume associated with the data descriptor
@@ -362,6 +363,7 @@
  !DataDescr_t:
         private DataDescrClean
         private DataDescrInit
+        private DataDescrClone
         private DataDescrIsSet
         private DataDescrDataType
         private DataDescrDataVol
@@ -1531,9 +1533,9 @@
         if(process_rank.ge.0) then
          if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
           if(data_vol.gt.0) then
-           call this%lock()
            elem_size=data_type_size(data_type,errc)
            if(errc.eq.0.and.elem_size.gt.0) then
+            call this%lock()
             this%LocPtr=loc_ptr
             this%RankMPI=process_rank
             this%WinMPI=win_mpi
@@ -1545,10 +1547,10 @@
             this%TimeStarted=-1d0
             this%TimeSynced=-1d0
             call MPI_Get_Displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
+            call this%unlock()
            else
             errc=2
            endif
-           call this%unlock()
           else
            errc=3
           endif
@@ -1562,6 +1564,20 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrInit
+!---------------------------------------------------
+        subroutine DataDescrClone(this,another,ierr)
+        implicit none
+        class(DataDescr_t), intent(inout):: this               !in: source data descriptor
+        class(DataDescr_t), allocatable, intent(out):: another !out: cloned data descriptor
+        integer(INTD), intent(out), optional:: ierr            !out: error code
+        integer(INTD):: errc
+
+        call this%lock()
+        allocate(another,SOURCE=this,STAT=errc)
+        call this%unlock()
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataDescrClone
 !------------------------------------------------------------------------
         function DataDescrIsSet(this,ierr,proc_rank,mpi_comm) result(ans)
 !Returns TRUE if the data descriptor is set, FALSE otherwise.
@@ -1645,51 +1661,51 @@
         function DataDescrGetDataPtr(this,ierr) result(data_ptr)
 !Returns a C pointer to the local data buffer. If the data descriptor
 !corresponds to remote data, the result is undefined.
-         implicit none
-         type(C_PTR):: data_ptr                         !out: data pointer
-         class(DataDescr_t), intent(inout):: this       !in: data descriptor
-         integer(INT_MPI), intent(out), optional:: ierr !out: error code (0:success)
-         integer(INT_MPI):: errc
+        implicit none
+        type(C_PTR):: data_ptr                         !out: data pointer
+        class(DataDescr_t), intent(inout):: this       !in: data descriptor
+        integer(INT_MPI), intent(out), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
 
-         errc=0
-         call this%lock()
-         if(this%RankMPI.ge.0) then
-          data_ptr=this%LocPtr
-         else
-          data_ptr=C_NULL_PTR; errc=-1
-         endif
-         call this%unlock()
-         if(present(ierr)) ierr=errc
-         return
+        errc=0
+        call this%lock()
+        if(this%RankMPI.ge.0) then
+         data_ptr=this%LocPtr
+        else
+         data_ptr=C_NULL_PTR; errc=-1
+        endif
+        call this%unlock()
+        if(present(ierr)) ierr=errc
+        return
         end function DataDescrGetDataPtr
 !---------------------------------------------------------------
         function DataDescrGetCommStat(this,ierr,req) result(sts)
 !Returns the current communication status of the data descriptor.
-         implicit none
-         integer(INT_MPI):: sts                         !out: communication status: {DDSS_COMM_NONE,DDSS_COMM_READ,DDSS_COMM_WRITE}
-         class(DataDescr_t), intent(inout):: this       !in: data descriptor
-         integer(INT_MPI), intent(out), optional:: ierr !out: error code (0:success)
-         integer(INT_MPI), intent(out), optional:: req  !out: MPI communication request handle, if set
-         integer(INT_MPI):: errc,creq
+        implicit none
+        integer(INT_MPI):: sts                         !out: communication status: {DDSS_COMM_NONE,DDSS_COMM_READ,DDSS_COMM_WRITE}
+        class(DataDescr_t), intent(inout):: this       !in: data descriptor
+        integer(INT_MPI), intent(out), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI), intent(out), optional:: req  !out: MPI communication request handle, if set
+        integer(INT_MPI):: errc,creq
 
-         errc=0; sts=DDSS_COMM_NONE; creq=MPI_REQUEST_NULL
-         call this%lock()
-         if(this%StatMPI.eq.MPI_STAT_PROGRESS_NRM.or.this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then
-          if(this%TransID.gt.0) then
-           sts=DDSS_COMM_READ
-          elseif(this%TransID.lt.0) then
-           sts=DDSS_COMM_WRITE
-          else
-           errc=-2
-          endif
-          if(this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) creq=this%ReqHandle
-         elseif(this%StatMPI.eq.MPI_STAT_ONESIDED_ERR) then
-          errc=-1
+        errc=0; sts=DDSS_COMM_NONE; creq=MPI_REQUEST_NULL
+        call this%lock()
+        if(this%StatMPI.eq.MPI_STAT_PROGRESS_NRM.or.this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then
+         if(this%TransID.gt.0) then
+          sts=DDSS_COMM_READ
+         elseif(this%TransID.lt.0) then
+          sts=DDSS_COMM_WRITE
+         else
+          errc=-2
          endif
-         call this%unlock()
-         if(present(req)) req=creq
-         if(present(ierr)) ierr=errc
-         return
+         if(this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) creq=this%ReqHandle
+        elseif(this%StatMPI.eq.MPI_STAT_ONESIDED_ERR) then
+         errc=-1
+        endif
+        call this%unlock()
+        if(present(req)) req=creq
+        if(present(ierr)) ierr=errc
+        return
         end function DataDescrGetCommStat
 !-----------------------------------------------------
         subroutine DataDescrFlushData(this,ierr,local)
@@ -3031,22 +3047,22 @@
 !----------------------------------------------------
         subroutine DataDescrPackNew(this,packet,ierr)
 !Packs an object into a packet.
-         implicit none
-         class(DataDescr_t), intent(inout):: this       !in: data descriptor
-         class(obj_pack_t), intent(inout):: packet      !inout: packet
-         integer(INT_MPI), intent(out), optional:: ierr !out: error code
-         integer(INT_MPI):: errc
+        implicit none
+        class(DataDescr_t), intent(inout):: this       !in: data descriptor
+        class(obj_pack_t), intent(inout):: packet      !inout: packet
+        integer(INT_MPI), intent(out), optional:: ierr !out: error code
+        integer(INT_MPI):: errc
 
-         errc=0
-         call this%lock()
-         call pack_builtin(packet,this%RankMPI,errc)
-         if(errc.eq.PACK_SUCCESS) call this%WinMPI%pack(packet,errc)
-         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%Offset,errc)
-         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%DataVol,errc)
-         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%DataType,errc)
-         call this%unlock()
-         if(present(ierr)) ierr=errc
-         return
+        errc=0
+        call this%lock()
+        call pack_builtin(packet,this%RankMPI,errc)
+        if(errc.eq.PACK_SUCCESS) call this%WinMPI%pack(packet,errc)
+        if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%Offset,errc)
+        if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%DataVol,errc)
+        if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%DataType,errc)
+        call this%unlock()
+        if(present(ierr)) ierr=errc
+        return
         end subroutine DataDescrPackNew
 !----------------------------------------------------------
         subroutine DataDescrPack(this,packet,ierr,pack_len)
@@ -3101,22 +3117,22 @@
 !------------------------------------------------------
         subroutine DataDescrUnpackNew(this,packet,ierr)
 !Unpacks an object from a packet.
-         implicit none
-         class(DataDescr_t), intent(out):: this         !out: data descriptor
-         class(obj_pack_t), intent(inout):: packet      !inout: packet
-         integer(INT_MPI), intent(out), optional:: ierr !out: error code
-         integer(INT_MPI):: errc
+        implicit none
+        class(DataDescr_t), intent(out):: this         !out: data descriptor
+        class(obj_pack_t), intent(inout):: packet      !inout: packet
+        integer(INT_MPI), intent(out), optional:: ierr !out: error code
+        integer(INT_MPI):: errc
 
-         errc=0
-         call this%lock()
-         call unpack_builtin(packet,this%RankMPI,errc)
-         if(errc.eq.PACK_SUCCESS) call this%WinMPI%unpack(packet,errc)
-         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%Offset,errc)
-         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataVol,errc)
-         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataType,errc)
-         call this%unlock()
-         if(present(ierr)) ierr=errc
-         return
+        errc=0
+        call this%lock()
+        call unpack_builtin(packet,this%RankMPI,errc)
+        if(errc.eq.PACK_SUCCESS) call this%WinMPI%unpack(packet,errc)
+        if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%Offset,errc)
+        if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataVol,errc)
+        if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataType,errc)
+        call this%unlock()
+        if(present(ierr)) ierr=errc
+        return
         end subroutine DataDescrUnpackNew
 !---------------------------------------------------------------
         subroutine DataDescrUnpackInt(this,packet,ierr,pack_len)
@@ -3239,8 +3255,10 @@
         implicit none
         class(DataDescr_t), intent(inout):: this
 
+        !write(*,*, ADVANCE='NO') 'Locking data descriptor ...' !debug
         call this%ObjLock%lock()
 !$OMP FLUSH(this)
+        !write(*,*) 'Locked' !debug
         return
         end subroutine DataDescrLock
 !---------------------------------------
@@ -3248,6 +3266,7 @@
         implicit none
         class(DataDescr_t), intent(inout):: this
 
+        !write(*,*) 'Unlocked data descriptor' !debug
 !$OMP FLUSH(this)
         call this%ObjLock%unlock()
         return
@@ -3257,8 +3276,6 @@
         implicit none
         type(DataDescr_t):: this
 
-!$OMP FLUSH(this)
-        call this%clean()
         return
         end subroutine DataDescrDtor
 !==========================================================

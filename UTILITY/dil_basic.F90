@@ -1,5 +1,5 @@
 !BASIC FORTRAN PARAMETERS (Fortran-2003)
-!REVISION: 2019/01/18
+!REVISION: 2019/01/19
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -132,12 +132,13 @@
 !OBJECT LOCK:
         type, public:: object_lock_t
 #ifndef NO_OMP
-         integer(omp_nest_lock_kind), allocatable, private:: lock_omp
+         integer(omp_nest_lock_kind), private:: lock_omp
+         integer, private:: initialized=-1
 #endif
-        contains
-         procedure, public:: lock=>ObjectLockLock
-         procedure, public:: unlock=>ObjectLockUnlock
-         final:: object_lock_dtor
+         contains
+          procedure, public:: lock=>ObjectLockLock
+          procedure, public:: unlock=>ObjectLockUnlock
+          final:: object_lock_dtor
         end type object_lock_t
         private ObjectLockLock
         private ObjectLockUnlock
@@ -145,28 +146,45 @@
 
        contains
 
-![object_lock_t]======================
+![object_lock_t]=======================
         subroutine ObjectLockLock(this)
          implicit none
          class(object_lock_t), intent(inout):: this
+         integer:: init_state
 #ifndef NO_OMP
-!$OMP FLUSH(this)
-         if(.not.allocated(this%lock_omp)) then
-          allocate(this%lock_omp)
+!$OMP ATOMIC CAPTURE
+         init_state=this%initialized
+         this%initialized=max(this%initialized,0)
+!$OMP END ATOMIC
+         if(init_state.lt.0) then
           call omp_init_nest_lock(this%lock_omp)
+!$OMP ATOMIC WRITE
+          this%initialized=1
 !$OMP FLUSH(this)
+         elseif(init_state.eq.0) then
+          do while(init_state.eq.0)
+!$OMP ATOMIC READ
+           init_state=this%initialized
+          enddo
          endif
          call omp_set_nest_lock(this%lock_omp)
 #endif
          return
         end subroutine ObjectLockLock
-!---------------------------------------
+!----------------------------------------
         subroutine ObjectLockUnlock(this)
          implicit none
          class(object_lock_t), intent(inout):: this
+         integer:: init_state,ax,bx
 #ifndef NO_OMP
 !$OMP FLUSH(this)
-         if(allocated(this%lock_omp)) call omp_unset_nest_lock(this%lock_omp)
+!$OMP ATOMIC READ
+         init_state=this%initialized
+         if(init_state.gt.0) then
+          call omp_unset_nest_lock(this%lock_omp)
+         else
+          ax=0; bx=1; bx=bx/ax !crash
+         endif
 #endif
          return
         end subroutine ObjectLockUnlock
@@ -174,11 +192,18 @@
         subroutine object_lock_dtor(this)
          implicit none
          type(object_lock_t):: this
+         integer:: init_state
 #ifndef NO_OMP
+         init_state=0
 !$OMP FLUSH(this)
-         if(allocated(this%lock_omp)) then
+         do while(init_state.eq.0)
+!$OMP ATOMIC READ
+          init_state=this%initialized
+         enddo
+         if(init_state.gt.0) then
+!$OMP ATOMIC WRITE
+          this%initialized=-1
           call omp_destroy_nest_lock(this%lock_omp)
-          deallocate(this%lock_omp)
          endif
 #endif
          return
