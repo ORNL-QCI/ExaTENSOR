@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/19
+!REVISION: 2019/01/20
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -3587,7 +3587,6 @@
          if(this%layout.ne.TEREC_LAY_NONE) then
           if(data_descr%is_set().and.(.not.allocated(this%data_descr))) then
            call data_descr%clone(this%data_descr,errc); if(errc.ne.0) errc=TEREC_MEM_ALLOC_FAILED
-           !allocate(this%data_descr,SOURCE=data_descr,STAT=errc); if(errc.ne.0) errc=TEREC_MEM_ALLOC_FAILED
           else
            errc=TEREC_INVALID_ARGS
           endif
@@ -3988,7 +3987,10 @@
 
          errc=another%subtensors%duplicate(this%subtensors)
          if(errc.eq.GFC_SUCCESS) then
-          if(allocated(another%layout)) allocate(this%layout,SOURCE=another%layout,STAT=errc)
+          if(allocated(another%layout)) then
+           allocate(this%layout,SOURCE=another%layout,STAT=errc)
+           if(allocated(this%layout%data_descr)) call this%layout%data_descr%clear_lock()
+          endif
           if(errc.eq.0) then
            this%num_subtensors=another%num_subtensors
            this%data_type=another%data_type

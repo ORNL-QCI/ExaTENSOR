@@ -1,10 +1,10 @@
 !ExaTENSOR: Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/05
+!REVISION: 2019/01/20
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -2282,10 +2282,10 @@
           integer(INTD), intent(out):: jerr
           integer(INTD):: jj
 
-          jerr=0; max_branch_fac=0
+          jerr=0; max_branch_fac=2
           do jj=1,brs
            if(branch_fac(jj).ge.2) then
-            if(branch_fac(jj).gt.max_branch_fac) max_branch_fac=branch_fac(jj)
+            max_branch_fac=max(max_branch_fac,branch_fac(jj))
            else
             jerr=-1; exit
            endif

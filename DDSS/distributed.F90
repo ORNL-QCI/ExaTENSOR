@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/19 (started 2015/03/18)
+!REVISION: 2019/01/20 (started 2015/03/18)
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -259,8 +259,9 @@
           procedure, private:: DataDescrUnpack                  !unpacks the DataDescr_t object from SimplePack_t (simple packet)
           generic, public:: unpack=>DataDescrUnpackNew,DataDescrUnpackInt,DataDescrUnpack
           procedure, public:: print_it=>DataDescrPrint          !prints the data descriptor
-          procedure, public:: lock=>DataDescrLock               !locks the data descriptor
-          procedure, public:: unlock=>DataDescrUnlock           !unlocks the data descriptor
+          procedure, private:: lock=>DataDescrLock              !locks the data descriptor
+          procedure, private:: unlock=>DataDescrUnlock          !unlocks the data descriptor
+          procedure, public:: clear_lock=>DataDescrClearLock    !clears the lock after cloning DataDescr_t
           final:: DataDescrDtor                                 !dtor
         end type DataDescr_t
         integer(INT_MPI), parameter, private:: DataDescr_PACK_LEN=6+WinMPI_PACK_LEN !packed length of DataDescr_t (in packing integers)
@@ -385,6 +386,7 @@
         private DataDescrPrint
         private DataDescrLock
         private DataDescrUnlock
+        private DataDescrClearLock
         public DataDescrDtor
  !SimplePack_t:
         private SimplePackReserve
@@ -1574,6 +1576,7 @@
 
         call this%lock()
         allocate(another,SOURCE=this,STAT=errc)
+        call another%clear_lock()
         call this%unlock()
         if(present(ierr)) ierr=errc
         return
@@ -3271,6 +3274,14 @@
         call this%ObjLock%unlock()
         return
         end subroutine DataDescrUnlock
+!------------------------------------------
+        subroutine DataDescrClearLock(this)
+        implicit none
+        class(DataDescr_t), intent(inout):: this
+!$OMP FLUSH(this)
+        call this%ObjLock%clear()
+        return
+        end subroutine DataDescrClearLock
 !-------------------------------------
         subroutine DataDescrDtor(this)
         implicit none
