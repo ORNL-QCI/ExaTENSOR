@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/17
+!REVISION: 2019/01/20
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -3066,17 +3066,13 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (can be empty)
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-!        logical:: delivered
 
+!$OMP FLUSH(this)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock()
            if(associated(this%resource)) then
-            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
-             !delivered=this%sync(errc,wait=.TRUE.) !`Impossible to complete communication by another thread
-             !if((.not.delivered).or.(errc.ne.0)) errc=-5
-             errc=-5
-            endif
+            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) errc=-5 !trap
             if(errc.eq.0) then
              if(associated(this%cache_entry)) then
               call this%cache_entry%release_resource(errc,error_if_active=.FALSE.); if(errc.ne.0) errc=-4
@@ -3104,15 +3100,11 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,ier
-!        logical:: delivered
 
+!$OMP FLUSH(this)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
-           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
-            !delivered=this%sync(errc,wait=.TRUE.) !`Impossible to complete communication by another thread
-            !if((.not.delivered).or.(errc.ne.0)) errc=-4
-            errc=-4
-           endif
+           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) errc=-4 !trap
            this%talsh_tens=>NULL()
            call this%release_rsc(ier); if(ier.ne.0.and.errc.eq.0) errc=-3
            if(associated(this%resource)) then
