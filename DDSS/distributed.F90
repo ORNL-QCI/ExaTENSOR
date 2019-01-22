@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/20 (started 2015/03/18)
+!REVISION: 2019/01/22 (started 2015/03/18)
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -20,6 +20,11 @@
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
+!IMPORTANT NOTES:
+! * Cloning DataDescr_t, either as a standalone object or as a component of a larger object,
+!   must employ DataDescr_t.clone() method. Otherwise, for example when using sourced memory
+!   allocation, one must subsequently call DataDescr_t.clear_lock() method on the just
+!   created DataDescr_t clone!
 !CONCEPTS:
 ! * Each MPI process can participate in one or more distributed memory spaces (DMS),
 !   where each distributed memory space is defined within a specific MPI communicator.

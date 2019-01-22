@@ -59,6 +59,7 @@
              &basis_func_supp_t,basis_func_gauss_t,basis_func_t,&
              &subspace_basis_t,subspace_t,h_space_t,h_index_t,&
              &BASIS_ABSTRACT
+       public get_num_segments
  !Tensors:
        public hspace_reg_t,tens_signature_t,tens_shape_t,tens_header_t,&
              &tens_simple_part_t,tens_layout_t,tens_layout_fdims_t,&

@@ -1,7 +1,7 @@
 !ExaTENSOR: Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/20
+!REVISION: 2019/01/22
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -311,6 +311,7 @@
  !Non-member:
         public build_basis_hierarchy_abstract   !establishes a hierarchy for an abstract basis with possible symmetries
         public build_basis_hierarchy_real_space !establishes a hierarchy for a real space supported basis with possible symmetries
+        public get_num_segments !helper function to calculate the number of segments in a given range with a max segment limit
  !real_vec_t:
         private RealVecCtor
         private RealVecDimsn
@@ -2960,5 +2961,17 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine build_basis_hierarchy_real_space
+!-------------------------------------------------------------------------
+        function get_num_segments(range_extent,seg_limit) result(num_segs)
+!Helper function to calculate the number of segments in a given range with a max segment limit.
+         implicit none
+         integer(INTL):: num_segs                 !out: number of segments of length at most <seg_limit>
+         integer(INTL), intent(in):: range_extent !in: range extent
+         integer(INTL), intent(in):: seg_limit    !in: segment length limit
+
+         num_segs=0
+         if(range_extent.gt.0.and.seg_limit.gt.0) num_segs=(range_extent-1_INTL)/seg_limit+1_INTL
+         return
+        end function get_num_segments
 
        end module subspaces
