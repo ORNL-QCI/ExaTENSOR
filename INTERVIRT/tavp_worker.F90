@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/20
+!REVISION: 2019/01/22
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2553,7 +2553,7 @@
 !Returns the current communication status on the tensor operand body data.
          implicit none
          integer(INTD):: stat                        !out: communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
-         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD), intent(out), optional:: req  !out: MPI communication request handle
          integer(INTD):: errc,sts,creq
@@ -2595,7 +2595,7 @@
            errc=-2
           endif
          else
-          errc=-1
+          if(errc.ne.0) errc=-1
          endif
          if(errc.ne.0.and.VERBOSE) then
 !$OMP CRITICAL (IO)
@@ -3089,6 +3089,12 @@
           endif
          else
           if(errc.ne.0) errc=-1
+         endif
+         if(errc.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.release_rsc): Error ",i11)') errc
+!$OMP END CRITICAL (IO)
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return

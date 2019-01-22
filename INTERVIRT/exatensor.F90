@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/01/17
+!REVISION: 2019/01/22
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -154,6 +154,7 @@
        public exatns_stop                 !stops the ExaTENSOR DSVP (Driver only)
        public exatns_sync                 !synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions will be completed (Driver only)
        public exatns_process_role         !returns the role of the current MPI process (called by Any)
+       public exatns_virtual_depth        !returns the depth of the TAVP-MNG hierarchy (does not include TAVP-WRK)
        public exatns_status               !returns the status of the ExaTENSOR runtime plus statistics, if needed (Driver only)
        public exatns_dump_cache           !dumps the tensor cache content for each TAVP into its log file (Driver only, debug)
  !Parser/interpreter (Driver only):
@@ -349,6 +350,7 @@
         write(jo,'("#MSG(exatensor): Building the process hierarchy and determining roles:")')
         call determine_process_role(errc) !builds NAT and determines process roles
         if(errc.eq.0) then
+         write(jo,'("#MSG(exatensor): Info: Depth of the managing hierarchy = ",i2)') mng_tree_depth
          write(jo,'("#MSG(exatensor): Info: Role = ",i2,": Role rank/size = ",i9,"/",i9)') process_role,role_rank,role_size
          write(jo,'("#MSG(exatensor): Info: Global rank of the driver process = ",i9)') driver_gl_rank !this MPI process will return
          write(jo,'("#MSG(exatensor): Info: Global rank of the top manager process = ",i9)') top_manager_gl_rank
@@ -655,6 +657,7 @@
             jc=jc-1
            enddo hloop
            if(jerr.eq.0) then
+            mng_tree_depth=comp_system%get_num_aggr_levels()
             role_rank=tavp_role_rank(int(my_rank,INTD),process_role)
             driver_gl_rank=num_procs-1
             top_manager_gl_rank=exa_num_workers
@@ -806,7 +809,7 @@
         implicit none
         integer(INTD):: ierr                              !out: error code
         integer(INTD), intent(out):: role                 !out: process role
-        integer(INTD), intent(out), optional:: role_total !out: total number of MPI processes of this role
+        integer(INTD), intent(out), optional:: role_total !out: total number of MPI processes in this role
 
         ierr=EXA_SUCCESS; role=process_role
         if(present(role_total)) then
@@ -818,6 +821,17 @@
         endif
         return
        end function exatns_process_role
+!-------------------------------------------------------
+       function exatns_virtual_depth(depth) result(ierr)
+!Returns the depth of the TAVP-MNG hierarchy.
+        implicit none
+        integer(INTD):: ierr               !out: error code
+        integer(INTD), intent(out):: depth !out: depth of the TAVP-MNG hierarchy
+
+        ierr=EXA_SUCCESS
+        depth=comp_system%get_num_aggr_levels(ierr); if(ierr.ne.0) ierr=EXA_ERR_UNABLE_COMPLETE
+        return
+       end function exatns_virtual_depth
 !----------------------------------------------
        function exatns_status(sts) result(ierr)
 !Returns the current status of the ExaTENSOR runtime.

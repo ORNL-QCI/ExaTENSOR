@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/18
+!REVISION: 2019/01/22
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -372,6 +372,7 @@
         public exatns_method_i
 !GLOBAL DATA:
  !MPI process specialization (TAVP role, set by exatns_start):
+        integer(INT_MPI), public:: mng_tree_depth=0           !depths of the TAVP-MNG hierarchy
         integer(INT_MPI), public:: process_role=EXA_NO_ROLE   !MPI process role (see above)
         integer(INT_MPI), public:: role_comm=MPI_COMM_NULL    !role-specific MPI communicator
         integer(INT_MPI), public:: role_size=0                !size of the role-specific MPI communicator

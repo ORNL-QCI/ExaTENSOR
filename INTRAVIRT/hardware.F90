@@ -1,9 +1,9 @@
 !ExaTENSOR hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/10/12
+!REVISION: 2019/01/22
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -95,15 +95,17 @@
         end type compute_node_t
  !Hierarchical computing system representation:
         type, public:: comp_system_t
-         integer(INTL), private:: num_phys_nodes=0 !number of physical nodes in the system, N: [1:N]
-         integer(INTL), private:: num_virt_nodes=0 !number of virtual (simple + aggregated) nodes in the system, M: [0:M-1] = [0:N-1] + [N:M-1]
-         type(vec_tree_t), private:: virt_nodes    !virtual nodes: first <num_phys_nodes> are physical, rest are their aggregates (virtual)
+         integer(INTL), private:: num_phys_nodes=0  !number of physical nodes in the system, N: [1:N]
+         integer(INTL), private:: num_virt_nodes=0  !number of virtual (simple + aggregated) nodes in the system, M: [0:M-1] = [0:N-1] + [N:M-1]
+         integer(INTD), private:: num_aggr_levels=0 !number of levels in the virtual node hierarchy (>=1), excludes leaves
+         type(vec_tree_t), private:: virt_nodes     !virtual nodes: first <num_phys_nodes> are physical, rest are their aggregates (virtual)
          contains
           procedure, private:: CompSystemCtorSimple                         !simple dichotomy ctor
           generic, public:: comp_system_ctor=>CompSystemCtorSimple          !ctors
           procedure, public:: get_num_phys_nodes=>CompSystemGetNumPhysNodes !returns the total number of physical nodes in the system
           procedure, public:: get_num_virt_nodes=>CompSystemGetNumVirtNodes !returns the total number of virtual nodes in the system
           procedure, public:: get_num_aggr_nodes=>CompSystemGetNumAggrNodes !returns the total number of aggregate virtual nodes (inner nodes of the tree)
+          procedure, public:: get_num_aggr_levels=>CompSystemGetNumAggrLevels!returns the number of levels in the inner virtual hierarchy (excludes leaves)
           procedure, public:: get_root_id=>CompSystemGetRootId              !returns the id of the computer system root
           procedure, public:: get_ancestor_id=>CompSystemGetAncestorId      !returns the id of an ancestor of a specific node
           procedure, public:: get_sibling_id=>CompSystemGetSiblingId        !returns the id of a left/right sibling of a specific node
@@ -124,6 +126,7 @@
         private CompSystemGetNumPhysNodes
         private CompSystemGetNumVirtNodes
         private CompSystemGetNumAggrNodes
+        private CompSystemGetNumAggrLevels
         private CompSystemGetRootId
         private CompSystemGetAncestorId
         private CompSystemGetSiblingId
@@ -192,7 +195,7 @@
          this%num_phys_nodes=num_procs; if(this%num_phys_nodes.le.0) errc=-19
          !write(CONS_OUT,'(i8," physical nodes -> ")',ADVANCE='NO') this%num_phys_nodes
 !Build the hierarchical virtual computing system representation for <num_phys_nodes> nodes:
-         this%num_virt_nodes=0_INTL
+         this%num_virt_nodes=0_INTL; this%num_aggr_levels=0
          if(errc.eq.0) then
           if(present(min_aggr_size)) then; mas=min_aggr_size; else; mas=1; endif
           if(present(branch_fac)) then; brf=branch_fac; else; brf=2; endif
@@ -222,6 +225,7 @@
                   match=.TRUE.
                   tloop: do while(match)
                    match=.FALSE.
+                   this%num_aggr_levels=this%num_aggr_levels+1
                    do while(errc.eq.GFC_SUCCESS)
   !Process the current tree vertex;
                     up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) then; errc=-18; exit tloop; endif
@@ -341,6 +345,19 @@
          if(present(ierr)) ierr=errc
          return
         end function CompSystemGetNumAggrNodes
+!-----------------------------------------------------------------
+        function CompSystemGetNumAggrLevels(this,ierr) result(num)
+         implicit none
+         integer(INTD):: num                         !out: number of aggregated levels in the inner virtual hierarchy
+         class(comp_system_t), intent(in):: this     !in: hierarchical computer system
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         num=this%num_aggr_levels
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetNumAggrLevels
 !---------------------------------------------------------
         function CompSystemGetRootId(this,ierr) result(id)
          implicit none
