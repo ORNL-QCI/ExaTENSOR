@@ -1616,8 +1616,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkAcquireResource
-!------------------------------------------------------------------------
-        subroutine TensEntryWrkReleaseResource(this,ierr,error_if_active)
+!---------------------------------------------------------------------------------
+        subroutine TensEntryWrkReleaseResource(this,ierr,error_if_active,released)
 !Releases resource for the tensor cache entry if it has not been released yet.
 !If <error_if_active> is TRUE, an attempt to release resource for a persistent
 !tensor cache entry or a tensor cache entry currently in use or a tensor cache
@@ -1627,10 +1627,11 @@
          class(tens_entry_wrk_t), intent(inout):: this   !inout: active tensor cache entry
          integer(INTD), intent(out), optional:: ierr     !out: error code
          logical, intent(in), optional:: error_if_active !in: if TRUE, an error will be reported if the tensor cache entry is persistent and/or still in use
+         logical, intent(out), optional:: released       !out: set to TRUE if the resource has actually been released, FALSE otherwise
          integer(INTD):: errc,refc,resc,usec
-         logical:: lockable,pers
+         logical:: lockable,pers,rls
 
-         lockable=this%is_lockable()
+         rls=.FALSE.; lockable=this%is_lockable()
          if(lockable) call this%lock() !some tensor cache entries being destructed do not have locks (temporary allocated in tens_cache_t.store())
          if(.not.this%resource%is_empty(errc)) then
           if(errc.eq.0) then
@@ -1640,7 +1641,9 @@
             if(errc.eq.0) then
              call this%set_up_to_date(.FALSE.)
              call this%resource%free_buffer(errc)
-             if(errc.ne.0) then
+             if(errc.eq.0) then
+              rls=.TRUE.
+             else
               if(VERBOSE) then
                refc=this%get_ref_count(); resc=this%resource%get_ref_count()
 !$OMP CRITICAL (IO)
@@ -1679,6 +1682,7 @@
           flush(CONS_OUT)
          endif
          if(lockable) call this%unlock() !some tensor cache entries being destructed do not have locks
+         if(present(released)) released=rls
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkReleaseResource
@@ -2560,9 +2564,10 @@
          class(tens_rcrsv_t), pointer:: tensor
          class(DataDescr_t), pointer:: descr
 
+!$OMP FLUSH(this)
          stat=DS_OPRND_NO_COMM; creq=MPI_REQUEST_NULL
          if(this%is_active(errc)) then
-          if(errc.eq.0) then
+          if(errc.eq.DSVP_SUCCESS) then
            call this%lock()
            tensor=>this%get_tensor(errc)
            if(errc.eq.0) then
@@ -2595,7 +2600,7 @@
            errc=-2
           endif
          else
-          if(errc.ne.0) errc=-1
+          if(errc.ne.DSVP_SUCCESS) errc=-1
          endif
          if(errc.ne.0.and.VERBOSE) then
 !$OMP CRITICAL (IO)
@@ -2845,7 +2850,7 @@
             if(.not.skip_acc) then !non-accumulator temporary tensors do not carry DDSS descriptors and do not require upload
              located=this%is_located(errc,remote=remote)
              if(errc.eq.0.and.located) then
-              if(remote.or.accumulator) then !`accumulator tensor operands should only be uploaded periodically, not every single time
+              if(remote.or.accumulator) then
                descr=>this%tensor%get_data_descr(errc)
                if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
                 if(descr%is_set(errc)) then
@@ -3065,22 +3070,49 @@
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (can be empty)
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,sts
+         logical:: rls
 
 !$OMP FLUSH(this)
          if(this%is_active(errc)) then
-          if(errc.eq.0) then
+          if(errc.eq.DSVP_SUCCESS) then
            call this%lock()
            if(associated(this%resource)) then
-            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) errc=-5 !trap
+            sts=this%get_comm_stat(errc)
             if(errc.eq.0) then
              if(associated(this%cache_entry)) then
-              call this%cache_entry%release_resource(errc,error_if_active=.FALSE.); if(errc.ne.0) errc=-4
+              call this%cache_entry%release_resource(errc,error_if_active=.FALSE.,released=rls)
+              if(errc.eq.0) then
+               if(rls.and.(sts.ne.DS_OPRND_NO_COMM)) then !trap
+                if(VERBOSE) then
+!$OMP CRITICAL (IO)
+                 write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.release_rsc): Resource released on active communication: ",i11)')&
+                 &sts
+!$OMP END CRITICAL (IO)
+                 flush(CONS_OUT)
+                endif
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
              else
               if(this%resource%get_ref_count().eq.1) then !only one (last) tensor operand is associated with this resource
-               call this%resource%free_buffer(errc); if(errc.ne.0) errc=-3 !free the resource memory buffer
+               if(sts.eq.DS_OPRND_NO_COMM) then
+                call this%resource%free_buffer(errc); if(errc.ne.0) errc=-5 !free the resource memory buffer
+               else
+                errc=-4
+               endif
               endif
              endif
+            else
+             if(VERBOSE) then
+!$OMP CRITICAL (IO)
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.release_rsc): get_comm_stat() error ",i11)') errc
+!$OMP END CRITICAL (IO)
+              flush(CONS_OUT)
+             endif
+             errc=-3
             endif
            endif
            call this%unlock()
@@ -3088,13 +3120,14 @@
            errc=-2
           endif
          else
-          if(errc.ne.0) errc=-1
+          if(errc.ne.DSVP_SUCCESS) errc=-1
          endif
          if(errc.ne.0.and.VERBOSE) then
 !$OMP CRITICAL (IO)
-          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.release_rsc): Error ",i11)') errc
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.release_rsc): Thread ",i4,": Error ",i11)') omp_get_thread_num(),errc
 !$OMP END CRITICAL (IO)
           flush(CONS_OUT)
+          call crash() !debug
          endif
          if(present(ierr)) ierr=errc
          return
@@ -3105,14 +3138,13 @@
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc
 
 !$OMP FLUSH(this)
          if(this%is_active(errc)) then
-          if(errc.eq.0) then
-           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) errc=-4 !trap
+          if(errc.eq.DSVP_SUCCESS) then
            this%talsh_tens=>NULL()
-           call this%release_rsc(ier); if(ier.ne.0.and.errc.eq.0) errc=-3
+           call this%release_rsc(errc); if(errc.ne.0) errc=-3
            if(associated(this%resource)) then
             call this%resource%decr_ref_count()
             this%resource=>NULL()
