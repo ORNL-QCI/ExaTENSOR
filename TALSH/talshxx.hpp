@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2019/01/31
+REVISION: 2019/02/01
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -40,7 +40,7 @@ namespace talsh{
 
 //Constants:
 
-static const std::size_t DEFAULT_HOST_BUFFER_SIZE = TALSH_NO_HOST_BUFFER;
+static const std::size_t DEFAULT_HOST_BUFFER_SIZE = TALSH_NO_HOST_BUFFER; //small unused buffer will be allocated
 
 
 //Tensor data kind (static type VS numeric data kind constant conversions):
@@ -56,6 +56,7 @@ struct TensorData<float>{
  static constexpr int kind = R4;
  static constexpr bool supported = true;
  static constexpr float unity = 1.0f;
+ static constexpr float zero = 0.0f;
 };
 
 template <>
@@ -63,6 +64,7 @@ struct TensorData<double>{
  static constexpr int kind = R8;
  static constexpr bool supported = true;
  static constexpr double unity = 1.0;
+ static constexpr double zero = 0.0;
 };
 
 template <>
@@ -70,6 +72,7 @@ struct TensorData<std::complex<float>>{
  static constexpr int kind = C4;
  static constexpr bool supported = true;
  static constexpr std::complex<float> unity = {1.0f,0.0f};
+ static constexpr std::complex<float> zero = {0.0f,0.0f};
 };
 
 template <>
@@ -77,6 +80,7 @@ struct TensorData<std::complex<double>>{
  static constexpr int kind = C8;
  static constexpr bool supported = true;
  static constexpr std::complex<double> unity = {1.0,0.0};
+ static constexpr std::complex<double> zero = {0.0,0.0};
 };
 
 template <int talsh_data_kind> struct TensorDataType{using value = void;};
@@ -106,16 +110,27 @@ class Tensor{
 
 public:
 
- /** Ctor **/
+ /** Ctor (TAL-SH provides tensor data storage) **/
  template <typename T>
  Tensor(const std::initializer_list<std::size_t> signature, //tensor signature (identifier): signature[0:rank-1]
         const std::initializer_list<int> dims,              //tensor dimension extents: dims[0:rank-1]
         const T init_val);                                  //scalar initialization value (its type will define tensor element data kind)
+ /** Ctor (TAL-SH provides tensor data storage) **/
+ template <typename T>
+ Tensor(const std::vector<std::size_t> & signature,         //tensor signature (identifier): signature[0:rank-1]
+        const std::vector<int> & dims,                      //tensor dimension extents: dims[0:rank-1]
+        const T init_val);                                  //scalar initialization value (its type will define tensor element data kind)
 
- /** Ctor **/
+ /** Ctor (Application provides tensor data storage) **/
  template <typename T>
  Tensor(const std::initializer_list<std::size_t> signature, //tensor signature (identifier): signature[0:rank-1]
         const std::initializer_list<int> dims,              //tensor dimension extents: dims[0:rank-1]
+        T * ext_mem,                                        //pointer to an external memory storage where the tensor body will reside
+        const T * init_val);                                //optional scalar initialization value (provide nullptr if not needed)
+ /** Ctor (Application provides tensor data storage) **/
+ template <typename T>
+ Tensor(const std::vector<std::size_t> & signature,         //tensor signature (identifier): signature[0:rank-1]
+        const std::vector<int> & dims,                      //tensor dimension extents: dims[0:rank-1]
         T * ext_mem,                                        //pointer to an external memory storage where the tensor body will reside
         const T * init_val);                                //optional scalar initialization value (provide nullptr if not needed)
 
@@ -185,7 +200,7 @@ private:
  struct Impl{
 
   std::vector<std::size_t> signature_; //tensor signature (unique integer multi-index identifier)
-  talsh_tens_t tensor_;                //TAL-SH tensor block
+  talsh_tens_t tensor_;                //TAL-SH tensor block (dense locally stored tensor)
   TensorTask * write_task_;            //non-owning pointer to the task handle for the current asynchronous operation updating the tensor, if any
   void * host_mem_;                    //saved pointer to the original external Host memory buffer provided by the application during construction
   int used_;                           //number of unfinished (asynchronous) TAL-SH operations that are currently using the tensor
@@ -196,8 +211,19 @@ private:
        const T init_val);                                  //scalar initialization value (its type will define tensor element data kind)
 
   template <typename T>
+  Impl(const std::vector<std::size_t> & signature,         //tensor signature (identifier): signature[0:rank-1]
+       const std::vector<int> & dims,                      //tensor dimension extents: dims[0:rank-1]
+       const T init_val);                                  //scalar initialization value (its type will define tensor element data kind)
+
+  template <typename T>
   Impl(const std::initializer_list<std::size_t> signature, //tensor signature (identifier): signature[0:rank-1]
        const std::initializer_list<int> dims,              //tensor dimension extents: dims[0:rank-1]
+       T * ext_mem,                                        //pointer to an external memory storage where the tensor body will reside
+       const T * init_val);                                //optional scalar initialization value (provide nullptr if not needed)
+
+  template <typename T>
+  Impl(const std::vector<std::size_t> & signature,         //tensor signature (identifier): signature[0:rank-1]
+       const std::vector<int> & dims,                      //tensor dimension extents: dims[0:rank-1]
        T * ext_mem,                                        //pointer to an external memory storage where the tensor body will reside
        const T * init_val);                                //optional scalar initialization value (provide nullptr if not needed)
 
@@ -227,8 +253,7 @@ Tensor::Impl::Impl(const std::initializer_list<std::size_t> signature, //tensor 
  signature_(signature), host_mem_(nullptr), used_(0)
 {
  static_assert(TensorData<T>::supported,"Tensor data type is not supported!");
- int errc = talshTensorClean(&tensor_);
- assert(errc == TALSH_SUCCESS);
+ int errc = talshTensorClean(&tensor_); assert(errc == TALSH_SUCCESS);
  const int rank = static_cast<int>(dims.size());
  errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.begin(),talshFlatDevId(DEV_HOST,0),NULL,-1,NULL,
                              realPart(init_val),imagPart(init_val));
@@ -236,13 +261,19 @@ Tensor::Impl::Impl(const std::initializer_list<std::size_t> signature, //tensor 
  write_task_ = nullptr;
 }
 
-
 template <typename T>
-Tensor::Tensor(const std::initializer_list<std::size_t> signature, //tensor signature (identifier): signature[0:rank-1]
-               const std::initializer_list<int> dims,              //tensor dimension extents: dims[0:rank-1]
-               const T init_val):                                  //scalar initialization value (its type will define tensor element data kind)
- pimpl_(new Impl(signature,dims,init_val))
+Tensor::Impl::Impl(const std::vector<std::size_t> & signature, //tensor signature (identifier): signature[0:rank-1]
+                   const std::vector<int> & dims,              //tensor dimension extents: dims[0:rank-1]
+                   const T init_val):                          //scalar initialization value (its type will define tensor element data kind)
+ signature_(signature), host_mem_(nullptr), used_(0)
 {
+ static_assert(TensorData<T>::supported,"Tensor data type is not supported!");
+ int errc = talshTensorClean(&tensor_); assert(errc == TALSH_SUCCESS);
+ const int rank = static_cast<int>(dims.size());
+ errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.begin(),talshFlatDevId(DEV_HOST,0),NULL,-1,NULL,
+                             realPart(init_val),imagPart(init_val));
+ assert(errc == TALSH_SUCCESS && signature.size() == dims.size());
+ write_task_ = nullptr;
 }
 
 
@@ -254,8 +285,29 @@ Tensor::Impl::Impl(const std::initializer_list<std::size_t> signature, //tensor 
  signature_(signature), host_mem_(((void*)ext_mem)), used_(0)
 {
  static_assert(TensorData<T>::supported,"Tensor data type is not supported!");
- int errc = talshTensorClean(&tensor_);
- assert(errc == TALSH_SUCCESS);
+ int errc = talshTensorClean(&tensor_); assert(errc == TALSH_SUCCESS);
+ assert(ext_mem != nullptr);
+ const int rank = static_cast<int>(dims.size());
+ if(init_val == nullptr){
+  errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.begin(),talshFlatDevId(DEV_HOST,0),(void*)ext_mem);
+ }else{
+  std::cout << "FATAL: Initialization of tensors with external memory storage is not implemented in TAL-SH yet!" << std::endl; assert(false);
+  errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.begin(),talshFlatDevId(DEV_HOST,0),(void*)ext_mem,-1,NULL,
+                              realPart(*init_val),imagPart(*init_val));
+ }
+ assert(errc == TALSH_SUCCESS && signature.size() == dims.size());
+ write_task_ = nullptr;
+}
+
+template <typename T>
+Tensor::Impl::Impl(const std::vector<std::size_t> & signature, //tensor signature (identifier): signature[0:rank-1]
+                   const std::vector<int> & dims,              //tensor dimension extents: dims[0:rank-1]
+                   T * ext_mem,                                //pointer to an external memory storage where the tensor body will reside
+                   const T * init_val):                        //optional scalar initialization value (provide nullptr if not needed)
+ signature_(signature), host_mem_(((void*)ext_mem)), used_(0)
+{
+ static_assert(TensorData<T>::supported,"Tensor data type is not supported!");
+ int errc = talshTensorClean(&tensor_); assert(errc == TALSH_SUCCESS);
  assert(ext_mem != nullptr);
  const int rank = static_cast<int>(dims.size());
  if(init_val == nullptr){
@@ -273,8 +325,34 @@ Tensor::Impl::Impl(const std::initializer_list<std::size_t> signature, //tensor 
 template <typename T>
 Tensor::Tensor(const std::initializer_list<std::size_t> signature, //tensor signature (identifier): signature[0:rank-1]
                const std::initializer_list<int> dims,              //tensor dimension extents: dims[0:rank-1]
+               const T init_val):                                  //scalar initialization value (its type will define tensor element data kind)
+ pimpl_(new Impl(signature,dims,init_val))
+{
+}
+
+template <typename T>
+Tensor::Tensor(const std::vector<std::size_t> & signature, //tensor signature (identifier): signature[0:rank-1]
+               const std::vector<int> & dims,              //tensor dimension extents: dims[0:rank-1]
+               const T init_val):                          //scalar initialization value (its type will define tensor element data kind)
+ pimpl_(new Impl(signature,dims,init_val))
+{
+}
+
+
+template <typename T>
+Tensor::Tensor(const std::initializer_list<std::size_t> signature, //tensor signature (identifier): signature[0:rank-1]
+               const std::initializer_list<int> dims,              //tensor dimension extents: dims[0:rank-1]
                T * ext_mem,                                        //pointer to an external memory storage where the tensor body will reside
                const T * init_val):                                //optional scalar initialization value (provide nullptr if not needed)
+ pimpl_(new Impl(signature,dims,ext_mem,init_val))
+{
+}
+
+template <typename T>
+Tensor::Tensor(const std::vector<std::size_t> & signature, //tensor signature (identifier): signature[0:rank-1]
+               const std::vector<int> & dims,              //tensor dimension extents: dims[0:rank-1]
+               T * ext_mem,                                //pointer to an external memory storage where the tensor body will reside
+               const T * init_val):                        //optional scalar initialization value (provide nullptr if not needed)
  pimpl_(new Impl(signature,dims,ext_mem,init_val))
 {
 }
@@ -298,7 +376,7 @@ int Tensor::contractAccumulate(TensorTask * task_handle,    //out: task handle a
  talsh_tens_t * ltens = left.get_talsh_tensor_ptr();
  talsh_tens_t * rtens = right.get_talsh_tensor_ptr();
  if(task_handle != nullptr){ //asynchronous
-  assert(task_handle->is_empty());
+  assert(task_handle->isEmpty());
   talsh_task_t * task_hl = task_handle->get_talsh_task_ptr();
   //++left; ++right; ++(*this);
   errc = talshTensorContract(contr_ptrn,dtens,ltens,rtens,realPart(factor),imagPart(factor),device_id,device_kind,COPY_MTT,task_hl);

@@ -28,9 +28,13 @@ namespace talsh{
 //Static constant storage:
 
 constexpr float TensorData<float>::unity;
+constexpr float TensorData<float>::zero;
 constexpr double TensorData<double>::unity;
+constexpr double TensorData<double>::zero;
 constexpr std::complex<float> TensorData<std::complex<float>>::unity;
+constexpr std::complex<float> TensorData<std::complex<float>>::zero;
 constexpr std::complex<double> TensorData<std::complex<double>>::unity;
+constexpr std::complex<double> TensorData<std::complex<double>>::zero;
 
 
 //Helper functions:
