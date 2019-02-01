@@ -270,7 +270,7 @@ Tensor::Impl::Impl(const std::vector<std::size_t> & signature, //tensor signatur
  static_assert(TensorData<T>::supported,"Tensor data type is not supported!");
  int errc = talshTensorClean(&tensor_); assert(errc == TALSH_SUCCESS);
  const int rank = static_cast<int>(dims.size());
- errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.begin(),talshFlatDevId(DEV_HOST,0),NULL,-1,NULL,
+ errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.data(),talshFlatDevId(DEV_HOST,0),NULL,-1,NULL,
                              realPart(init_val),imagPart(init_val));
  assert(errc == TALSH_SUCCESS && signature.size() == dims.size());
  write_task_ = nullptr;
@@ -311,10 +311,10 @@ Tensor::Impl::Impl(const std::vector<std::size_t> & signature, //tensor signatur
  assert(ext_mem != nullptr);
  const int rank = static_cast<int>(dims.size());
  if(init_val == nullptr){
-  errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.begin(),talshFlatDevId(DEV_HOST,0),(void*)ext_mem);
+  errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.data(),talshFlatDevId(DEV_HOST,0),(void*)ext_mem);
  }else{
   std::cout << "FATAL: Initialization of tensors with external memory storage is not implemented in TAL-SH yet!" << std::endl; assert(false);
-  errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.begin(),talshFlatDevId(DEV_HOST,0),(void*)ext_mem,-1,NULL,
+  errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.data(),talshFlatDevId(DEV_HOST,0),(void*)ext_mem,-1,NULL,
                               realPart(*init_val),imagPart(*init_val));
  }
  assert(errc == TALSH_SUCCESS && signature.size() == dims.size());
