@@ -28,6 +28,7 @@
 
 #ifdef __cplusplus
 #include <iostream>
+#include <memory>
 #include <string>
 #include <complex>
 #include "talshxx.hpp"
@@ -224,13 +225,65 @@ void test_talsh_cxx(int * ierr)
  return;
 }
 
+
 void test_talsh_qc(int * ierr)
 {
  *ierr=0;
+  const int NUM_CONTRACTIONS = 6; //number of tensor contractions to be executed by TAL-SH
 
- //Tensor contraction specification:
+ //QC application tensor class:
+ class QCTensor{
+  public:
+
+  unsigned int getRank()
+  {
+   return static_cast<unsigned int>(shape_.size());
+  }
+
+  std::size_t getVolume()
+  {
+   std::size_t tvol = 1;
+   for(const auto & dim: shape_) tvol*=static_cast<std::size_t>(dim);
+   return tvol;
+  }
+
+  const std::vector<int> & getShape()
+  {
+   return shape_;
+  }
+
+  std::complex<float> * getDataPtr()
+  {
+   return tdata_;
+  }
+
+  QCTensor(const std::vector<int> & dims):
+   shape_(dims)
+  {
+   std::size_t tvol = this->getVolume();
+   tdata_ = new std::complex<float>[tvol];
+  }
+
+  QCTensor(const QCTensor & another) = delete;
+  QCTensor & operator=(const QCTensor & another) = delete;
+  QCTensor(QCTensor && another) = default;
+  QCTensor & operator=(QCTensor && another) = default;
+
+  ~QCTensor()
+  {
+   delete [] tdata_;
+  };
+
+  private:
+
+  std::vector<int> shape_;
+  std::complex<float> * tdata_;
+ };
+
+ //TAL-SH tensor contraction specification class:
  class TensContraction{
   public:
+
   TensContraction(const std::string & pattern,
                   talsh::Tensor * tens0,
                   talsh::Tensor * tens1,
@@ -239,8 +292,11 @@ void test_talsh_qc(int * ierr)
    index_pattern_(pattern),tensor0_(tens0),tensor1_(tens1),tensor2_(tens2),alpha_(alpha)
   {
   }
+
   ~TensContraction() = default;
+
   private:
+
   std::string index_pattern_;
   talsh::Tensor * tensor0_;
   talsh::Tensor * tensor1_;
@@ -252,29 +308,34 @@ void test_talsh_qc(int * ierr)
  talsh::initialize();
  std::cout << " QC application initialized TAL-SH" << std::endl;
 
- //QC application allocates tensor storage (inside QCTensor ctor):
- // Tensor 0:
- std::vector<std::size_t> tsigna(4,0);
- std::vector<int> tdims = {32,32,32,32};
- std::size_t tvol = 1; for(const auto & dim: tdims) tvol*=static_cast<std::size_t>(dim);
- std::complex<float> * tdata = new std::complex<float>[tvol];
- std::cout << " QC application allocated tensor of volume " << tvol << std::endl;
+ //QC application allocates tensors (QCTensor):
+ std::vector<QCTensor> tensors;
+ for(int i = 0; i < NUM_CONTRACTIONS*3; ++i){
+  tensors.emplace_back(QCTensor(std::vector<int>{32,32,32,32}));
+  std::cout << " QC application allocated tensor of volume " << tensors[i].getVolume() << std::endl;
+ }
 
  //QC application enters an inner scope to perform tensor operations via TAL-SH:
  std::cout << " QC application entered TAL-SH execution" << std::endl;
  {
-  //QC application registers tensors with TAL-SH:
-  const std::complex<float> alpha {1.0f,0.0f};
-  talsh::Tensor tensor(tsigna,tdims,tdata,&alpha);
+  //QC application registers its tensors with TAL-SH:
+  std::vector<talsh::Tensor> talsh_tensors;
+  for(int i = 0; i < NUM_CONTRACTIONS*3; ++i){
+   talsh_tensors.emplace_back(talsh::Tensor(tensors[i].getShape(),tensors[i].getDataPtr()));
+   std::cout << " QC application constructed TAL-SH tensor:" << std::endl; //talsh_tensors[i].print();
+  }
+
+  //QC application constructs a list of tensor contractions:
+  
 
   //QC application executes tensor contractions via TAL-SH:
-
+  
  }
  std::cout << " QC application exited TAL-SH execution" << std::endl;
 
- //QC application frees tensor storage (inside QCTensor dtor):
- delete [] tdata;
- std::cout << " QC application deallocated tensor" << std::endl;
+ //QC application deallocates tensors (QCTensor);
+ tensors.clear();
+ std::cout << " QC application deallocated all its tensors" << std::endl;
 
  //QC application shuts down TAL-SH:
  talsh::shutdown();
