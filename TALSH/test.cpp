@@ -228,8 +228,13 @@ void test_talsh_cxx(int * ierr)
 
 void test_talsh_qc(int * ierr)
 {
+ using ComplexType = std::complex<double>;
+
+ constexpr int NUM_CONTRACTIONS_CPU = 2; //number of tensor contractions to be executed by TAL-SH on multicore CPU
+ constexpr int NUM_CONTRACTIONS_GPU = 4; //number of tensor contractions to be executed by TAL-SH on multiple GPU
+ constexpr int NUM_CONTRACTIONS = NUM_CONTRACTIONS_CPU + NUM_CONTRACTIONS_GPU; //number of tensor contractions to be executed by TAL-SH
+
  *ierr=0;
-  const int NUM_CONTRACTIONS = 6; //number of tensor contractions to be executed by TAL-SH
 
  //QC application tensor class:
  class QCTensor{
@@ -252,7 +257,7 @@ void test_talsh_qc(int * ierr)
    return shape_;
   }
 
-  std::complex<float> * getDataPtr()
+  ComplexType * getDataPtr()
   {
    return tdata_;
   }
@@ -261,23 +266,44 @@ void test_talsh_qc(int * ierr)
    shape_(dims)
   {
    std::size_t tvol = this->getVolume();
-   tdata_ = new std::complex<float>[tvol];
+   tdata_ = new ComplexType[tvol];
   }
 
   QCTensor(const QCTensor & another) = delete;
   QCTensor & operator=(const QCTensor & another) = delete;
-  QCTensor(QCTensor && another) = default;
-  QCTensor & operator=(QCTensor && another) = default;
+
+  QCTensor(QCTensor && another)
+  {
+   if(this != &another){
+    this->shape_ = another.shape_;
+    this->tdata_ = another.tdata_;
+    another.shape_.clear();
+    another.tdata_ = nullptr;
+   }
+  }
+
+  QCTensor & operator=(QCTensor && another){
+   if(this != &another){
+    this->shape_ = another.shape_;
+    this->tdata_ = another.tdata_;
+    another.shape_.clear();
+    another.tdata_ = nullptr;
+   }
+   return *this;
+  }
 
   ~QCTensor()
   {
-   delete [] tdata_;
+   if(tdata_ != nullptr){
+    //std::cout << "Deleting tensor data " << (void*)tdata_ << std::endl; //debug
+    delete [] tdata_;
+   }
   };
 
   private:
 
   std::vector<int> shape_;
-  std::complex<float> * tdata_;
+  ComplexType * tdata_;
  };
 
  //TAL-SH tensor contraction specification class:
@@ -288,12 +314,28 @@ void test_talsh_qc(int * ierr)
                   talsh::Tensor * tens0,
                   talsh::Tensor * tens1,
                   talsh::Tensor * tens2,
-                  std::complex<float> alpha = std::complex<float>{1.0f,0.0f}):
+                  ComplexType alpha = ComplexType{1.0f,0.0f}):
    index_pattern_(pattern),tensor0_(tens0),tensor1_(tens1),tensor2_(tens2),alpha_(alpha)
   {
   }
 
+  TensContraction(const TensContraction & another) = default;
+  TensContraction & operator=(const TensContraction & another) = default;
+  TensContraction(TensContraction && another) = default;
+  TensContraction & operator=(TensContraction && another) = default;
   ~TensContraction() = default;
+
+  int execute(int device_kind, int device_id, talsh::TensorTask & task_hl)
+  {
+   int ierr = tensor0_->contractAccumulate(&task_hl,index_pattern_,*tensor1_,*tensor2_,device_kind,device_id,alpha_);
+   return ierr;
+  }
+
+  bool sync()
+  {
+   bool done = tensor0_->sync();
+   return done;
+  }
 
   private:
 
@@ -301,35 +343,68 @@ void test_talsh_qc(int * ierr)
   talsh::Tensor * tensor0_;
   talsh::Tensor * tensor1_;
   talsh::Tensor * tensor2_;
-  std::complex<float> alpha_;
+  ComplexType alpha_;
  };
 
  //QC application initializes TAL-SH:
  talsh::initialize();
  std::cout << " QC application initialized TAL-SH" << std::endl;
 
- //QC application allocates tensors (QCTensor):
+ //QC application allocates NUM_CONTRACTIONS*3 tensors (QCTensor):
  std::vector<QCTensor> tensors;
  for(int i = 0; i < NUM_CONTRACTIONS*3; ++i){
   tensors.emplace_back(QCTensor(std::vector<int>{32,32,32,32}));
-  std::cout << " QC application allocated tensor of volume " << tensors[i].getVolume() << std::endl;
+  std::cout << " QC application allocated tensor " << i << " of volume " << tensors[i].getVolume() << std::endl;
  }
 
  //QC application enters an inner scope to perform tensor operations via TAL-SH:
  std::cout << " QC application entered TAL-SH execution" << std::endl;
  {
-  //QC application registers its tensors with TAL-SH:
+  //QC application registers its tensors with TAL-SH (NUM_CONTRACTIONS*3 tensors total):
   std::vector<talsh::Tensor> talsh_tensors;
   for(int i = 0; i < NUM_CONTRACTIONS*3; ++i){
    talsh_tensors.emplace_back(talsh::Tensor(tensors[i].getShape(),tensors[i].getDataPtr()));
-   std::cout << " QC application constructed TAL-SH tensor:" << std::endl; //talsh_tensors[i].print();
+   std::cout << "  QC application constructed TAL-SH tensor " << i << ":" << std::endl; //talsh_tensors[i].print();
   }
 
-  //QC application constructs a list of tensor contractions:
-  
+  //QC application constructs a list of tensor contractions for CPU and GPU:
+  std::vector<TensContraction> contractions_cpu; //tensor contractions to be executed on CPU
+  std::vector<TensContraction> contractions_gpu; //tensor contractions to be executed on GPU
+  // For CPU:
+  for(int i = 0; i < NUM_CONTRACTIONS_CPU; ++i){
+   int base_tensor = i*3;
+   contractions_cpu.emplace_back(TensContraction("D(a,b,c,d)+=L(c,i,b,j)*R(d,j,a,i)",
+                                                 &(talsh_tensors[base_tensor+0]),
+                                                 &(talsh_tensors[base_tensor+1]),
+                                                 &(talsh_tensors[base_tensor+2])));
+  }
+  std::cout << "  QC application placed " << NUM_CONTRACTIONS_CPU << " tensor contractions into the CPU queue" << std::endl;
+  // For CPU:
+  for(int i = NUM_CONTRACTIONS_CPU; i < NUM_CONTRACTIONS_CPU + NUM_CONTRACTIONS_GPU; ++i){
+   int base_tensor = i*3;
+   contractions_gpu.emplace_back(TensContraction("D(a,b,c,d)+=L(c,i,b,j)*R(d,j,a,i)",
+                                                 &(talsh_tensors[base_tensor+0]),
+                                                 &(talsh_tensors[base_tensor+1]),
+                                                 &(talsh_tensors[base_tensor+2])));
+  }
+  std::cout << "  QC application placed " << NUM_CONTRACTIONS_GPU << " tensor contractions into the GPU queue" << std::endl;
 
-  //QC application executes tensor contractions via TAL-SH:
-  
+  //QC application executes tensor contractions on GPU via TAL-SH:
+  for(auto & contraction: contractions_gpu){
+   talsh::TensorTask task_hl;
+   contraction.execute(DEV_NVIDIA_GPU,0,task_hl);
+   while(!contraction.sync());
+  }
+  std::cout << "  QC application executed " << NUM_CONTRACTIONS_GPU << " tensor contractions from the GPU queue" << std::endl;
+
+  //QC application executes tensor contractions on CPU via TAL-SH:
+  for(auto & contraction: contractions_cpu){
+   talsh::TensorTask task_hl;
+   contraction.execute(DEV_HOST,0,task_hl);
+   while(!contraction.sync());
+  }
+  std::cout << "  QC application executed " << NUM_CONTRACTIONS_CPU << " tensor contractions from the CPU queue" << std::endl;
+
  }
  std::cout << " QC application exited TAL-SH execution" << std::endl;
 
