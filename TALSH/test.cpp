@@ -1,7 +1,7 @@
 /** TALSH::C/C++ API testing.
 
-!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -62,7 +62,7 @@ void test_talsh_c(int * ierr)
 
 //Query the total number of NVIDIA GPU on node:
  int ngpu;
- errc=talshGetDeviceCount(DEV_NVIDIA_GPU,&ngpu); if(errc){*ierr=1; return;};
+ errc=talshDeviceCount(DEV_NVIDIA_GPU,&ngpu); if(errc){*ierr=1; return;};
  printf(" Number of NVIDIA GPU found on node = %d\n",ngpu);
 
 //Initialize TAL-SH (with a negligible Host buffer since we will use external memory):
@@ -436,7 +436,7 @@ void test_nwchem_c(int * ierr)
 
 //Query the total number of NVIDIA GPU on node:
  int ngpu;
- errc=talshGetDeviceCount(DEV_NVIDIA_GPU,&ngpu); if(errc){*ierr=1; return;};
+ errc=talshDeviceCount(DEV_NVIDIA_GPU,&ngpu); if(errc){*ierr=1; return;};
  printf(" Number of NVIDIA GPU found on node = %d\n",ngpu);
 
 //Initialize TAL-SH (with a negligible Host buffer since we will use external memory):

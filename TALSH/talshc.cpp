@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/01/20
+REVISION: 2019/02/07
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -612,30 +612,26 @@ int talshShutdown()
  return TALSH_SUCCESS;
 }
 
-int talshGetDeviceCount(int dev_kind, int * dev_count)
+int talshDeviceCount(int dev_kind, int * dev_count)
 /** Returns the total number of devices of specific kind found on node. **/
 {
  int errc;
 
- errc=TALSH_SUCCESS;
+ errc=TALSH_SUCCESS; *dev_count=0;
  switch(dev_kind){
   case DEV_HOST:
    *dev_count=1; //CPU Host is always assumed a single device (multicore)
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
-   errc=cuda_get_device_count(dev_count);
+   errc=gpu_get_device_count(dev_count);
    if(errc != 0) errc=TALSH_FAILURE;
-#else
-   *dev_count=0;
 #endif
    break;
   case DEV_INTEL_MIC:
-   *dev_count=0;
    errc=TALSH_NOT_IMPLEMENTED;
    break;
   case DEV_AMD_GPU:
-   *dev_count=0;
    errc=TALSH_NOT_IMPLEMENTED;
    break;
  }

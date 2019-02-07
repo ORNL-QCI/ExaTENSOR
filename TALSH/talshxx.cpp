@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2019/01/31
+REVISION: 2019/02/07
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -148,7 +148,7 @@ bool Tensor::complete_write_task()
 void initialize(std::size_t * host_buffer_size)
 {
  int num_gpu, gpu_list[MAX_GPUS_PER_NODE];
- int errc = talshGetDeviceCount(DEV_NVIDIA_GPU,&num_gpu);
+ int errc = talshDeviceCount(DEV_NVIDIA_GPU,&num_gpu);
  assert(errc == TALSH_SUCCESS && num_gpu >= 0);
  if(num_gpu > 0){for(int i = 0; i < num_gpu; ++i) gpu_list[i]=i;};
 
