@@ -266,7 +266,14 @@ void test_talsh_qc(int * ierr)
    shape_(dims)
   {
    std::size_t tvol = this->getVolume();
+#ifdef MEM_PINNED
+   void * mem_ptr;
+   int errc = host_mem_alloc_pin(&mem_ptr, tvol*sizeof(ComplexType));
+   assert(errc == 0);
+   tdata_ = new (mem_ptr) ComplexType[tvol];
+#else
    tdata_ = new ComplexType[tvol];
+#endif
   }
 
   QCTensor(const QCTensor & another) = delete;
@@ -296,7 +303,13 @@ void test_talsh_qc(int * ierr)
   {
    if(tdata_ != nullptr){
     //std::cout << "Deleting tensor data " << (void*)tdata_ << std::endl; //debug
+#ifdef MEM_PINNED
+    tdata_ = nullptr;
+    int errc = host_mem_free_pin((void*)tdata_);
+    assert(errc == 0);
+#else
     delete [] tdata_;
+#endif
    }
   };
 

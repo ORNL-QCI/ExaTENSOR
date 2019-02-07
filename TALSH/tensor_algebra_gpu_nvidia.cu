@@ -2091,6 +2091,18 @@ __host__ int gpu_activate(int gpu_num)
  return 0;
 }
 
+__host__ size_t gpu_device_memory_size(int gpu_num)
+/** Returns the total memory (bytes) for a given GPU device. **/
+{
+ size_t bytes;
+
+ bytes=0;
+ if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
+  if(gpu_up[gpu_num] > GPU_OFF) bytes=gpu_prop[gpu_num].totalGlobalMem;
+ }
+ return bytes;
+}
+
 //NV-TAL INTERNAL CONTROL:
 __host__ int gpu_set_shmem_width(int width){
 /** Sets the GPU shared memory bank width:

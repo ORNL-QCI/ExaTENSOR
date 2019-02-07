@@ -666,6 +666,7 @@ int talshDeviceState(int dev_num,  //in: either a flat or kind specific (when <d
   if(i < 0) return TALSH_INVALID_ARGS;
  }else{
   devk=dev_kind;
+  i=dev_num;
  }
  switch(devk){
   case DEV_HOST:
@@ -729,6 +730,49 @@ int talshDeviceBusyLeast(int dev_kind) //in: device kind (defaults to any kind)
 int talshDeviceBusyLeast_(int dev_kind) //Fortran wrapper
 {
  return talshDeviceBusyLeast(dev_kind);
+}
+
+size_t talshDeviceMemorySize(int dev_num,
+                             int dev_kind)
+{
+ int devk,i;
+ size_t bytes;
+
+ bytes=0;
+ if(talsh_on != 0){
+  if(dev_kind == DEV_NULL){
+   i=talshKindDevId(dev_num,&devk); if(i < 0) return 0;
+  }else{
+   devk=dev_kind;
+   i=dev_num;
+  }
+  switch(devk){
+   case DEV_HOST:
+    //`Implement
+    break;
+   case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
+    bytes=gpu_device_memory_size(i);
+#endif
+    break;
+   case DEV_INTEL_MIC:
+#ifndef NO_PHI
+    //`Implement
+#endif
+    break;
+   case DEV_AMD_GPU:
+#ifndef NO_AMD
+    //`Implement
+#endif
+    break;
+  }
+ }
+ return bytes;
+}
+
+size_t talshDeviceMemorySize_(int dev_num, int dev_kind) //Fortran wrapper
+{
+ return talshDeviceMemorySize(dev_num,dev_kind);
 }
 
 int talshStats(int dev_id,   //in: device id (either flat or kind specific device id, see below)

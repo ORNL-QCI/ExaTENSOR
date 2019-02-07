@@ -129,6 +129,10 @@ extern "C"{
 //  Find the least busy device:
  int talshDeviceBusyLeast(int dev_kind = DEV_NULL);
  int talshDeviceBusyLeast_(int dev_kind);
+//  Query device memory size:
+ size_t talshDeviceMemorySize(int dev_num,
+                              int dev_kind = DEV_NULL);
+ size_t talshDeviceMemorySize_(int dev_num, int dev_kind);
 //  Print TAL-SH statistics for specific devices:
  int talshStats(int dev_id = -1,
                 int dev_kind = DEV_NULL);

@@ -167,6 +167,13 @@
           implicit none
           integer(C_INT), value, intent(in):: dev_kind
          end function talshDeviceBusyLeast_
+  !Query the device memory size in bytes:
+         integer(C_SIZE_T) function talshDeviceMemorySize_(dev_num,dev_kind) bind(c,name='talshDeviceMemorySize_')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_num
+          integer(C_INT), value, intent(in):: dev_kind
+         end function talshDeviceMemorySize_
   !Print run-time TAL-SH statistics for chosen devices:
          integer(C_INT) function talshStats_(dev_id,dev_kind) bind(c,name='talshStats_')
           import
@@ -452,6 +459,7 @@
         public talsh_kind_dev_id
         public talsh_device_state
         public talsh_device_busy_least
+        public talsh_device_memory_size
         public talsh_stats
  !TAL-SH tensor block API:
         public talsh_tensor_is_empty
@@ -844,6 +852,18 @@
          dev_id=talshDeviceBusyLeast_(devk)
          return
         end function talsh_device_busy_least
+!---------------------------------------------------------------------------
+        function talsh_device_memory_size(dev_num,dev_kind) result(mem_size)
+         implicit none
+         integer(C_SIZE_T):: mem_size                    !out: device memory size in bytes
+         integer(C_INT), intent(in):: dev_num            !in: either a flat or kind specific (when <dev_kind> is present) device id
+         integer(C_INT), intent(in), optional:: dev_kind !in: device kind (note that it changes the meaning of the <dev_num> argument)
+         integer(C_INT):: devk
+
+         if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_NULL; endif
+         mem_size=talshDeviceMemorySize_(dev_num,devk)
+         return
+        end function talsh_device_memory_size
 !---------------------------------------------------------
         function talsh_stats(dev_id,dev_kind) result(ierr)
          implicit none

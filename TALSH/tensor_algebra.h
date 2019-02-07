@@ -432,6 +432,7 @@ extern "C"{
  int gpu_busy_least();
  int gpu_in_focus(int gpu_num = -1);
  int gpu_activate(int gpu_num);
+ size_t gpu_device_memory_size(int gpu_num);
 //  NV-TAL internal control:
  int gpu_set_shmem_width(int width);
  void gpu_set_transpose_algorithm(int alg); //{EFF_TRN_OFF,EFF_TRN_ON,EFF_TRN_ON_CUTT}
