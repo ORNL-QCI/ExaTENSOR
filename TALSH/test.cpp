@@ -266,14 +266,8 @@ void test_talsh_qc(int * ierr)
    shape_(dims)
   {
    std::size_t tvol = this->getVolume();
-#ifdef MEM_PINNED
-   void * mem_ptr;
-   int errc = host_mem_alloc_pin(&mem_ptr, tvol*sizeof(ComplexType));
-   assert(errc == 0);
-   tdata_ = new (mem_ptr) ComplexType[tvol];
-#else
    tdata_ = new ComplexType[tvol];
-#endif
+   int errc = talsh::pinHostMemory(tdata_,tvol*sizeof(ComplexType)); assert(errc == 0);
   }
 
   QCTensor(const QCTensor & another) = delete;
@@ -303,13 +297,10 @@ void test_talsh_qc(int * ierr)
   {
    if(tdata_ != nullptr){
     //std::cout << "Deleting tensor data " << (void*)tdata_ << std::endl; //debug
-#ifdef MEM_PINNED
-    tdata_ = nullptr;
-    int errc = host_mem_free_pin((void*)tdata_);
-    assert(errc == 0);
-#else
+    int errc = talsh::unpinHostMemory(tdata_); assert(errc == 0);
     delete [] tdata_;
-#endif
+    tdata_ = nullptr;
+    shape_.clear();
    }
   };
 
@@ -328,7 +319,7 @@ void test_talsh_qc(int * ierr)
                   talsh::Tensor * tens1,
                   talsh::Tensor * tens2,
                   ComplexType alpha = ComplexType{1.0f,0.0f}):
-   index_pattern_(pattern),tensor0_(tens0),tensor1_(tens1),tensor2_(tens2),alpha_(alpha)
+   index_pattern_(pattern),tensor0_(tens0),tensor1_(tens1),tensor2_(tens2),alpha_(alpha),task_hl_(new talsh::TensorTask())
   {
   }
 
@@ -338,25 +329,36 @@ void test_talsh_qc(int * ierr)
   TensContraction & operator=(TensContraction && another) = default;
   ~TensContraction() = default;
 
-  int execute(int device_kind, int device_id, talsh::TensorTask & task_hl)
+  int execute(int device_kind, int device_id)
   {
-   int ierr = tensor0_->contractAccumulate(&task_hl,index_pattern_,*tensor1_,*tensor2_,device_kind,device_id,alpha_);
+   int ierr = tensor0_->contractAccumulate(task_hl_.get(),index_pattern_,*tensor1_,*tensor2_,device_kind,device_id,alpha_);
    return ierr;
   }
 
-  bool sync()
+  bool sync(const int dev_kind = DEV_HOST, //device kind on which the tensor-result should become available
+            const int dev_id = 0,          //device id of a given kind on which the tensor-result should become available
+            void * host_ptr = nullptr)     //external host memory pointer where to place the data from the tensor-result
   {
-   bool done = tensor0_->sync();
+   bool done = tensor0_->sync(dev_kind,dev_id,host_ptr);
+   return done;
+  }
+
+  bool ready(const int dev_kind = DEV_HOST, //device kind on which the tensor-result should become available
+             const int dev_id = 0,          //device id of a given kind on which the tensor-result should become available
+             void * host_ptr = nullptr)     //external host memory pointer where to place the data from the tensor-result
+  {
+   bool done = tensor0_->ready(dev_kind,dev_id,host_ptr);
    return done;
   }
 
   private:
 
-  std::string index_pattern_;
-  talsh::Tensor * tensor0_;
-  talsh::Tensor * tensor1_;
-  talsh::Tensor * tensor2_;
-  ComplexType alpha_;
+  std::string index_pattern_;   //symbolic tensor contraction pattern (Einstein summation)
+  talsh::Tensor * tensor0_;     //non-owning pointer to the tensor-result
+  talsh::Tensor * tensor1_;     //non-owning pointer to the 1st input tensor
+  talsh::Tensor * tensor2_;     //non-owning pointer to the 2nd input tensor
+  ComplexType alpha_;           //optional scalar factor
+  std::shared_ptr<talsh::TensorTask> task_hl_; //owning pointer to the TAL-SH task handle for this tensor contraction
  };
 
  //QC application initializes TAL-SH:
@@ -385,7 +387,7 @@ void test_talsh_qc(int * ierr)
   std::vector<TensContraction> contractions_gpu; //tensor contractions to be executed on GPU
   // For CPU:
   for(int i = 0; i < NUM_CONTRACTIONS_CPU; ++i){
-   int base_tensor = i*3;
+   int base_tensor = i*3; //three tensors per tensor contraction (input tensors may repeat)
    contractions_cpu.emplace_back(TensContraction("D(a,b,c,d)+=L(c,i,b,j)*R(d,j,a,i)",
                                                  &(talsh_tensors[base_tensor+0]),
                                                  &(talsh_tensors[base_tensor+1]),
@@ -394,7 +396,7 @@ void test_talsh_qc(int * ierr)
   std::cout << "  QC application placed " << NUM_CONTRACTIONS_CPU << " tensor contractions into the CPU queue" << std::endl;
   // For CPU:
   for(int i = NUM_CONTRACTIONS_CPU; i < NUM_CONTRACTIONS_CPU + NUM_CONTRACTIONS_GPU; ++i){
-   int base_tensor = i*3;
+   int base_tensor = i*3; //three tensors per tensor contraction (input tensors may repeat)
    contractions_gpu.emplace_back(TensContraction("D(a,b,c,d)+=L(c,i,b,j)*R(d,j,a,i)",
                                                  &(talsh_tensors[base_tensor+0]),
                                                  &(talsh_tensors[base_tensor+1]),
@@ -402,19 +404,17 @@ void test_talsh_qc(int * ierr)
   }
   std::cout << "  QC application placed " << NUM_CONTRACTIONS_GPU << " tensor contractions into the GPU queue" << std::endl;
 
-  //QC application executes tensor contractions on GPU via TAL-SH:
+  //QC application executes tensor contractions on GPU via TAL-SH asynchronous pipeline:
   for(auto & contraction: contractions_gpu){
-   talsh::TensorTask task_hl;
-   contraction.execute(DEV_NVIDIA_GPU,0,task_hl);
-   while(!contraction.sync());
+   int errc = contraction.execute(DEV_NVIDIA_GPU,0);
+   while(!contraction.sync(DEV_HOST,0));
   }
   std::cout << "  QC application executed " << NUM_CONTRACTIONS_GPU << " tensor contractions from the GPU queue" << std::endl;
 
-  //QC application executes tensor contractions on CPU via TAL-SH:
+  //QC application executes tensor contractions on CPU via individual TAL-SH calls:
   for(auto & contraction: contractions_cpu){
-   talsh::TensorTask task_hl;
-   contraction.execute(DEV_HOST,0,task_hl);
-   while(!contraction.sync());
+   int errc = contraction.execute(DEV_HOST,0); assert(errc == 0);
+   while(!contraction.sync(DEV_HOST,0));
   }
   std::cout << "  QC application executed " << NUM_CONTRACTIONS_CPU << " tensor contractions from the CPU queue" << std::endl;
 
