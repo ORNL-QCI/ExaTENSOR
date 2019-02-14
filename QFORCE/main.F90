@@ -1104,7 +1104,7 @@
          call test_exatensor()
          call benchmark_exatensor_skinny()
          call benchmark_exatensor_fat()
-         call benchmark_exatensor_cc()
+         !call benchmark_exatensor_cc()
         else
          write(6,*) 'Your MPI library does not support MPI_THREAD_MULTIPLE! Change it!'
         endif
