@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/22
+!REVISION: 2019/02/15
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -7097,6 +7097,13 @@
                   jerr=-7
                  end select
                 else
+                 if(VERBOSE) then
+!$OMP CRITICAL (IO)
+                  write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.substitute_output.register_temp_tensor): Cache store error ",i11)')&
+                  &jerr
+!$OMP END CRITICAL (IO)
+                  flush(CONS_OUT)
+                 endif
                  deallocate(temptens)
                  jerr=-6
                 endif
@@ -7124,6 +7131,12 @@
             endif
            else
             jerr=-1
+           endif
+           if(jerr.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+            write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.substitute_output.register_temp_tensor): Error ",i11)') jerr
+!$OMP END CRITICAL (IO)
+            flush(CONS_OUT)
            endif
            return
           end subroutine register_temp_tensor
