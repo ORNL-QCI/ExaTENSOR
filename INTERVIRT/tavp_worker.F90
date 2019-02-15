@@ -7099,8 +7099,8 @@
                 else
                  if(VERBOSE) then
 !$OMP CRITICAL (IO)
-                  write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.substitute_output.register_temp_tensor): Cache store error ",i11)')&
-                  &jerr
+                  write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.substitute_output.register_temp_tensor): Cache store failed: ",'//&
+                  &'"Error ",i11,"; Stored/Associated ",l1,l1)') jerr,stored,associated(tens_entry)
 !$OMP END CRITICAL (IO)
                   flush(CONS_OUT)
                  endif
