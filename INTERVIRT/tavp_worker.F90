@@ -6259,8 +6259,11 @@
                             if(evictd) call pers_entry%reset_temp_count()
                             call pers_entry%unlock()
                            else
+                            call this%arg_cache%release_entry(cache_entry,ier)
                             errc=-15
                            endif
+                          else
+                           call this%arg_cache%release_entry(cache_entry,ier)
                           endif
                           if((.not.completed).or.(errc.ne.0)) exit oloop
                          endif
@@ -7102,6 +7105,8 @@
                   write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.substitute_output.register_temp_tensor): Cache store failed: ",'//&
                   &'"Error ",i11,"; Stored/Associated ",l1,l1)') jerr,stored,associated(tens_entry)
 !$OMP END CRITICAL (IO)
+                  if(associated(cache_entry)) call cache_entry%print_it(dev_id=CONS_OUT)
+                  if(associated(tens_entry)) call tens_entry%print_it(dev_id=CONS_OUT)
                   flush(CONS_OUT)
                  endif
                  deallocate(temptens)
