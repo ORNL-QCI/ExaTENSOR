@@ -7088,17 +7088,21 @@
                call temptens%rename(tname(1:jl),jerr)
                if(jerr.eq.TEREC_SUCCESS) then
                 stored=this%arg_cache%store(temptens,tens_entry_wrk_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
-                if(jerr.eq.0.and.stored.and.associated(tens_entry)) then
-                 select type(tens_entry)
-                 class is(tens_entry_wrk_t)
-                  if(copy_num.eq.0) then !accumulator tensors import data descriptors as well
-                   call tens_entry%set_tensor_layout(jerr,tensor,with_location=.TRUE.); if(jerr.ne.0) jerr=-9 !import temporary tensor layout and location from the persistent tensor
-                  else !temporary tensors do not import data descriptors
-                   call tens_entry%set_tensor_layout(jerr,tensor,with_location=.FALSE.); if(jerr.ne.0) jerr=-8 !import temporary tensor layout from the persistent tensor
-                  endif
-                 class default
-                  jerr=-7
-                 end select
+                if(jerr.eq.0.and.associated(tens_entry)) then
+                 if(stored) then !Accumulator has been cached in the Tensor Cache
+                  select type(tens_entry)
+                  class is(tens_entry_wrk_t)
+                   if(copy_num.eq.0) then !accumulator tensors import data descriptors as well
+                    call tens_entry%set_tensor_layout(jerr,tensor,with_location=.TRUE.); if(jerr.ne.0) jerr=-9 !import temporary tensor layout and location from the persistent tensor
+                   else !temporary tensors do not import data descriptors
+                    call tens_entry%set_tensor_layout(jerr,tensor,with_location=.FALSE.); if(jerr.ne.0) jerr=-8 !import temporary tensor layout from the persistent tensor
+                   endif
+                  class default
+                   jerr=-7
+                  end select
+                 else !Accumulator was found in the Tensor Cache
+                  deallocate(temptens)
+                 endif
                 else
                  if(VERBOSE) then
 !$OMP CRITICAL (IO)
@@ -7123,15 +7127,19 @@
                  flush(CONS_OUT)
                 endif
                else
+                deallocate(temptens)
                 jerr=-5
                endif
               else
+               deallocate(temptens)
                jerr=-4
               endif
              else
+              deallocate(temptens)
               jerr=-3
              endif
             else
+             deallocate(temptens)
              jerr=-2
             endif
            else

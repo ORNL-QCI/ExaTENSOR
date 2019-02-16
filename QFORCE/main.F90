@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/02/14
+!REVISION: 2019/02/15
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -816,7 +816,11 @@
         subroutine benchmark_exatensor_cc()
          implicit none
          integer(INTL), parameter:: SEG_LIMIT=70                           !max segment size
-         integer(INTL), parameter:: AO_SPACE_DIM=600                       !dimension of the atomic orbital space
+         !integer(INTD), parameter:: NAT_LEVELS=2                          !number of NAT levels
+         !integer(INTL), parameter:: AO_SPACE_DIM=1260                     !dimension of the atomic orbital space
+         !integer(INTL), parameter:: OC_SPACE_DIM=280                      !dimension of the occupied orbital space
+         integer(INTD), parameter:: NAT_LEVELS=1                           !number of NAT levels
+         integer(INTL), parameter:: AO_SPACE_DIM=630                       !dimension of the atomic orbital space
          integer(INTL), parameter:: OC_SPACE_DIM=140                       !dimension of the occupied orbital space
          integer(INTL), parameter:: VI_SPACE_DIM=AO_SPACE_DIM-OC_SPACE_DIM !dimension of the virtual orbital space
          integer(INTD), parameter:: TENSOR_DATA_KIND=EXA_DATA_KIND_C8      !tensor data kind
@@ -887,7 +891,7 @@
          if(my_rank.eq.comm_size-1) then
           write(6,'("Registering the hierarchical vector space AO ... ")',ADVANCE='NO'); flush(6)
          endif
-         brf=get_num_segments(AO_SPACE_DIM,SEG_LIMIT)
+         brf=get_num_segments(AO_SPACE_DIM,SEG_LIMIT); brf=(brf-1)/(2**(NAT_LEVELS-1))+1
          ierr=exatns_space_register('space_ao',basis_ao,ao_space_id,ao_space,branch_factor=brf)
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
          ao_space_root=ao_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
@@ -896,7 +900,7 @@
          if(my_rank.eq.comm_size-1) then
           write(6,'("Registering the hierarchical vector space OC ... ")',ADVANCE='NO'); flush(6)
          endif
-         brf=get_num_segments(OC_SPACE_DIM,SEG_LIMIT)
+         brf=get_num_segments(OC_SPACE_DIM,SEG_LIMIT); brf=(brf-1)/(2**(NAT_LEVELS-1))+1
          ierr=exatns_space_register('space_oc',basis_oc,oc_space_id,oc_space,branch_factor=brf)
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
          oc_space_root=oc_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
@@ -905,7 +909,7 @@
          if(my_rank.eq.comm_size-1) then
           write(6,'("Registering the hierarchical vector space VI ... ")',ADVANCE='NO'); flush(6)
          endif
-         brf=get_num_segments(VI_SPACE_DIM,SEG_LIMIT)
+         brf=get_num_segments(VI_SPACE_DIM,SEG_LIMIT); brf=(brf-1)/(2**(NAT_LEVELS-1))+1
          ierr=exatns_space_register('space_vi',basis_vi,vi_space_id,vi_space,branch_factor=brf)
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
          vi_space_root=vi_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
@@ -1037,6 +1041,8 @@
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_get_scalar() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: Value = (",D21.14,1x,D21.14,"):",F16.4," sec")') etens_value,tmf-tms; flush(6)
+           write(6,'("Reference value = ",D21.14)')&
+           &(dble(AO_SPACE_DIM)**2)*(dble(OC_SPACE_DIM)**2)*(dble(VI_SPACE_DIM)**6)*(abs(left_val)**2)*(abs(right_val*right_val)**2)
  !Destroy tensors:
   !ztens:
            write(6,'("Destroying tensor ztens ... ")',ADVANCE='NO'); flush(6)
