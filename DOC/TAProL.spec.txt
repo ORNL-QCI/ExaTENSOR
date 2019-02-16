@@ -5,6 +5,7 @@ REVISION: 2019/02/16
 Copyright (C) 2016-2019 Dmitry I. Liakh.
 Copyright (C) 2016-2019 Oak Ridge National Laboratory, UT-Battelle, LLC.
 
+TAProL version 1.0 (2019/02/16)
 
 0. PREAMBULE
 
@@ -369,6 +370,10 @@ Examples of defined basic tensor operations:
                           (2) Every index on the left of "=" must also appear on the right only once;
                           (3) Every index on the right, which is not present on the left, must appear
                               at least twice on the right.
+
+In cases where tensor indices must be additionally classified as either covariant or contravariant,
+a "+" can be appended to those indices which are considered contravariant in a given tensor operation,
+for example: T1(i,j+,k,l+) += S1(k,c+,j+,d) * S2(c+,i,l+,d).
 
 
 2.4. Tensor network specification:
