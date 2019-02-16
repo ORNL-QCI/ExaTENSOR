@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/17
+!REVISION: 2019/02/15
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -4304,6 +4304,7 @@
                 &'("#FATAL(TAVP-MNG:Decomposer:decompose)[",i6,"]: Tensor instruction code ",i3," is not implemented!")')&
                 &impir,opcode
 !$OMP END CRITICAL (IO)
+                flush(CONS_OUT)
                 errc=-7
                end select
               else
@@ -4383,6 +4384,12 @@
            end select
            if(jerr.ne.0) exit tloop
           enddo tloop
+          if(jerr.ne.0.and.VERBOSE) then
+!$OMP CRITICAL (IO)
+           write(CONS_OUT,'("#ERROR(TAVP-MNG:Decomposer.decompose.decompose_output_operands): Error ",i11)') jerr
+!$OMP END CRITICAL (IO)
+           flush(CONS_OUT)
+          endif
           return
          end subroutine decompose_output_tensors
 
@@ -4513,19 +4520,22 @@
           else
            jerr=-1
           endif
-          if(DEBUG.gt.0) then
-           if(jerr.eq.0) then
+          if(jerr.eq.0) then
+           if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_CREATE subinstructions")')&
             &impir,uid,num_subinstr
 !$OMP END CRITICAL (IO)
-           else
+            flush(CONS_OUT)
+           endif
+          else
+           if(VERBOSE) then
 !$OMP CRITICAL (IO)
-            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
+            write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
             &'" failed to create TENS_CREATE subinstructions: Error ",i11)') impir,uid,jerr
 !$OMP END CRITICAL (IO)
+            flush(CONS_OUT)
            endif
-           flush(CONS_OUT)
           endif
           return
          end subroutine decompose_instr_tens_create
@@ -4631,19 +4641,22 @@
           else
            jerr=-1
           endif
-          if(DEBUG.gt.0) then
-           if(jerr.eq.0) then
+          if(jerr.eq.0) then
+           if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_DESTROY subinstructions")')&
             &impir,uid,num_subinstr
 !$OMP END CRITICAL (IO)
-           else
+            flush(CONS_OUT)
+           endif
+          else
+           if(VERBOSE) then
 !$OMP CRITICAL (IO)
-            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
+            write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
             &'" failed to create TENS_DESTROY subinstructions: Error ",i11)') impir,uid,jerr
 !$OMP END CRITICAL (IO)
+            flush(CONS_OUT)
            endif
-           flush(CONS_OUT)
           endif
           return
          end subroutine decompose_instr_tens_destroy
@@ -4773,21 +4786,24 @@
           else
            jerr=-1
           endif
-          if(DEBUG.gt.0) then
-           if(jerr.eq.0) then
+          if(jerr.eq.0) then
+           if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_INIT subinstructions")')&
             &impir,uid,num_subinstr
 !$OMP END CRITICAL (IO)
-           else
+            flush(CONS_OUT)
+           endif
+          else
+           if(VERBOSE) then
 !$OMP CRITICAL (IO)
-            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
+            write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
             &'" failed to create TENS_INIT subinstructions with error ",i11," for parent tensor instruction:")')&
             &impir,uid,jerr
 !$OMP END CRITICAL (IO)
             call tens_instr%print_it(dev_id=CONS_OUT)
+            flush(CONS_OUT)
            endif
-           flush(CONS_OUT)
           endif
           return
          end subroutine decompose_instr_tens_transform
@@ -4920,21 +4936,24 @@
           else
            jerr=-1
           endif
-          if(DEBUG.gt.0) then
-           if(jerr.eq.0) then
+          if(jerr.eq.0) then
+           if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," created ",i9," TENS_CONTRACT subinstructions")')&
             &impir,uid,num_subinstr
 !$OMP END CRITICAL (IO)
-           else
+            flush(CONS_OUT)
+           endif
+          else
+           if(VERBOSE) then
 !$OMP CRITICAL (IO)
-            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
+            write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
             &'" failed to create TENS_CONTRACT subinstructions with error ",i11," for parent tensor instruction:")')&
             &impir,uid,jerr
 !$OMP END CRITICAL (IO)
             call tens_instr%print_it(dev_id=CONS_OUT)
+            flush(CONS_OUT)
            endif
-           flush(CONS_OUT)
           endif
           return
          end subroutine decompose_instr_tens_contract
