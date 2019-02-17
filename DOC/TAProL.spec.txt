@@ -96,6 +96,13 @@ Vector subspace specification:
 
  Each declared vector space automatically declares itself as a subspace under the same name.
 
+ Alternatively, one may also define subspaces within the unnamed vector space as
+
+  subspace(): subspace0=[13:134], subspace1=[lower1:upper1]
+
+ The unnamed vector space is predefined in TAProL. It has infinite dimension. One
+ may define any subspace in the unnamed vector space by specifying an integer range.
+
 Index specification (placeholder for a given subspace):
 
  index(<subspace_name>): <index_name>,<index_name>, ...
