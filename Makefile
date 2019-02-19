@@ -110,6 +110,7 @@ ifeq ($(EXA_OS),LINUX)
 	cp -u ./[A-Z]*/*.mod ./include/
 	cp -u ./TALSH/talsh.h ./include/
 	cp -u ./TALSH/talshxx.hpp ./include/
+	cp -u ./TALSH/tensor_method.hpp ./include/
 #	cp -u ./[A-Z]*/*.h ./include/
 #	cp -u ./[A-Z]*/*.hpp ./include/
 #	cp -u ./TN/*.cpp ./include/
@@ -117,6 +118,7 @@ else
 	cp ./[A-Z]*/*.mod ./include/
 	cp ./TALSH/talsh.h ./include/
 	cp ./TALSH/talshxx.hpp ./include/
+	cp ./TALSH/tensor_method.hpp ./include/
 #	cp ./[A-Z]*/*.h ./include/
 #	cp ./[A-Z]*/*.hpp ./include/
 #	cp ./TN/*.cpp ./include/
