@@ -800,17 +800,17 @@ int get_buf_entry_from_address(int dev_id, const void * addr)
   default:
    omp_unset_nest_lock(&mem_lock); return -3; //invalid device kind
  }
- prev_entry_occ=0; prev_lev_size=0;
  if(buf_offset < buf_size){ //address is in the buffer space
+  prev_entry_occ=0; prev_lev_size=0;
   lev=0;
   while(lev < ab_conf->buf_depth){
    if(buf_offset%blck_sz[lev] == 0){
     i=ab_get_1d_pos(*ab_conf,lev,buf_offset/blck_sz[lev]);
-    if(occ[i] == blck_sz[lev]){
-     ben=i;
-     prev_entry_occ=occ[i]; prev_lev_size=blck_sz[lev]; //debug
-    }else if(occ[i] == 0){
+    if(occ[i] == 0){
      break;
+    }else{
+     if(occ[i] == blck_sz[lev]) ben=i;
+     prev_entry_occ=occ[i]; prev_lev_size=blck_sz[lev]; //debug
     }
    }
    ++lev;

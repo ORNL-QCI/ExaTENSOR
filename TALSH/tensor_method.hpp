@@ -39,7 +39,7 @@ public:
  virtual void unpack(const BytePacket & packet) = 0;
 
  //Application-defined external tensor method:
- virtual int apply(TensorDenseBlock & local_tensor) = 0;
+ virtual int apply(const TensorDenseBlock & local_tensor) = 0;
 
 };
 
