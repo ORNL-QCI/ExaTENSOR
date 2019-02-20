@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/02/15
+!REVISION: 2019/02/20
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -4616,6 +4616,11 @@
                   call tens_instr%set_status(DS_INSTR_ISSUED,jerr,num_subinstr) !.error_code of the parent instruction will store the number of subinstructions (in Collector)
                   if(jerr.ne.DSVP_SUCCESS) jerr=-10
                  else
+!$OMP CRITICAL (IO)
+                  write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," TENS_DESTROY creation loop error ",i11)')&
+                  &impir,uid,jerr
+!$OMP END CRITICAL (IO)
+                  flush(CONS_OUT)
                   jerr=-9
                  endif
                  jj=lit%release(); if(jj.ne.GFC_SUCCESS.and.jerr.eq.0) jerr=-8
