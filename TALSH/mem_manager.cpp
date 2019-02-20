@@ -806,9 +806,9 @@ int get_buf_entry_from_address(int dev_id, const void * addr)
   while(lev < ab_conf->buf_depth){
    if(buf_offset%blck_sz[lev] == 0){
     i=ab_get_1d_pos(*ab_conf,lev,buf_offset/blck_sz[lev]);
-    prev_entry_occ=occ[i]; prev_lev_size=blck_sz[lev]; //debug
     if(occ[i] == blck_sz[lev]){
      ben=i;
+     prev_entry_occ=occ[i]; prev_lev_size=blck_sz[lev]; //debug
     }else if(occ[i] == 0){
      break;
     }
