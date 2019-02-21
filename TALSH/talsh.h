@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/02/07
+REVISION: 2019/02/21
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -60,7 +60,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_TASK_COMPLETED 2000005
 
 //TAL-SH DATA TYPES:
-// Interoperable tensor block:
+// Interoperable dense tensor block:
 typedef struct{
  talsh_tens_shape_t * shape_p; //shape of the tensor block
  talsh_dev_rsc_t * dev_rsc;    //list of device resources occupied by the tensor block body on each device
@@ -69,6 +69,13 @@ typedef struct{
  int dev_rsc_len;              //capacity of .dev_rsc[], .data_kind[], .avail[]
  int ndev;                     //number of devices the tensor block body resides on: ndev <= dev_rsc_len
 } talsh_tens_t;
+
+// Dense tensor slice view (view of a dense tensor slice within an actual dense tensor):
+typedef struct{
+ talsh_tens_t * tensor;        //non-owning pointer to the host-tensor
+ talsh_tens_signature_t bases; //tensor slice signature: base offsets of the tensor slice inside the host-tensor
+ talsh_tens_shape_t shape;     //tensor slice shape: extents of tensor slice dimensions
+} talsh_tens_slice_t;
 
 // Tensor operation argument (auxiliary type):
 typedef struct{
@@ -89,6 +96,17 @@ typedef struct{
  double flops;     //number of floating point operations (information)
  double exec_time; //execution time in seconds (information)
 } talsh_task_t;
+
+// Basic tensor operation specification:
+typedef struct{
+ int opkind;                                        //operation kind
+ int num_args;                                      //number of tensor operands: [0..MAX_TENSOR_OPERANDS]
+ talsh_tens_slice_t tens_args[MAX_TENSOR_OPERANDS]; //tensor operands (tensor slice views)
+ char * symb_pattern;                               //symbolic index pattern specification (non-owning pointer)
+ talshComplex8 alpha;                               //alpha prefactor
+ talsh_task_t task_handle;                          //task handle
+} tens_operation_t;
+
 
 //EXPORTED FUNCTIONS:
 #ifdef __cplusplus
