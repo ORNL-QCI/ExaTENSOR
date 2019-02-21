@@ -4581,7 +4581,16 @@
                   call subtensor%tens_rcrsv_ctor(header,jerr)
                   if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-24; exit cloop; endif
                   tens_entry=>this%arg_cache%lookup(subtensor,jerr) !subtensor must be present in the tensor cache since its creation
-                  if((jerr.ne.0).or.(.not.associated(tens_entry))) then; deallocate(subtensor); jerr=-23; exit cloop; endif !trap
+                  if((jerr.ne.0).or.(.not.associated(tens_entry))) then !trap
+!$OMP CRITICAL (IO)
+                   write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," TENS_DESTROY subtensor lookup error: ",'//&
+                   &'i11,1x,l1)') impir,uid,jerr,associated(tens_entry)
+!$OMP END CRITICAL (IO)
+                   flush(CONS_OUT)
+                   call subtensor%print_it(dev_id=CONS_OUT)
+                   deallocate(subtensor)
+                   jerr=-23; exit cloop
+                  endif
                   call tens_entry%lock()
                   deallocate(subtensor); subtensor=>tens_entry%get_tensor(jerr); if(jerr.ne.0) then; jerr=-22; exit cloop; endif
                   tens_entry_mng=>NULL()
