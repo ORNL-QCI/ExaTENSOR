@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/02/20
+!REVISION: 2019/02/21
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -5392,7 +5392,7 @@
             if(owner_ids(ja).eq.this%dispatch_rank(jj)) then; chnl=jj; exit aloop; endif
            enddo
           enddo aloop
-          if(chnl.lt.0) then
+          if(chnl.lt.0) then !all tensor arguments are remote, no affinity
            if(DISPATCH_RANDOM) then
             chnl=map_by_random(jerr)
            else
@@ -5402,12 +5402,16 @@
              chnl=map_by_round(jerr)
             endif
            endif
-          else
-           if(opcode.eq.TAVP_INSTR_TENS_CONTRACT.and.DISPATCH_BALANCE) then !work stealing for certain tensor operations
-            call random_number(rnd)
-            bal=1d0/&
-            &(1d0+exp(-DISPATCH_BALANCE_KURT*(real(this%dispatch_count(chnl)-this%dispatch_count(alt),8)-DISPATCH_BALANCE_BIAS)))
-            if(rnd.lt.bal) chnl=alt
+          else !load balancing and other restrictions
+           if(opcode.eq.TAVP_INSTR_TENS_CONTRACT) then
+            if(DISPATCH_BALANCE) then !work stealing for tensor contractions
+             call random_number(rnd)
+             bal=1d0/&
+             &(1d0+exp(-DISPATCH_BALANCE_KURT*(real(this%dispatch_count(chnl)-this%dispatch_count(alt),8)-DISPATCH_BALANCE_BIAS)))
+             if(rnd.lt.bal) chnl=alt
+            endif
+           elseif(opcode.eq.TAVP_INSTR_TENS_DESTROY) then !tensor destruction must occur at their persistent location
+            alt=chnl
            endif
           endif
           return
