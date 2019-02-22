@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/01/22
+!REVISION: 2019/02/22
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -824,13 +824,27 @@
        end function exatns_process_role
 !-------------------------------------------------------
        function exatns_virtual_depth(depth) result(ierr)
-!Returns the depth of the TAVP-MNG hierarchy.
+!Returns the depth of the TAVP-MNG hierarchy. If the TAVP-MNG
+!hierarchy has not been set up yet, returns an estimate.
         implicit none
         integer(INTD):: ierr               !out: error code
         integer(INTD), intent(out):: depth !out: depth of the TAVP-MNG hierarchy
 
         ierr=EXA_SUCCESS
-        depth=comp_system%get_num_aggr_levels(ierr); if(ierr.ne.0) ierr=EXA_ERR_UNABLE_COMPLETE
+        depth=comp_system%get_num_aggr_levels(ierr)
+        if(ierr.eq.0) then
+         if(depth.le.0) then !TAVPs have not started yet, return an estimate
+          if(impis.le.EXA_MAX_WORK_GROUP_SIZE+1+1) then !one level of TAVP-MNG
+           depth=1
+          elseif(impis.le.(EXA_MAX_WORK_GROUP_SIZE+1)*EXA_MANAGER_BRANCH_FACT+1+1) then !two levels of TAVP-MNG
+           depth=2
+          else !three (or more) levels of TAVP-MNG
+           depth=3
+          endif
+         endif
+        else
+         ierr=EXA_ERR_UNABLE_COMPLETE
+        endif
         return
        end function exatns_virtual_depth
 !----------------------------------------------

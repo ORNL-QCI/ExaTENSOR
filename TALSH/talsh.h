@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/02/21
+REVISION: 2019/02/22
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -59,6 +59,25 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_TASK_OUTPUT_READY 2000004
 #define TALSH_TASK_COMPLETED 2000005
 
+//TAL-SH TENSOR OPERATION KINDS:
+#define TALSH_TENSOR_INIT 68
+#define TALSH_TENSOR_NORM1 69
+#define TALSH_TENSOR_NORM2 70
+#define TALSH_TENSOR_MIN 71
+#define TALSH_TENSOR_MAX 72
+#define TALSH_TENSOR_FOLD 73
+#define TALSH_TENSOR_UNFOLD 74
+#define TALSH_TENSOR_SLICE 75
+#define TALSH_TENSOR_INSERT 76
+#define TALSH_TENSOR_COPY 77
+#define TALSH_TENSOR_PERMUTE 78
+#define TALSH_TENSOR_SCALE 79
+#define TALSH_TENSOR_ADD 80
+#define TALSH_TENSOR_TRACE 81
+#define TALSH_TENSOR_CONTRACT 82
+#define TALSH_TENSOR_HADAMARD 83
+#define TALSH_TENSOR_KHATRIRAO 84
+
 //TAL-SH DATA TYPES:
 // Interoperable dense tensor block:
 typedef struct{
@@ -99,12 +118,14 @@ typedef struct{
 
 // Basic tensor operation specification:
 typedef struct{
- int opkind;                                        //operation kind
- int num_args;                                      //number of tensor operands: [0..MAX_TENSOR_OPERANDS]
- talsh_tens_slice_t tens_args[MAX_TENSOR_OPERANDS]; //tensor operands (tensor slice views)
- char * symb_pattern;                               //symbolic index pattern specification (non-owning pointer)
- talshComplex8 alpha;                               //alpha prefactor
- talsh_task_t task_handle;                          //task handle
+ int opkind;                                         //operation kind
+ int num_args;                                       //number of tensor operands: [0..MAX_TENSOR_OPERANDS]
+ talsh_tens_slice_t tens_slice[MAX_TENSOR_OPERANDS]; //tensor operands (tensor slice views)
+ char * symb_pattern;                                //symbolic index pattern specification (non-owning pointer)
+ talshComplex8 alpha;                                //alpha prefactor
+ talsh_tens_t tens_arg[MAX_TENSOR_OPERANDS];         //tensor operands (actual TAL-SH tensors)
+ talsh_task_t task_handle;                           //task handle
+ int exec_dev_id;                                    //execution device id (flat device id)
 } tens_operation_t;
 
 

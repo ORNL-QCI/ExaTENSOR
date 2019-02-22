@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/22
+!REVISION: 2019/02/22
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -176,6 +176,8 @@
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_ADD=80       !tensor addition (with an optional index permutation)
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_TRACE=81     !tensor trace (produces a lower-rank tensor by tracing over some/all tensor indices)
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_CONTRACT=82  !tensor contraction (also includes tensor product, tensor addition, and tensor scaling as special cases)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_HADAMARD=83  !tensor Hadamrd prodcut (element-wise multiplication)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_KHATRIRAO=84 !tensor Khatri-Rao product (mix of Kronecker and Hadamard products)
    !Special tensor operations (TAVP-WRK only):
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_ACCUMULATE=255 !tensor accumulation (accumulates one tensor into another one with no index permutation)
 !TYPES:
