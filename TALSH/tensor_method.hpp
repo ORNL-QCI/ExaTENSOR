@@ -1,5 +1,5 @@
 /** TAL-SH: Tensor Method Interface
-REVISION: 2019/02/25
+REVISION: 2019/02/26
 
 Copyright (C) 2018-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2018-2019 Oak Ridge National Laboratory (UT-Battelle) **/
@@ -19,6 +19,8 @@ typedef struct{
  long long * bases; //non-owning pointer to dimension bases
  long long * dims;  //non-owning pointer to dimension extents
 } TensorDenseBlock;
+
+unsigned long long getDenseTensorVolume(const TensorDenseBlock &);
 
 
 //External tensor method (identifiable):
