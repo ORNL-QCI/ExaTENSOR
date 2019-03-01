@@ -1,6 +1,7 @@
 NAME = utility
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
+
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
@@ -13,6 +14,7 @@ export MPILIB ?= NONE
 export BLASLIB ?= NONE
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
+
 
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 

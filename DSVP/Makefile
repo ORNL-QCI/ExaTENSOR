@@ -1,6 +1,7 @@
 NAME = dsvp
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
+
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
@@ -18,13 +19,6 @@ export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
-#ADJUST EXTRAS (optional):
-#Fast GPU tensor transpose (cuTT library): [YES|NO]:
-export WITH_CUTT ?= NO
-
-#WORKAROUNDS (ignore if you do not experience problems):
-#Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
-export FOOL_CUDA ?= NO
 
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 
@@ -60,8 +54,6 @@ export PATH_CUDA ?= /usr/local/cuda
  export PATH_CUDA_INC ?= $(PATH_CUDA)/include
  export PATH_CUDA_LIB ?= $(PATH_CUDA)/lib64
  export PATH_CUDA_BIN ?= $(PATH_CUDA)/bin
-# cuTT path (if you use cuTT library):
-export PATH_CUTT ?= /home/div/src/cutt
 
 #YOU ARE DONE!
 
@@ -190,11 +182,7 @@ LA_LINK = $(LA_LINK_$(WRAP))
 ifeq ($(GPU_CUDA),CUDA)
 CUDA_INC_NOWRAP = -I$(PATH_CUDA_INC)
 CUDA_INC_WRAP = -I.
-ifeq ($(WITH_CUTT),YES)
-CUDA_INC = $(CUDA_INC_$(WRAP)) -I$(PATH_CUTT)/include
-else
 CUDA_INC = $(CUDA_INC_$(WRAP))
-endif
 else
 CUDA_INC = -I.
 endif
@@ -216,21 +204,11 @@ CUDA_HOST = $(CUDA_HOST_$(WRAP))
 CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -DDEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo
 CUDA_FLAGS_PRF = --compile -arch=$(GPU_SM) -g -G -O3
-CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES
-ifeq ($(FOOL_CUDA),NO)
-CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS)
-else
-CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS) -D__GNUC__=4
-endif
-ifeq ($(WITH_CUTT),YES)
-CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1) -DUSE_CUTT
-else
-CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1)
-endif
+CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES -D$(EXA_OS)
 ifeq ($(GPU_FINE_TIMING),YES)
-CUDA_FLAGS = $(CUDA_FLAGS_PRE2) -DGPU_FINE_TIMING
+CUDA_FLAGS = $(CUDA_FLAGS_CUDA) -DGPU_FINE_TIMING
 else
-CUDA_FLAGS = $(CUDA_FLAGS_PRE2)
+CUDA_FLAGS = $(CUDA_FLAGS_CUDA)
 endif
 else
 CUDA_FLAGS = -D_FORCE_INLINES

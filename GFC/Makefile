@@ -1,6 +1,7 @@
 NAME = gfc
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
+
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
@@ -11,6 +12,7 @@ export BUILD_TYPE ?= OPT
 export MPILIB ?= NONE
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
+
 
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 

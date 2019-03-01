@@ -1,6 +1,7 @@
 NAME = Qforce
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
+
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
@@ -18,13 +19,14 @@ export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
+
 #ADJUST EXTRAS (optional):
+
 #Fast GPU tensor transpose (cuTT library): [YES|NO]:
 export WITH_CUTT ?= NO
+#In-place GPU tensor contractions (cuTensor library): [YES|NO]:
+export WITH_CUTENSOR ?= NO
 
-#WORKAROUNDS (ignore if you do not experience problems):
-#Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
-export FOOL_CUDA ?= NO
 
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 
@@ -67,6 +69,8 @@ export PATH_CUDA ?= /usr/local/cuda
  export PATH_CUDA_BIN ?= $(PATH_CUDA)/bin
 # cuTT path (if you use cuTT library):
 export PATH_CUTT ?= /home/div/src/cutt
+# cuTensor path (if you use cuTensor library):
+export PATH_CUTENSOR ?= /home/div/src/cutensor
 
 #YOU ARE DONE!
 
@@ -202,17 +206,27 @@ ifeq ($(GPU_CUDA),CUDA)
 CUDA_INC_NOWRAP = -I$(PATH_CUDA_INC)
 CUDA_INC_WRAP = -I.
 ifeq ($(WITH_CUTT),YES)
-CUDA_INC = $(CUDA_INC_$(WRAP)) -I$(PATH_CUTT)/include
+CUDA_INC_PRE1 = $(CUDA_INC_$(WRAP)) -I$(PATH_CUTT)/include
 else
-CUDA_INC = $(CUDA_INC_$(WRAP))
+CUDA_INC_PRE1 = $(CUDA_INC_$(WRAP))
+endif
+ifeq ($(WITH_CUTENSOR),YES)
+CUDA_INC = $(CUDA_INC_PRE1) -I$(PATH_CUTENSOR)/include
+else
+CUDA_INC = $(CUDA_INC_PRE1)
 endif
 else
 CUDA_INC = -I.
 endif
 
 #CUDA LIBS:
+ifeq ($(WITH_CUTENSOR),YES)
+CUDA_LINK_NOWRAP = -L$(PATH_CUDA_LIB) -L$(PATH_CUTENSOR)/lib -lcutensor -lcublas -lcudart -lnvToolsExt
+CUDA_LINK_WRAP = -L$(PATH_CUTENSOR)/lib -lcutensor -lcublas -lcudart -lnvToolsExt
+else
 CUDA_LINK_NOWRAP = -L$(PATH_CUDA_LIB) -lcublas -lcudart -lnvToolsExt
 CUDA_LINK_WRAP = -lcublas -lcudart -lnvToolsExt
+endif
 CUDA_LINK_CUDA = $(CUDA_LINK_$(WRAP))
 CUDA_LINK_NOCUDA = -L.
 CUDA_LINK = $(CUDA_LINK_$(GPU_CUDA))
@@ -227,14 +241,14 @@ CUDA_HOST = $(CUDA_HOST_$(WRAP))
 CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -DDEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo
 CUDA_FLAGS_PRF = --compile -arch=$(GPU_SM) -g -G -O3
-CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES
-ifeq ($(FOOL_CUDA),NO)
-CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS)
-else
-CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS) -D__GNUC__=4
-endif
+CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES -D$(EXA_OS)
 ifeq ($(WITH_CUTT),YES)
-CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1) -DUSE_CUTT
+CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -DUSE_CUTT
+else
+CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA)
+endif
+ifeq ($(WITH_CUTENSOR),YES)
+CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1) -DUSE_CUTENSOR
 else
 CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1)
 endif
