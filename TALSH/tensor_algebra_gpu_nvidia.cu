@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/03/01
+REVISION: 2019/03/03
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2346,7 +2346,10 @@ int tensShape_destruct(talsh_tens_shape_t * tshape)
    return -2;
   }
  }
- if(n != 0) n=NOT_CLEAN;
+ if(n != 0){
+  if(VERBOSE) printf("#ERROR(tensShape_destruct): Resource release error %d\n",n);
+  n=NOT_CLEAN;
+ }
  errc=tensShape_clean(tshape);
  return n; //either 0 or NOT_CLEAN
 }
