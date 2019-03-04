@@ -257,9 +257,9 @@ CUDA_HOST_COMPILER ?= /usr/bin/g++
 CUDA_HOST_NOWRAP = -I.
 CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
-CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -DDEBUG_GPU -w
-CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo -w
-CUDA_FLAGS_PRF = --compile -arch=$(GPU_SM) -g -G -O3 -w
+CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -std=c++11 -g -G -DDEBUG_GPU -w
+CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -std=c++11 -O3 -lineinfo -w
+CUDA_FLAGS_PRF = --compile -arch=$(GPU_SM) -std=c++11 -g -G -O3 -w
 CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES -D$(EXA_OS) -Xcompiler $(PIC_FLAG_CUDA)
 ifeq ($(WITH_CUTT),YES)
 CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -DUSE_CUTT
