@@ -54,7 +54,7 @@ export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.1.0
 # Set this path if you have chosen ATLAS (default Linux BLAS):
 export PATH_BLAS_ATLAS ?= /usr/lib
 # Set this path if you have chosen Intel MKL:
-export PATH_INTEL ?= /home/dima/intel
+export PATH_INTEL ?= /opt/intel
 #  Only reset these if Intel MKL libraries are spread in system directories:
 export PATH_BLAS_MKL ?= $(PATH_INTEL)/mkl/lib/intel64
 export PATH_BLAS_MKL_DEP ?= $(PATH_INTEL)/compilers_and_libraries/linux/lib/intel64_lin
@@ -62,7 +62,7 @@ export PATH_BLAS_MKL_INC ?= $(PATH_INTEL)/mkl/include/intel64/lp64
 # Set this path if you have chosen ACML:
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 # Set this path if you have chosen ESSL (also set PATH_IBM_XL_CPP, PATH_IBM_XL_FOR, PATH_IBM_XL_SMP below):
-export PATH_BLAS_ESSL ?= /sw/summit/essl/6.1.0-1/essl/6.1/lib64
+export PATH_BLAS_ESSL ?= /sw/summit/essl/6.1.0-2/essl/6.1/lib64
 
 #IBM XL (only set these if you use IBM XL and/or ESSL):
 export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-1/xlC/16.1.1/lib
@@ -130,11 +130,13 @@ else
 	ld -shared -o libexatensor.so ./lib/*.o
 endif
 	cp -u ./TALSH/libtalsh.so ./
-	cp -u ./libtalsh.so ./lib/
+	cp -u ./TALSH/libtalsh.so ./lib/
 	cp -u ./libexatensor.so ./lib/
-endif
 	cp -u ./libexatensor.a ./lib/
-	rm -rf ./lib/*.o
+else
+	cp ./libexatensor.a ./lib/
+endif
+	rm -f ./lib/*.o
 endif
 	echo "Finished successfully!"
 
