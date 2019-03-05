@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/02/15 (started 2015/03/18)
+!REVISION: 2019/03/05 (started 2015/03/18)
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -270,9 +270,9 @@
           final:: DataDescrDtor                                 !dtor
         end type DataDescr_t
         integer(INT_MPI), parameter, private:: DataDescr_PACK_LEN=6+WinMPI_PACK_LEN !packed length of DataDescr_t (in packing integers)
-        type(DataDescr_t), public:: data_descr_rnd_=&           !random DataDescr_t object for internal testing only
-            &DataDescr_t(C_NULL_PTR,13,win_mpi_rnd_,1024_INT_ADDR,256_INT_COUNT,R8,0_8,MPI_STAT_NONE,MPI_REQUEST_NULL,-1d0,-1d0,&
-            &object_lock_null)
+        !type(DataDescr_t), protected:: data_descr_rnd_=&        !random DataDescr_t object for internal testing only
+            !&DataDescr_t(C_NULL_PTR,13,win_mpi_rnd_,1024_INT_ADDR,256_INT_COUNT,R8,0_8,MPI_STAT_NONE,MPI_REQUEST_NULL,-1d0,-1d0,&
+            !&object_lock_null)
  !Simple packet (plain integer array):
         type, public:: SimplePack_t
          integer(ELEM_PACK_SIZE), pointer, contiguous, private:: Packet(:)=>NULL() !plain integer packet (1d array)

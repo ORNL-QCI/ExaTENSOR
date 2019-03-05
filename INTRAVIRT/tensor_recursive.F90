@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/20
+!REVISION: 2019/03/05
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -9598,7 +9598,7 @@
         use gfc_vector
         use subspaces
         use tensor_recursive
-        use distributed, only: DataDescr_t,data_descr_rnd_
+        use distributed, only: DataDescr_t !,data_descr_rnd_
         implicit none
         private
         public test_tensor_recursive
@@ -9901,8 +9901,8 @@
          thp=>tensor%get_header(ierr); if(ierr.ne.0) then; ierr=8; return; endif
          call tensor%add_subtensor(thp,ierr); thp=>NULL(); if(ierr.ne.0) then; ierr=9; return; endif
          call tensor%set_layout(TEREC_LAY_FDIMS,ierr,R8); if(ierr.ne.0) then; ierr=10; return; endif
-         call tensor%set_location(data_descr_rnd_,ierr); if(ierr.ne.0) then; ierr=11; return; endif
-         tdescr=tensor%get_descriptor(ierr); if(ierr.ne.0) then; ierr=12; return; endif
+         !call tensor%set_location(data_descr_rnd_,ierr); if(ierr.ne.0) then; ierr=11; return; endif
+         !tdescr=tensor%get_descriptor(ierr); if(ierr.ne.0) then; ierr=12; return; endif
          !call tdescr%print_it() !debug
  !Split the tensor into subtensors:
          call tensor%split((/1,2,3,4/),subtensors,ierr,num_subtensors,.TRUE.); if(ierr.ne.0) then; ierr=13; return; endif
