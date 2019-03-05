@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/02/22
+!REVISION: 2019/03/04
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -829,17 +829,23 @@
         implicit none
         integer(INTD):: ierr               !out: error code
         integer(INTD), intent(out):: depth !out: depth of the TAVP-MNG hierarchy
+        integer(INT_MPI):: commsize,errc
 
         ierr=EXA_SUCCESS
         depth=comp_system%get_num_aggr_levels(ierr)
         if(ierr.eq.0) then
          if(depth.le.0) then !TAVPs have not started yet, return an estimate
-          if(impis.le.EXA_MAX_WORK_GROUP_SIZE+1+1) then !one level of TAVP-MNG
-           depth=1
-          elseif(impis.le.(EXA_MAX_WORK_GROUP_SIZE+1)*EXA_MANAGER_BRANCH_FACT+1+1) then !two levels of TAVP-MNG
-           depth=2
-          else !three (or more) levels of TAVP-MNG
-           depth=3
+          call MPI_Comm_size(MPI_COMM_WORLD,commsize,errc)
+          if(errc.eq.0.and.commsize.gt.0) then
+           if(commsize.le.EXA_MAX_WORK_GROUP_SIZE+1+1) then !one level of TAVP-MNG
+            depth=1
+           elseif(commsize.le.(EXA_MAX_WORK_GROUP_SIZE+1)*EXA_MANAGER_BRANCH_FACT+1+1) then !two levels of TAVP-MNG
+            depth=2
+           else !three (or more) levels of TAVP-MNG
+            depth=3
+           endif
+          else
+           ierr=EXA_ERR_UNABLE_COMPLETE
           endif
          endif
         else
