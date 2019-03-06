@@ -2,17 +2,30 @@ ExaTENSOR development list (D.I.L.):
 ===================================
 
 FEATURES NEEDED:
- 2018/09/28: Tensor addition with permutation and conjugation needs to be implemented in TAL-SH and ExaTENSOR:
+ 2018/09/28: Tensor addition with permutation and conjugation needs to be implemented in TAL-SH:
              CP-TAL: tensor addition with permutation is missing;
              NV-TAL: tensor addition with conjugation is missing.
- 2018/09/28: Tensor contraction with conjugation needs to be implemented in NV-TAL.
  2018/09/28: Tensor slicing/insertion needs to be implemented in TAL-SH and ExaTENSOR.
  2018/10/26: exatns_tensor_create() must be able to create tensor slices.
  2018/10/26: TAL-SH should introduce additional layers on top of eager API inferace:
              Lazy layer: Placing tasks into the global queue, decomposing too large tasks
-             into smaller tasks, aggregating smaller tasks into task graphs, binding tasks
-             to basic execution units based on task attributes and data locality, reusing
-             tensor images between tasks (communication minimization), etc.
+             into smaller tasks plus auxiliary operations, aggregating smaller tasks into
+             task graphs, binding tasks to basic execution units based on task attributes
+             and data locality, reusing tensor images between tasks (communication minimization), etc.
+ 2019/01/18: ExaTENSOR: exatns_tensor_get_slice().
+ 2019/02/05: ExaTENSOR: New tensor operations:
+             - exatns_tensor_copy(): Copy with or without index permutation;
+             - exatns_tensor_add(): Addition with or without index permutation;
+             - exatns_tensor_slice(): Slice extraction;
+             - exatns_tensor_insert(): Slice insertion;
+             - exatns_tensor_product(): Kronecker, Hadamard, Khatri-Rao products;
+             - exatns_tensor_contract_general(): Anything.
+ 2019/03/06: talshTensorContractXL() function: All tensors are initially placed on Host. Blocking.
+ 2019/03/06: TAL-SH: Tensor C++ ctor with initialization data as a vector.
+ 2019/03/06: TAL-SH: Tensor C++: getSize(), getVolume(), getShape().
+ 2019/03/06: TAL-SH: Tensor C++: getDataPtr().
+ 2019/03/06: TAL-SH: Add beta argument in talshTensorContract() and Tensor.contractAccumulate().
+ 2019/03/06: TAL-SH: cuTensor integration: Add pattern converter and finish integration in NV-TAL.
 
 
 UNSOLVED ISSUES:
@@ -38,6 +51,32 @@ UNSOLVED ISSUES:
              a positive number indicates a sequence of dependent instructions to be executed in their
              original order; all instructions from such a sequence will be marked with the same stream;
              the last instruction in this sequence will have its stream number negated.
+ 2019/02/18: ExaTENSOR: Allow HAB size to exceed memory limit.
+ 2019/02/18: ExaTENSOR Resourcer: Give priority to instructions which do not require communication.
+ 2019/02/18: ExaTENSOR Communicator: Do not send multiple messages to the same MPI rank at a time.
+ 2019/02/19: ExaTENSOR TAVP-WRK: Minimize NUMA issues on CPU:
+             - No initialization to zero for persistent and temporary tensors. Accumulators should be
+               initialized to zero in Dispatcher if not up-to-date (their up-to-date status is reset
+               upon each actual remote Accumulate operation, but Communicator will no longer nullify them).
+             - Perform tensor contractions in temporary tensors with beta=0. Other tensor operations may
+               need to initialize temporary tensors in Dispatcher prior to the operation.
+             - Perform local accumulations (temporary into accumulator) in Dispatcher with multi-threading.
+ 2019/03/06: TAL-SH multithreaded first touch in arg_buf_allocate on CPU.
+ 2019/03/06: TAL-SH coherence control issue: Logic for output tensors is wrong in some cases, should be:
+             - Mark all tensor images unavailable in operation scheduling.
+             - Then by case:
+               - D: Discard all images except SRC (in operation scheduling);
+                    Discard SRC image after completion;
+               - M: Discard all images except SRC (in operation scheduling);
+                    Discard SRC image after completion;
+                    Append DST image after completion (available);
+               - T: Discard all images except SRC (in operation scheduling);
+                    Transfer DST to SRC (in operation);
+                    Mark SRC available after completion;
+               - K: Discard all images except SRC (in operation scheduling);
+                    Transfer DST to SRC (in operation);
+                    Mark SRC available after completion;
+                    Append DST image after completion (available).
 
 
 SOLVED:
@@ -47,6 +86,7 @@ SOLVED:
  2018/10/26: Memory per MPI process needs to be specified in an environment variable and then read by ExaTENSOR.
              Memory allocations/deallocations for tensors should be done via my custom memory allocator,
              with a fallback to regular allocations in case the custom allocator is out of memory space.
+ 2018/09/28: Tensor contraction with conjugation needs to be implemented in NV-TAL.
  2018/04/24: TAVP_INSTR_CTRL_STOP should not be reordered with other instructions in TAVP-WRK:
              It must reach each DSVU the last, that is, each DSVU must pass the STOP instruction as its last instruction.
  2018/04/09: It is not clear when to upload and when to destroy a local accumulator tensor: TMP_COUNT never decreases.
