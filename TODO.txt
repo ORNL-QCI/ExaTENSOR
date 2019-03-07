@@ -16,10 +16,13 @@ FEATURES NEEDED:
  2019/02/05: ExaTENSOR: New tensor operations:
              - exatns_tensor_copy(): Copy with or without index permutation;
              - exatns_tensor_add(): Addition with or without index permutation;
-             - exatns_tensor_slice(): Slice extraction;
-             - exatns_tensor_insert(): Slice insertion;
+             - exatns_tensor_slice(): Slice extraction with or without index permutation;;
+             - exatns_tensor_insert(): Slice insertion with or without index permutation;;
              - exatns_tensor_product(): Kronecker, Hadamard, Khatri-Rao products;
-             - exatns_tensor_contract_general(): Anything.
+             - exatns_tensor_contract_general(): Mix of pairwise contractions and products.
+ 2019/02/14: Add control field to TENS_CREATE:
+             - List of tensor dimensions that may be split;
+             - List of tensor dimensions that may be distributed if split.
  2019/03/06: talshTensorContractXL() function: All tensors are initially placed on Host. Blocking.
  2019/03/06: TAL-SH: Tensor C++ ctor with initialization data as a vector.
  2019/03/06: TAL-SH: Tensor C++: getSize(), getVolume(), getShape().
@@ -40,7 +43,7 @@ UNSOLVED ISSUES:
              T12(a,b,i,j) --> T12$0, T12$1, T12$2, etc. Note that later the output tensor name substitution
              may additionally mangle the name: T12 --> T12#0 (accumulator), T12#1, T12#2, ... (temporary).
              Thus, combined will give: T12 (original) --> T12$1 (replica) --> T12$1#3 (temporary replica).
- 2018/08/20: Temporary (output) tensors should be reused, especially if they are already on GPU.
+ 2018/08/20: Temporary (output) tensors should be reused if they are already on an accelerator.
  2018/09/12: Tensor transformation requires MPI_PUT and MPI_GET for output tensor arguments:
              Get output tensor argument --> Transform it locally --> Put output tensor argument.
              Tensor initialization requires MPI_PUT. Tensor operations with INOUT operands also
@@ -51,6 +54,11 @@ UNSOLVED ISSUES:
              a positive number indicates a sequence of dependent instructions to be executed in their
              original order; all instructions from such a sequence will be marked with the same stream;
              the last instruction in this sequence will have its stream number negated.
+ 2019/02/05: ExaTENSOR TAVP-MNG: Communication regularizer:
+             - Request counter for each tensor block (incremented during location cycle).
+               If the request counter exceeds certain threshold, defer tensor instruction.
+             - Order located tensor instructions by cumulative distance to their operands:
+               Distance to the operand = func(Distance to the owning MPI process, Operand size).
  2019/02/18: ExaTENSOR: Allow HAB size to exceed memory limit.
  2019/02/18: ExaTENSOR Resourcer: Give priority to instructions which do not require communication.
  2019/02/18: ExaTENSOR Communicator: Do not send multiple messages to the same MPI rank at a time.

@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2019/02/13
+REVISION: 2019/03/06
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -164,6 +164,12 @@ public:
  int getRank() const;
  /** Returns the tensor order (rank in phys terms). **/
  int getOrder() const;
+
+ /** Returns the tensor volume (number of elements). **/
+ std::size_t getVolume() const;
+
+ /** Returns tensor dimension extents (and tensor order). **/
+ const int * getDimExtents(unsigned int & num_dims) const;
 
  /** Use count increment/decrement. **/
  Tensor & operator++(); //increments tensor use count
