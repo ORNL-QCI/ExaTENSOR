@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/03/09
+REVISION: 2019/03/10
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2843,6 +2843,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
                         int dev_id,                //in: device id (flat or kind-specific)
                         int dev_kind,              //in: device kind (if present, <dev_id> is kind-specific)
                         int copy_ctrl,             //in: copy control (COPY_XXX), defaults to COPY_MTT
+                        int accumulative,          //in: accumulate in (default) VS overwrite destination tensor: [YEP|NOPE]
                         talsh_task_t * talsh_task) //inout: TAL-SH task (must be clean on entrance)
 /** Tensor contraction dispatcher. **/
 {
@@ -2985,7 +2986,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
    if(cohd == COPY_D || (cohd == COPY_M && dtens->dev_rsc[dimg].dev_id != devid)) dtens->avail[dimg] = NOPE;
    //Schedule the tensor operation via the device-kind specific runtime:
    ctm=clock();
-   errc=cpu_tensor_block_contract(contr_ptrn,lftr,rftr,dftr,scale_real,scale_imag,conj_bits,YEP); //blocking call
+   errc=cpu_tensor_block_contract(contr_ptrn,lftr,rftr,dftr,scale_real,scale_imag,conj_bits,accumulative); //blocking call
    if(talshTensorRank(dtens) == 0){ //an explicit update is needed for scalar destinations
     j=talsh_update_f_scalar(dftr,dtens->data_kind[dimg],dtens->dev_rsc[dimg].gmem_p);
     if(j) errc=TALSH_FAILURE;
@@ -3048,7 +3049,8 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
    //Get the CUDA task alias:
    cuda_task=(cudaTask_t*)(tsk->task_p);
    //Schedule the operation via the device-kind specific runtime:
-   errc=gpu_tensor_block_contract_dlf(contr_ptrn,lctr,rctr,dctr,coh_ctrl,cuda_task,dvn,scale_real,scale_imag,conj_bits,YEP); //non-blocking call
+   errc=gpu_tensor_block_contract_dlf(contr_ptrn,lctr,rctr,dctr,coh_ctrl,cuda_task,dvn,scale_real,scale_imag,
+                                      conj_bits,accumulative); //non-blocking call
    //printf("#DEBUG(talshc:talshTensorContract): gpu_tensor_block_contract_dlf error %d\n",errc); //debug
    //printf("#DEBUG(talshc:talshTensorContract): Printing cuda_task after scheduling:\n"); cuda_task_print(cuda_task); //debug
    dvn=cuda_task_gpu_id(cuda_task);
@@ -3107,9 +3109,10 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
 }
 
 int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens,
-                         double scale_real, double scale_imag, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task) //Fortran wrapper
+                         double scale_real, double scale_imag, int dev_id, int dev_kind,
+                         int copy_ctrl, int accumulative, talsh_task_t * talsh_task) //Fortran wrapper
 {
- return talshTensorContract(cptrn,dtens,ltens,rtens,scale_real,scale_imag,dev_id,dev_kind,copy_ctrl,talsh_task);
+ return talshTensorContract(cptrn,dtens,ltens,rtens,scale_real,scale_imag,dev_id,dev_kind,copy_ctrl,accumulative,talsh_task);
 }
 
 double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens)

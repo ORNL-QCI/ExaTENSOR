@@ -133,7 +133,7 @@ void test_talsh_c(int * ierr)
 #endif
  //Schedule:
  clock_t tms = clock();
- errc=talshTensorContract("D(a,b,i,j)+=L(c,b,d,a)*R(j,d,i,c)",&tens0,&tens1,&tens2,2.0,0.0,dev_num,dev_kind,COPY_MTT,&task0);
+ errc=talshTensorContract("D(a,b,i,j)+=L(c,b,d,a)*R(j,d,i,c)",&tens0,&tens1,&tens2,2.0,0.0,dev_num,dev_kind,COPY_MTT,YEP,&task0);
  printf(" Tensor contraction has been scheduled for execution: Status %d\n",errc); if(errc){*ierr=10; return;};
  //Test for completion:
  int sts,done=NOPE;

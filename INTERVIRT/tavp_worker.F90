@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/02/15
+!REVISION: 2019/03/10
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -9194,7 +9194,7 @@
                   if(errc.eq.0.and.cpl.gt.0) then
                    do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
                    errc=talsh_tensor_contract(str_ptrn(1:cpl),tens0,tens1,tens2,prefactor,dev_id=dev,copy_ctrl=COPY_TTT,&
-                   &talsh_task=tens_instr%talsh_task)
+                   &accumulative=.TRUE.,talsh_task=tens_instr%talsh_task)
                    if(errc.ne.TALSH_SUCCESS) then
                     if(errc.eq.TRY_LATER) then
                      ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-12

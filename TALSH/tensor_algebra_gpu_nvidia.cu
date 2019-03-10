@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/03/09
+REVISION: 2019/03/10
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -132,7 +132,8 @@ __global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T
 template <typename T>
 __global__ void gpu_array_scale__(size_t tsize, T * arr, T alpha);
 template <typename T>
-__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, T alpha, int left_conj = 0);
+__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1,
+                                T alpha, int left_conj = 0);
 template <typename T>
 __global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, const T * __restrict__ scalar,
                                 T alpha, int left_conj = 0);
@@ -209,14 +210,18 @@ static int DISABLE_BLAS=0; //non-zero value will disable cuBLAS usage (if it had
 static int DISABLE_BLAS=1; //non-zero value will disable cuBLAS usage (if it had been cuBLAS compiled/linked)
 #endif /*NO_BLAS*/
 static cudaTask_t * LastTask[MAX_GPUS_PER_NODE]; //last CUDA task successfully scheduled on each GPU
-__device__ __constant__ static float sgemm_alpha=1.0f;                //default alpha constant for SGEMM
-__device__ __constant__ static float sgemm_beta=1.0f;                 //default beta constant SGEMM
-__device__ __constant__ static double dgemm_alpha=1.0;                //default alpha constant for DGEMM
-__device__ __constant__ static double dgemm_beta=1.0;                 //default beta constant DGEMM
-__device__ __constant__ static cuComplex cgemm_alpha={1.0f,0.0f};     //default alpha constant CGEMM
-__device__ __constant__ static cuComplex cgemm_beta={1.0f,0.0f};      //default beta constant CGEMM
-__device__ __constant__ static cuDoubleComplex zgemm_alpha={1.0,0.0}; //default alpha constant ZGEMM
-__device__ __constant__ static cuDoubleComplex zgemm_beta={1.0,0.0};  //default beta constant ZGEMM
+__device__ __constant__ static float sgemm_alpha=1.0f;                    //default alpha constant for SGEMM
+__device__ __constant__ static float sgemm_beta_one=1.0f;                 //default beta constant SGEMM
+__device__ __constant__ static float sgemm_beta_zero=0.0f;                //zero beta constant SGEMM
+__device__ __constant__ static double dgemm_alpha=1.0;                    //default alpha constant for DGEMM
+__device__ __constant__ static double dgemm_beta_one=1.0;                 //default beta constant DGEMM
+__device__ __constant__ static double dgemm_beta_zero=0.0;                //zero beta constant DGEMM
+__device__ __constant__ static cuComplex cgemm_alpha={1.0f,0.0f};         //default alpha constant CGEMM
+__device__ __constant__ static cuComplex cgemm_beta_one={1.0f,0.0f};      //default beta constant CGEMM
+__device__ __constant__ static cuComplex cgemm_beta_zero={0.0f,0.0f};     //zero beta constant CGEMM
+__device__ __constant__ static cuDoubleComplex zgemm_alpha={1.0,0.0};     //default alpha constant ZGEMM
+__device__ __constant__ static cuDoubleComplex zgemm_beta_one={1.0,0.0};  //default beta constant ZGEMM
+__device__ __constant__ static cuDoubleComplex zgemm_beta_zero={0.0,0.0}; //zero beta constant ZGEMM
 // Infrastructure for kernels <gpu_array_norm2__>:
 __device__ static int norm2_wr_lock=0; //write lock shared by all <gpu_array_norm2__> running on GPU
 // Infrastructure for kernels <gpu_array_dot_product__>:
@@ -4583,6 +4588,7 @@ INPUT:
  # scale_real - real part of the GEMM alpha coefficient (defaults to 1.0);
  # scale_imag - imaginary part of the GEMM alpha coefficient (defaults to 0.0);
  # conj_bits - tensor argument complex conjugation bits, one bit per argument: {0:D,1:L,2:R};
+ # accumulative - accumulate in (default) VS overwrite destination tensor: [YEP|NOPE];
 OUTPUT:
  # dtens - updated destination tensor;
  # cuda_task - recorded CUDA task (either successfully scheduled or failed).
@@ -5295,7 +5301,7 @@ NOTES:
   rarg=rtens->dst_rsc->gmem_p;
  }
 //Schedule the appropriate computation kernel:
-// Set up the prefactor (in mapped Host memory):
+// Set up the scaling prefactor (in mapped Host memory):
  errc=0;
  switch(dtens->data_kind){
   case R4:
@@ -5307,7 +5313,11 @@ NOTES:
    }else{
     err=cudaGetSymbolAddress(&alpha_p,sgemm_alpha); if(err != cudaSuccess) errc++;
    }
-   err=cudaGetSymbolAddress(&beta_p,sgemm_beta); if(err != cudaSuccess) errc++;
+   if(accumulative == NOPE){
+    err=cudaGetSymbolAddress(&beta_p,sgemm_beta_zero); if(err != cudaSuccess) errc++;
+   }else{
+    err=cudaGetSymbolAddress(&beta_p,sgemm_beta_one); if(err != cudaSuccess) errc++;
+   }
    break;
   case R8:
    if(scale_real != 1.0 || scale_imag != 0.0){
@@ -5318,7 +5328,11 @@ NOTES:
    }else{
     err=cudaGetSymbolAddress(&alpha_p,dgemm_alpha); if(err != cudaSuccess) errc++;
    }
-   err=cudaGetSymbolAddress(&beta_p,dgemm_beta); if(err != cudaSuccess) errc++;
+   if(accumulative == NOPE){
+    err=cudaGetSymbolAddress(&beta_p,dgemm_beta_zero); if(err != cudaSuccess) errc++;
+   }else{
+    err=cudaGetSymbolAddress(&beta_p,dgemm_beta_one); if(err != cudaSuccess) errc++;
+   }
    break;
   case C4:
    if(scale_real != 1.0 || scale_imag != 0.0){
@@ -5329,7 +5343,11 @@ NOTES:
    }else{
     err=cudaGetSymbolAddress(&alpha_p,cgemm_alpha); if(err != cudaSuccess) errc++;
    }
-   err=cudaGetSymbolAddress(&beta_p,cgemm_beta); if(err != cudaSuccess) errc++;
+   if(accumulative == NOPE){
+    err=cudaGetSymbolAddress(&beta_p,cgemm_beta_zero); if(err != cudaSuccess) errc++;
+   }else{
+    err=cudaGetSymbolAddress(&beta_p,cgemm_beta_one); if(err != cudaSuccess) errc++;
+   }
    break;
   case C8:
    if(scale_real != 1.0 || scale_imag != 0.0){
@@ -5340,7 +5358,11 @@ NOTES:
    }else{
     err=cudaGetSymbolAddress(&alpha_p,zgemm_alpha); if(err != cudaSuccess) errc++;
    }
-   err=cudaGetSymbolAddress(&beta_p,zgemm_beta); if(err != cudaSuccess) errc++;
+   if(accumulative == NOPE){
+    err=cudaGetSymbolAddress(&beta_p,zgemm_beta_zero); if(err != cudaSuccess) errc++;
+   }else{
+    err=cudaGetSymbolAddress(&beta_p,zgemm_beta_one); if(err != cudaSuccess) errc++;
+   }
    break;
   default:
    errc++;
