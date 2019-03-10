@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/03/03
+REVISION: 2019/03/09
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -4568,7 +4568,7 @@ NOTES:
 // TENSOR CONTRACTION (non-blocking):
 __host__ int gpu_tensor_block_contract_dlf(const int *cptrn, tensBlck_t *ltens, tensBlck_t *rtens, tensBlck_t *dtens,
                                            unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id,
-                                           double scale_real, double scale_imag, int conj_bits)
+                                           double scale_real, double scale_imag, int conj_bits, int accumulative)
 /**
 dtens(:)+=ltens(:)*rtens(:)
 INPUT:

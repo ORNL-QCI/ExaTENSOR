@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2019/03/08
+!REVISION: 2019/03/09
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -1436,8 +1436,9 @@
          endif
          return
         end function cpu_tensor_block_add
-!----------------------------------------------------------------------------------------------------------------------------
-        integer(C_INT) function cpu_tensor_block_contract(contr_ptrn,ltens_p,rtens_p,dtens_p,scale_real,scale_imag,arg_conj)&
+!-----------------------------------------------------------------------------------------------------
+        integer(C_INT) function cpu_tensor_block_contract(contr_ptrn,ltens_p,rtens_p,dtens_p,&
+                                                         &scale_real,scale_imag,arg_conj,accumulative)&
                                                          &bind(c,name='cpu_tensor_block_contract')
          implicit none
          integer(C_INT), intent(in):: contr_ptrn(*) !in: digital tensor contraction pattern
@@ -1447,6 +1448,7 @@
          real(C_DOUBLE), value:: scale_real         !in: scaling prefactor (real part)
          real(C_DOUBLE), value:: scale_imag         !in: scaling prefactor (imaginary part)
          integer(C_INT), value:: arg_conj           !in: argument complex conjugation bits (0:D,1:L,2:R)
+         integer(C_INT), value:: accumulative       !in: whether or not tensor contraction is accumulative [YEP|NO]
          type(tensor_block_t), pointer:: dtp,ltp,rtp
          integer:: conj_bits,ierr
 
@@ -1454,7 +1456,8 @@
          if(c_associated(dtens_p).and.c_associated(ltens_p).and.c_associated(rtens_p)) then
           call c_f_pointer(dtens_p,dtp); call c_f_pointer(ltens_p,ltp); call c_f_pointer(rtens_p,rtp)
           if(associated(dtp).and.associated(ltp).and.associated(rtp)) then
-           call tensor_block_contract(contr_ptrn,ltp,rtp,dtp,ierr,alpha=cmplx(scale_real,scale_imag,8),arg_conj=conj_bits)
+           call tensor_block_contract(contr_ptrn,ltp,rtp,dtp,ierr,alpha=cmplx(scale_real,scale_imag,8),&
+                                     &arg_conj=conj_bits,accumulative=(accumulative.ne.NOPE))
            cpu_tensor_block_contract=ierr
           else
            cpu_tensor_block_contract=-2
