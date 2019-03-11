@@ -1197,7 +1197,7 @@
          type(talsh_tens_t), intent(inout):: tens           !inout: tensor block
          integer(C_INT), intent(in):: dev_id                !in: device id (flat or kind-specific)
          integer(C_INT), intent(in), optional:: dev_kind    !in: device kind (if present, <dev_id> is kind-specific)
-         type(C_PTR), value, intent(in), optional:: dev_mem !in: externally provided target device memory pointer
+         type(C_PTR), intent(in), optional:: dev_mem        !in: externally provided target device memory pointer
          integer(C_INT), intent(in), optional:: copy_ctrl   !in: copy control (COPY_X), defaults to COPY_M
          type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task handle
          integer(C_INT):: dvk,coh,sts
