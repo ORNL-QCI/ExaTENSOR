@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/03/09
+!REVISION: 2019/03/11
 
 !Copyright (C) 2013-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -7826,7 +7826,7 @@
 	real(real_kind), intent(in), optional:: beta  !BLAS beta (defaults to 1)
 	integer i,j,k,l,m,n,nthr
 	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
-	real(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val,alf,bet
+	real(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val,alf
 	real(8) time_beg,tm
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,red_mat_size,arg_cache_size,min_distr_seg_size,cdim_stretch,core_slope,ker1,ker2,ker3
@@ -7838,7 +7838,15 @@
 	ierr=0
 !	time_beg=thread_wtime() !debug
 	if(present(alpha)) then; alf=alpha; else; alf=1.0; endif
-	if(present(beta)) then; bet=beta; else; bet=1.0; endif
+	if(present(beta)) then !rescale output tensor if requested
+	 if(beta.ne.1.0) then
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED)
+	  do l0=0_LONGINT,dr*dl-1_LONGINT
+	   dtens(l0)=dtens(l0)*beta
+	  enddo
+!$OMP END PARALLEL DO
+	 endif
+	endif
 	if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
 #ifndef NO_OMP
 	 nthr=omp_get_max_threads()
@@ -8085,11 +8093,11 @@
 !        tm,2d0*dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r4
-!--------------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------------------
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_pcontract_dlf_r8
 #endif
-	subroutine tensor_block_pcontract_dlf_r8(dl,dr,dc,ltens,rtens,dtens,ierr,alpha) !PARALLEL
+	subroutine tensor_block_pcontract_dlf_r8(dl,dr,dc,ltens,rtens,dtens,ierr,alpha,beta) !PARALLEL
 !This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)*alpha
 !The result is a matrix as well (cannot be a scalar, see tensor_block_fcontract).
@@ -8115,6 +8123,7 @@
 	real(real_kind), intent(inout):: dtens(0:*) !output argument
 	integer, intent(inout):: ierr !error code
 	real(real_kind), intent(in), optional:: alpha !BLAS alpha
+	real(real_kind), intent(in), optional:: beta  !BLAS beta (defaults to 1)
 	integer i,j,k,l,m,n,nthr
 	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
 	real(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val,alf !`thread private (redm)?
@@ -8129,6 +8138,15 @@
 	ierr=0
 !	time_beg=thread_wtime() !debug
 	if(present(alpha)) then; alf=alpha; else; alf=1d0; endif
+	if(present(beta)) then !rescale output tensor if requested
+	 if(beta.ne.1d0) then
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED)
+	  do l0=0_LONGINT,dr*dl-1_LONGINT
+	   dtens(l0)=dtens(l0)*beta
+	  enddo
+!$OMP END PARALLEL DO
+	 endif
+	endif
 	if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
 #ifndef NO_OMP
 	 nthr=omp_get_max_threads()
@@ -8375,11 +8393,11 @@
 !        tm,2d0*dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r8
-!--------------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------------------
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_pcontract_dlf_c4
 #endif
-	subroutine tensor_block_pcontract_dlf_c4(dl,dr,dc,ltens,rtens,dtens,ierr,alpha) !PARALLEL
+	subroutine tensor_block_pcontract_dlf_c4(dl,dr,dc,ltens,rtens,dtens,ierr,alpha,beta) !PARALLEL
 !This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)*alpha
 !The result is a matrix as well (cannot be a scalar, see tensor_block_fcontract).
@@ -8404,7 +8422,8 @@
 	complex(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
 	complex(real_kind), intent(inout):: dtens(0:*) !output argument
 	integer, intent(inout):: ierr !error code
-	complex(real_kind), intent(in), optional:: alpha
+	complex(real_kind), intent(in), optional:: alpha !BLAS alpha
+	complex(real_kind), intent(in), optional:: beta  !BLAS beta (defaults to 1)
 	integer i,j,k,l,m,n,nthr
 	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
 	complex(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val,alf !`thread private (redm)?
@@ -8419,6 +8438,15 @@
 	ierr=0
 !	time_beg=thread_wtime() !debug
 	if(present(alpha)) then; alf=alpha; else; alf=(1d0,0d0); endif
+	if(present(beta)) then !rescale output tensor if requested
+	 if(beta.ne.(1.0,0.0)) then
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED)
+	  do l0=0_LONGINT,dr*dl-1_LONGINT
+	   dtens(l0)=dtens(l0)*beta
+	  enddo
+!$OMP END PARALLEL DO
+	 endif
+	endif
 	if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
 #ifndef NO_OMP
 	 nthr=omp_get_max_threads()
@@ -8665,11 +8693,11 @@
 !        tm,8d0*dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_c4
-!--------------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------------------
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_pcontract_dlf_c8
 #endif
-	subroutine tensor_block_pcontract_dlf_c8(dl,dr,dc,ltens,rtens,dtens,ierr,alpha) !PARALLEL
+	subroutine tensor_block_pcontract_dlf_c8(dl,dr,dc,ltens,rtens,dtens,ierr,alpha,beta) !PARALLEL
 !This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)*alpha
 !The result is a matrix as well (cannot be a scalar, see tensor_block_fcontract).
@@ -8694,7 +8722,8 @@
 	complex(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
 	complex(real_kind), intent(inout):: dtens(0:*) !output argument
 	integer, intent(inout):: ierr !error code
-	complex(real_kind), intent(in), optional:: alpha
+	complex(real_kind), intent(in), optional:: alpha !BLAS alpha
+	complex(real_kind), intent(in), optional:: beta  !BLAS beta (defaults to 1)
 	integer i,j,k,l,m,n,nthr
 	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
 	complex(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val,alf !`thread private (redm)?
@@ -8709,6 +8738,15 @@
 	ierr=0
 !	time_beg=thread_wtime() !debug
 	if(present(alpha)) then; alf=alpha; else; alf=(1d0,0d0); endif
+	if(present(beta)) then !rescale output tensor if requested
+	 if(beta.ne.(1d0,0d0)) then
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED)
+	  do l0=0_LONGINT,dr*dl-1_LONGINT
+	   dtens(l0)=dtens(l0)*beta
+	  enddo
+!$OMP END PARALLEL DO
+	 endif
+	endif
 	if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
 #ifndef NO_OMP
 	 nthr=omp_get_max_threads()

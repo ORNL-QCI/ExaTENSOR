@@ -416,7 +416,12 @@ void test_talsh_qc(int * ierr)
   auto its = contractions_gpu.begin();
   while(remains > 0){
    while(its != contractions_gpu.end()){
-    int errc = its->execute(DEV_NVIDIA_GPU,0); assert(errc == TALSH_SUCCESS || errc == TRY_LATER);
+#ifndef NO_GPU
+    int errc = its->execute(DEV_NVIDIA_GPU,0);
+#else
+    int errc = its->execute(DEV_HOST,0);
+#endif
+    assert(errc == TALSH_SUCCESS || errc == TRY_LATER);
     if(errc == TRY_LATER) break;
     ++its;
    }

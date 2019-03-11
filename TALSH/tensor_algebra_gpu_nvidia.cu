@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/03/10
+REVISION: 2019/03/11
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -5070,7 +5070,7 @@ NOTES:
    }
    gpu_stats[gpu_num].traffic_in+=sizeof(int)*((size_t)drank);
   }
-  if(gpu_d != gpu_num){ //data is not on the computing GPU
+  if(gpu_d != gpu_num && accumulative != NOPE){ //data is not on the computing GPU
    err=cudaMemcpyAsync(dtens->dst_rsc->gmem_p,dtens->src_rsc->gmem_p,dsize,cudaMemcpyDefault,*cuda_stream);
    if(err != cudaSuccess){
     err_msg=cudaGetErrorString(err);
@@ -5092,72 +5092,89 @@ NOTES:
  }
 // Destination tensor transpose:
  if(perm_d == YEP){
-  if(TRANS_SHMEM == EFF_TRN_ON){
-   bx=1+(vol_d-1)/THRDS_TENSOR_COPY; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
-   switch(dtens->data_kind){
-    case R4:
-     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
-      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(float*)(dtens->dst_rsc->gmem_p),(float*)(dtens->tmp_rsc->gmem_p));
-     break;
-    case R8:
-     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
-      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(double*)(dtens->dst_rsc->gmem_p),(double*)(dtens->tmp_rsc->gmem_p));
-     break;
-    case C4:
-     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
-      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
-       (talshComplex4*)(dtens->dst_rsc->gmem_p),(talshComplex4*)(dtens->tmp_rsc->gmem_p));
-     break;
-    case C8:
-     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
-      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
-       (talshComplex8*)(dtens->dst_rsc->gmem_p),(talshComplex8*)(dtens->tmp_rsc->gmem_p));
-     break;
-    default:
-     errc=cuda_task_record(cuda_task,coh_ctrl,40); errc=gpu_activate(cur_gpu); return 40;
-   }
-  }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
+  if(accumulative != NOPE){
+   if(TRANS_SHMEM == EFF_TRN_ON){
+    bx=1+(vol_d-1)/THRDS_TENSOR_COPY; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
+    switch(dtens->data_kind){
+     case R4:
+      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(float*)(dtens->dst_rsc->gmem_p),(float*)(dtens->tmp_rsc->gmem_p));
+      break;
+     case R8:
+      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(double*)(dtens->dst_rsc->gmem_p),(double*)(dtens->tmp_rsc->gmem_p));
+      break;
+     case C4:
+      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
+        (talshComplex4*)(dtens->dst_rsc->gmem_p),(talshComplex4*)(dtens->tmp_rsc->gmem_p));
+      break;
+     case C8:
+      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
+        (talshComplex8*)(dtens->dst_rsc->gmem_p),(talshComplex8*)(dtens->tmp_rsc->gmem_p));
+      break;
+     default:
+      errc=cuda_task_record(cuda_task,coh_ctrl,40); errc=gpu_activate(cur_gpu); return 40;
+    }
+   }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
 #ifdef USE_CUTT
-   for(i=0;i<drank;++i) dprm[i]=cuda_task->tens_args[0].prmn_p[i]-1;
-   cutt_err=cuttPlan(&cutt_d,drank,(dtens->shape).dims,dprm,((size_t)tds_d),*cuda_stream);
-   if(cutt_err == CUTT_SUCCESS){
-    cutt_err=cuttExecute(cutt_d,dtens->dst_rsc->gmem_p,dtens->tmp_rsc->gmem_p);
-    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,41); errc=gpu_activate(cur_gpu); return 41;};
-   }else{
-    errc=cuda_task_record(cuda_task,coh_ctrl,42); errc=gpu_activate(cur_gpu); return 42;
-   }
+    for(i=0;i<drank;++i) dprm[i]=cuda_task->tens_args[0].prmn_p[i]-1;
+    cutt_err=cuttPlan(&cutt_d,drank,(dtens->shape).dims,dprm,((size_t)tds_d),*cuda_stream);
+    if(cutt_err == CUTT_SUCCESS){
+     cutt_err=cuttExecute(cutt_d,dtens->dst_rsc->gmem_p,dtens->tmp_rsc->gmem_p);
+     if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,41); errc=gpu_activate(cur_gpu); return 41;};
+    }else{
+     errc=cuda_task_record(cuda_task,coh_ctrl,42); errc=gpu_activate(cur_gpu); return 42;
+    }
 #else
-   errc=cuda_task_record(cuda_task,coh_ctrl,43); errc=gpu_activate(cur_gpu); return 43;
+    errc=cuda_task_record(cuda_task,coh_ctrl,43); errc=gpu_activate(cur_gpu); return 43;
 #endif
-  }else if(TRANS_SHMEM == EFF_TRN_OFF){
-   bx=1+(vol_d-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
-   switch(dtens->data_kind){
-    case R4:
-     gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
-      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(float*)(dtens->dst_rsc->gmem_p),(float*)(dtens->tmp_rsc->gmem_p));
-     break;
-    case R8:
-     gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
-      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(double*)(dtens->dst_rsc->gmem_p),(double*)(dtens->tmp_rsc->gmem_p));
-     break;
-    case C4:
-     gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
-      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
-       (talshComplex4*)(dtens->dst_rsc->gmem_p),(talshComplex4*)(dtens->tmp_rsc->gmem_p));
-     break;
-    case C8:
-     gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
-      (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
-       (talshComplex8*)(dtens->dst_rsc->gmem_p),(talshComplex8*)(dtens->tmp_rsc->gmem_p));
-     break;
-    default:
-     errc=cuda_task_record(cuda_task,coh_ctrl,44); errc=gpu_activate(cur_gpu); return 44;
+   }else if(TRANS_SHMEM == EFF_TRN_OFF){
+    bx=1+(vol_d-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
+    switch(dtens->data_kind){
+     case R4:
+      gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
+       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(float*)(dtens->dst_rsc->gmem_p),(float*)(dtens->tmp_rsc->gmem_p));
+      break;
+     case R8:
+      gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
+       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(double*)(dtens->dst_rsc->gmem_p),(double*)(dtens->tmp_rsc->gmem_p));
+      break;
+     case C4:
+      gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
+       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
+        (talshComplex4*)(dtens->dst_rsc->gmem_p),(talshComplex4*)(dtens->tmp_rsc->gmem_p));
+      break;
+     case C8:
+      gpu_tensor_block_copy_scatter_dlf__<<<bx,THRDS_TENSOR_COPY_SCAT,0,*cuda_stream>>>
+       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
+        (talshComplex8*)(dtens->dst_rsc->gmem_p),(talshComplex8*)(dtens->tmp_rsc->gmem_p));
+      break;
+     default:
+      errc=cuda_task_record(cuda_task,coh_ctrl,44); errc=gpu_activate(cur_gpu); return 44;
+    }
+   }else{
+    errc=cuda_task_record(cuda_task,coh_ctrl,45); errc=gpu_activate(cur_gpu); return 45;
    }
   }else{
-   errc=cuda_task_record(cuda_task,coh_ctrl,45); errc=gpu_activate(cur_gpu); return 45;
+   err=cudaMemsetAsync(dtens->tmp_rsc->gmem_p,0,dsize,*cuda_stream);
+   if(err != cudaSuccess){
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): Destination tensor memset failed: %s\n",err_msg);
+    errc=cuda_task_record(cuda_task,coh_ctrl,46); errc=gpu_activate(cur_gpu); return 46;
+   }
   }
   darg=dtens->tmp_rsc->gmem_p;
  }else{
+  if(accumulative == NOPE){
+   err=cudaMemsetAsync(dtens->dst_rsc->gmem_p,0,dsize,*cuda_stream);
+   if(err != cudaSuccess){
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): Destination tensor memset failed: %s\n",err_msg);
+    errc=cuda_task_record(cuda_task,coh_ctrl,47); errc=gpu_activate(cur_gpu); return 47;
+   }
+  }
   darg=dtens->dst_rsc->gmem_p;
  }
 // Left tensor transpose:
@@ -5184,7 +5201,7 @@ NOTES:
        (talshComplex8*)(ltens->dst_rsc->gmem_p),(talshComplex8*)(ltens->tmp_rsc->gmem_p));
      break;
     default:
-     errc=cuda_task_record(cuda_task,coh_ctrl,46); errc=gpu_activate(cur_gpu); return 46;
+     errc=cuda_task_record(cuda_task,coh_ctrl,48); errc=gpu_activate(cur_gpu); return 48;
    }
   }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
 #ifdef USE_CUTT
@@ -5192,12 +5209,12 @@ NOTES:
    cutt_err=cuttPlan(&cutt_l,lrank,(ltens->shape).dims,lprm,((size_t)tds_l),*cuda_stream);
    if(cutt_err == CUTT_SUCCESS){
     cutt_err=cuttExecute(cutt_l,ltens->dst_rsc->gmem_p,ltens->tmp_rsc->gmem_p);
-    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,47); errc=gpu_activate(cur_gpu); return 47;};
+    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,49); errc=gpu_activate(cur_gpu); return 49;};
    }else{
-    errc=cuda_task_record(cuda_task,coh_ctrl,48); errc=gpu_activate(cur_gpu); return 48;
+    errc=cuda_task_record(cuda_task,coh_ctrl,50); errc=gpu_activate(cur_gpu); return 50;
    }
 #else
-   errc=cuda_task_record(cuda_task,coh_ctrl,49); errc=gpu_activate(cur_gpu); return 49;
+   errc=cuda_task_record(cuda_task,coh_ctrl,51); errc=gpu_activate(cur_gpu); return 51;
 #endif
   }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_l-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
@@ -5221,10 +5238,10 @@ NOTES:
        (talshComplex8*)(ltens->dst_rsc->gmem_p),(talshComplex8*)(ltens->tmp_rsc->gmem_p));
      break;
     default:
-     errc=cuda_task_record(cuda_task,coh_ctrl,50); errc=gpu_activate(cur_gpu); return 50;
+     errc=cuda_task_record(cuda_task,coh_ctrl,52); errc=gpu_activate(cur_gpu); return 52;
    }
   }else{
-   errc=cuda_task_record(cuda_task,coh_ctrl,51); errc=gpu_activate(cur_gpu); return 51;
+   errc=cuda_task_record(cuda_task,coh_ctrl,53); errc=gpu_activate(cur_gpu); return 53;
   }
   larg=ltens->tmp_rsc->gmem_p;
  }else{
@@ -5254,7 +5271,7 @@ NOTES:
        (talshComplex8*)(rtens->dst_rsc->gmem_p),(talshComplex8*)(rtens->tmp_rsc->gmem_p));
      break;
     default:
-     errc=cuda_task_record(cuda_task,coh_ctrl,52); errc=gpu_activate(cur_gpu); return 52;
+     errc=cuda_task_record(cuda_task,coh_ctrl,54); errc=gpu_activate(cur_gpu); return 54;
    }
   }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
 #ifdef USE_CUTT
@@ -5262,12 +5279,12 @@ NOTES:
    cutt_err=cuttPlan(&cutt_r,rrank,(rtens->shape).dims,rprm,((size_t)tds_r),*cuda_stream);
    if(cutt_err == CUTT_SUCCESS){
     cutt_err=cuttExecute(cutt_r,rtens->dst_rsc->gmem_p,rtens->tmp_rsc->gmem_p);
-    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,53); errc=gpu_activate(cur_gpu); return 53;};
+    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,55); errc=gpu_activate(cur_gpu); return 55;};
    }else{
-    errc=cuda_task_record(cuda_task,coh_ctrl,54); errc=gpu_activate(cur_gpu); return 54;
+    errc=cuda_task_record(cuda_task,coh_ctrl,56); errc=gpu_activate(cur_gpu); return 56;
    }
 #else
-   errc=cuda_task_record(cuda_task,coh_ctrl,55); errc=gpu_activate(cur_gpu); return 55;
+   errc=cuda_task_record(cuda_task,coh_ctrl,57); errc=gpu_activate(cur_gpu); return 57;
 #endif
   }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_r-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
@@ -5291,10 +5308,10 @@ NOTES:
        (talshComplex8*)(rtens->dst_rsc->gmem_p),(talshComplex8*)(rtens->tmp_rsc->gmem_p));
      break;
     default:
-     errc=cuda_task_record(cuda_task,coh_ctrl,56); errc=gpu_activate(cur_gpu); return 56;
+     errc=cuda_task_record(cuda_task,coh_ctrl,58); errc=gpu_activate(cur_gpu); return 58;
    }
   }else{
-   errc=cuda_task_record(cuda_task,coh_ctrl,57); errc=gpu_activate(cur_gpu); return 57;
+   errc=cuda_task_record(cuda_task,coh_ctrl,59); errc=gpu_activate(cur_gpu); return 59;
   }
   rarg=rtens->tmp_rsc->gmem_p;
  }else{
@@ -5307,7 +5324,7 @@ NOTES:
   case R4:
    if(scale_real != 1.0 || scale_imag != 0.0){
     errc=cuda_task_set_prefactor(cuda_task,talshComplex4Set((float)scale_real,(float)scale_imag));
-    if(errc){j=cuda_task_record(cuda_task,coh_ctrl,58); j=gpu_activate(cur_gpu); return 58;}
+    if(errc){j=cuda_task_record(cuda_task,coh_ctrl,60); j=gpu_activate(cur_gpu); return 60;}
     j=slab_get_entry_offset(&prefactors,cuda_task->pref_ptr,&pofs); if(j != 0) errc++;
     alpha_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
    }else{
@@ -5322,7 +5339,7 @@ NOTES:
   case R8:
    if(scale_real != 1.0 || scale_imag != 0.0){
     errc=cuda_task_set_prefactor(cuda_task,talshComplex8Set(scale_real,scale_imag));
-    if(errc){j=cuda_task_record(cuda_task,coh_ctrl,59); j=gpu_activate(cur_gpu); return 59;}
+    if(errc){j=cuda_task_record(cuda_task,coh_ctrl,61); j=gpu_activate(cur_gpu); return 61;}
     j=slab_get_entry_offset(&prefactors,cuda_task->pref_ptr,&pofs); if(j != 0) errc++;
     alpha_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
    }else{
@@ -5337,7 +5354,7 @@ NOTES:
   case C4:
    if(scale_real != 1.0 || scale_imag != 0.0){
     errc=cuda_task_set_prefactor(cuda_task,talshComplex4Set((float)scale_real,(float)scale_imag));
-    if(errc){j=cuda_task_record(cuda_task,coh_ctrl,60); j=gpu_activate(cur_gpu); return 60;}
+    if(errc){j=cuda_task_record(cuda_task,coh_ctrl,62); j=gpu_activate(cur_gpu); return 62;}
     j=slab_get_entry_offset(&prefactors,cuda_task->pref_ptr,&pofs); if(j != 0) errc++;
     alpha_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
    }else{
@@ -5352,7 +5369,7 @@ NOTES:
   case C8:
    if(scale_real != 1.0 || scale_imag != 0.0){
     errc=cuda_task_set_prefactor(cuda_task,talshComplex8Set(scale_real,scale_imag));
-    if(errc){j=cuda_task_record(cuda_task,coh_ctrl,61); j=gpu_activate(cur_gpu); return 61;}
+    if(errc){j=cuda_task_record(cuda_task,coh_ctrl,63); j=gpu_activate(cur_gpu); return 63;}
     j=slab_get_entry_offset(&prefactors,cuda_task->pref_ptr,&pofs); if(j != 0) errc++;
     alpha_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
    }else{
@@ -5367,20 +5384,20 @@ NOTES:
   default:
    errc++;
  }
- if(errc){errc=cuda_task_record(cuda_task,coh_ctrl,62); errc=gpu_activate(cur_gpu); return 62;}
+ if(errc){errc=cuda_task_record(cuda_task,coh_ctrl,64); errc=gpu_activate(cur_gpu); return 64;}
 #ifdef GPU_FINE_TIMING
 // Record a CUDA event:
  err=cudaEventRecord(*cuda_mmbeg,*cuda_stream);
  if(err != cudaSuccess){
   err_msg=cudaGetErrorString(err);
   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): Unable to record the mmbeg event: %s\n",err_msg);
-  errc=cuda_task_record(cuda_task,coh_ctrl,63); errc=gpu_activate(cur_gpu); return 63;
+  errc=cuda_task_record(cuda_task,coh_ctrl,65); errc=gpu_activate(cur_gpu); return 65;
  }
 #endif
 #ifdef USE_CUTENSOR
 // Set cuTensor CUDA stream:
  err_cutensor=cutensorSetStream(cutensor_handle[gpu_num],*cuda_stream);
- if(err_cutensor != CUTENSOR_STATUS_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,83); errc=gpu_activate(cur_gpu); return 83;}
+ if(err_cutensor != CUTENSOR_STATUS_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,66); errc=gpu_activate(cur_gpu); return 66;}
 #endif
 // Scalar multiplication:
  if(drank == 0 && lrank == 0 && rrank == 0){
@@ -5402,7 +5419,7 @@ NOTES:
                                                   scale_cmplx8,conj_l,conj_r);
     break;
    default:
-    errc=cuda_task_record(cuda_task,coh_ctrl,64); errc=gpu_activate(cur_gpu); return 64;
+    errc=cuda_task_record(cuda_task,coh_ctrl,67); errc=gpu_activate(cur_gpu); return 67;
   }
 // Right tensor rescaled addition:
  }else if(lrank == 0 && rrank > 0){
@@ -5425,7 +5442,7 @@ NOTES:
                                                            (talshComplex8*)(larg),scale_cmplx8,conj_r);
     break;
    default:
-    errc=cuda_task_record(cuda_task,coh_ctrl,65); errc=gpu_activate(cur_gpu); return 65;
+    errc=cuda_task_record(cuda_task,coh_ctrl,68); errc=gpu_activate(cur_gpu); return 68;
   }
 // Left tensor rescaled addition:
  }else if(lrank > 0 && rrank == 0){
@@ -5448,7 +5465,7 @@ NOTES:
                                                            (talshComplex8*)(rarg),scale_cmplx8,conj_l);
     break;
    default:
-    errc=cuda_task_record(cuda_task,coh_ctrl,66); errc=gpu_activate(cur_gpu); return 66;
+    errc=cuda_task_record(cuda_task,coh_ctrl,69); errc=gpu_activate(cur_gpu); return 69;
   }
 // Full tensor contraction (via vector dot-product):
  }else if(drank == 0 && lrank > 0 && rrank == lrank){
@@ -5473,7 +5490,7 @@ NOTES:
                              (vol_l,(talshComplex8*)larg,(talshComplex8*)rarg,(talshComplex8*)darg,scale_cmplx8,conj_l,conj_r);
     break;
    default:
-    errc=cuda_task_record(cuda_task,coh_ctrl,67); errc=gpu_activate(cur_gpu); return 67;
+    errc=cuda_task_record(cuda_task,coh_ctrl,70); errc=gpu_activate(cur_gpu); return 70;
   }
 // Tensor product (no contracted indices):
  }else if(drank > 0 && drank == lrank + rrank){
@@ -5499,14 +5516,14 @@ NOTES:
                           (vol_l,(talshComplex8*)larg,vol_r,(talshComplex8*)rarg,(talshComplex8*)darg,scale_cmplx8,conj_l,conj_r);
     break;
    default:
-    errc=cuda_task_record(cuda_task,coh_ctrl,68); errc=gpu_activate(cur_gpu); return 68;
+    errc=cuda_task_record(cuda_task,coh_ctrl,71); errc=gpu_activate(cur_gpu); return 71;
   }
 // Partial tensor contraction (via TN matrix multiplication):
  }else{
 #ifndef NO_BLAS
   if(DISABLE_BLAS == 0 && gpu_is_mine(gpu_num) >= GPU_MINE_CUBLAS){ //BLAS is enabled
    err_cublas=cublasSetStream(cublas_handle[gpu_num],*cuda_stream);
-   if(err_cublas != CUBLAS_STATUS_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,69); errc=gpu_activate(cur_gpu); return 69;}
+   if(err_cublas != CUBLAS_STATUS_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,72); errc=gpu_activate(cur_gpu); return 72;}
    switch(dtens->data_kind){
     case R4:
      err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
@@ -5539,9 +5556,9 @@ NOTES:
      }
      break;
     default:
-     errc=cuda_task_record(cuda_task,coh_ctrl,70); errc=gpu_activate(cur_gpu); return 70;
+     errc=cuda_task_record(cuda_task,coh_ctrl,73); errc=gpu_activate(cur_gpu); return 73;
    }
-   if(err_cublas != CUBLAS_STATUS_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,71); errc=gpu_activate(cur_gpu); return 71;}
+   if(err_cublas != CUBLAS_STATUS_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,74); errc=gpu_activate(cur_gpu); return 74;}
   }else{ //BLAS is disabled
 #endif /*NO_BLAS*/
    bx=1+(vol_l-1)/MAT_MULT_TILE_DIMX; by=1+(vol_r-1)/MAT_MULT_TILE_DIMY; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
@@ -5555,7 +5572,7 @@ NOTES:
      gpu_matrix_multiply_tn__<<<blcks,thrds,0,*cuda_stream>>>(ll,lr,lc,(double*)larg,(double*)rarg,(double*)darg,scale_real);
      break;
     default: //`Add complex cases with and without conjugation
-     errc=cuda_task_record(cuda_task,coh_ctrl,72); errc=gpu_activate(cur_gpu); return 72;
+     errc=cuda_task_record(cuda_task,coh_ctrl,75); errc=gpu_activate(cur_gpu); return 75;
    }
 #ifndef NO_BLAS
   }
@@ -5567,7 +5584,7 @@ NOTES:
  if(err != cudaSuccess){
   err_msg=cudaGetErrorString(err);
   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): Unable to record the mmend event: %s\n",err_msg);
-  errc=cuda_task_record(cuda_task,coh_ctrl,73); errc=gpu_activate(cur_gpu); return 73;
+  errc=cuda_task_record(cuda_task,coh_ctrl,76); errc=gpu_activate(cur_gpu); return 76;
  }
 #endif
  switch(dtens->data_kind){
@@ -5608,7 +5625,7 @@ NOTES:
        (talshComplex8*)(dtens->tmp_rsc->gmem_p),(talshComplex8*)(dtens->dst_rsc->gmem_p));
      break;
     default:
-     errc=cuda_task_record(cuda_task,coh_ctrl,74); errc=gpu_activate(cur_gpu); return 74;
+     errc=cuda_task_record(cuda_task,coh_ctrl,77); errc=gpu_activate(cur_gpu); return 77;
    }
   }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
 #ifdef USE_CUTT
@@ -5617,12 +5634,12 @@ NOTES:
    cutt_err=cuttPlan(&cutt_d,drank,rprm,dprm,((size_t)tds_d),*cuda_stream);
    if(cutt_err == CUTT_SUCCESS){
     cutt_err=cuttExecute(cutt_d,dtens->tmp_rsc->gmem_p,dtens->dst_rsc->gmem_p);
-    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,75); errc=gpu_activate(cur_gpu); return 75;};
+    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,78); errc=gpu_activate(cur_gpu); return 78;};
    }else{
-    errc=cuda_task_record(cuda_task,coh_ctrl,76); errc=gpu_activate(cur_gpu); return 76;
+    errc=cuda_task_record(cuda_task,coh_ctrl,79); errc=gpu_activate(cur_gpu); return 79;
    }
 #else
-   errc=cuda_task_record(cuda_task,coh_ctrl,77); errc=gpu_activate(cur_gpu); return 77;
+   errc=cuda_task_record(cuda_task,coh_ctrl,80); errc=gpu_activate(cur_gpu); return 80;
 #endif
   }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_d-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
@@ -5646,10 +5663,10 @@ NOTES:
        (talshComplex8*)(dtens->tmp_rsc->gmem_p),(talshComplex8*)(dtens->dst_rsc->gmem_p));
      break;
     default:
-     errc=cuda_task_record(cuda_task,coh_ctrl,78); errc=gpu_activate(cur_gpu); return 78;
+     errc=cuda_task_record(cuda_task,coh_ctrl,81); errc=gpu_activate(cur_gpu); return 81;
    }
   }else{
-   errc=cuda_task_record(cuda_task,coh_ctrl,79); errc=gpu_activate(cur_gpu); return 79;
+   errc=cuda_task_record(cuda_task,coh_ctrl,82); errc=gpu_activate(cur_gpu); return 82;
   }
  }
 //Record a CUDA event (output ready on GPU):
@@ -5657,7 +5674,7 @@ NOTES:
  if(err != cudaSuccess){
   err_msg=cudaGetErrorString(err);
   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): Unable to record the output event: %s\n",err_msg);
-  errc=cuda_task_record(cuda_task,coh_ctrl,80); errc=gpu_activate(cur_gpu); return 80;
+  errc=cuda_task_record(cuda_task,coh_ctrl,83); errc=gpu_activate(cur_gpu); return 83;
  }
 //Transfer back the updated destination tensor if needed ("T","K" coherence control):
  coh=(coh_ctrl>>4)&(TWO_BITS_SET); //select bits 4,5 (destination tensor coherence)
@@ -5666,7 +5683,7 @@ NOTES:
   if(err != cudaSuccess){
    err_msg=cudaGetErrorString(err);
    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): Destination tensor body back copy failed: %s\n",err_msg);
-   errc=cuda_task_record(cuda_task,coh_ctrl,81); errc=gpu_activate(cur_gpu); return 81;
+   errc=cuda_task_record(cuda_task,coh_ctrl,84); errc=gpu_activate(cur_gpu); return 84;
   }
   gpu_stats[gpu_num].traffic_out+=dsize;
  }
@@ -5675,7 +5692,7 @@ NOTES:
  if(err != cudaSuccess){
   err_msg=cudaGetErrorString(err);
   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): Unable to record the finish event: %s\n",err_msg);
-  errc=cuda_task_record(cuda_task,coh_ctrl,82); errc=gpu_activate(cur_gpu); return 82;
+  errc=cuda_task_record(cuda_task,coh_ctrl,85); errc=gpu_activate(cur_gpu); return 85;
  }
 //Record the successfully scheduled CUDA task and update the Last Task:
  errc=cuda_task_record(cuda_task,coh_ctrl,0);

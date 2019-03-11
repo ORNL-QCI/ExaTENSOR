@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2019/03/10
+!REVISION: 2019/03/11
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -487,7 +487,7 @@
         public talsh_tensor_print_body
         public talshTensorImageNorm1_cpu
  !TAL-SH task API:
-        private talsh_task_clean
+       !private talsh_task_clean
         public talsh_task_destruct
         public talsh_task_dev_id
         public talsh_task_status
