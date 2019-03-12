@@ -24,7 +24,6 @@ FEATURES NEEDED:
              - List of tensor dimensions that may be split;
              - List of tensor dimensions that may be distributed if split.
  2019/03/06: talshTensorContractXL() function: All tensors are initially placed on Host. Blocking.
- 2019/03/06: TAL-SH: Add beta argument in talshTensorContract() and Tensor.contractAccumulate().
  2019/03/06: TAL-SH: cuTensor integration: Add pattern converter and finish integration in NV-TAL.
 
 
@@ -52,11 +51,10 @@ UNRESOLVED ISSUES:
              original order; all instructions from such a sequence will be marked with the same stream;
              the last instruction in this sequence will have its stream number negated.
  2019/02/05: ExaTENSOR TAVP-MNG: Communication regularizer:
-             - Request counter for each tensor block (incremented during location cycle).
+             - Introduce a request counter for each tensor block (incremented during location cycle).
                If the request counter exceeds certain threshold, defer tensor instruction.
              - Order located tensor instructions by cumulative distance to their operands:
                Distance to the operand = func(Distance to the owning MPI process, Operand size).
- 2019/02/18: ExaTENSOR: Allow HAB size to exceed memory limit.
  2019/02/18: ExaTENSOR Resourcer: Give priority to instructions which do not require communication.
  2019/02/18: ExaTENSOR Communicator: Do not send multiple messages to the same MPI rank at a time.
  2019/02/19: ExaTENSOR TAVP-WRK: Minimize NUMA issues on CPU:
@@ -85,9 +83,11 @@ UNRESOLVED ISSUES:
 
 
 RESOLVED:
+ 2019/03/06: TAL-SH: Add beta=0 (overwrite) option in talshTensorContract() and Tensor.contractAccumulate().
  2019/03/06: TAL-SH: Tensor C++ ctor with initialization data as a vector.
  2019/03/06: TAL-SH: Tensor C++: getDataAccessHost().
  2019/03/06: TAL-SH: Tensor C++: getVolume(), getDimExtents().
+ 2019/02/18: ExaTENSOR: Allow HAB size to exceed memory limit.
  2018/10/26: TAVP-MNG:Dispatcher should dispatch tensor instructions in bounded-size packets, thus
              achieving load balancing. For this, retired tensor instruction packets must contain
              a tag specifying which dispatch channel the packet came from.

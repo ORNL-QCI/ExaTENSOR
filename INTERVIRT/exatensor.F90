@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/03/04
+!REVISION: 2019/03/12
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -492,8 +492,8 @@
               tavp_wrk_conf%host_ram_size=int(jn,INTL)*1048576_INTL !host memory limit per MPI process in Bytes
               envar=' '; call get_environment_variable('QF_HOST_BUFFER_SIZE',envar)
               call charnum(envar,val,jn) !host memory per MPI process in MB
-              tavp_wrk_conf%host_buf_size=int(jn,INTL)*1048576_INTL !host buffer size per MPI process in Bytes
-              if(tavp_wrk_conf%host_buf_size.le.tavp_wrk_conf%host_ram_size) then
+              if(jn.ge.TAVP_WRK_MIN_HOST_MEM) then
+               tavp_wrk_conf%host_buf_size=int(jn,INTL)*1048576_INTL !host buffer size per MPI process in Bytes
                envar=' '; call get_environment_variable('QF_NVMEM_PER_PROCESS',envar)
                call charnum(envar,val,jn) !non-volatile memory per MPI process in MB
                if(jn.gt.0) then
@@ -509,10 +509,12 @@
                call tavp%configure(tavp_wrk_conf,jerr); if(jerr.ne.0) jerr=-6
               else
                write(jo,'("#FATAL(exatns_start:prepare_tavp_wrk): Invalid QF_HOST_BUFFER_SIZE variable value!")')
+               write(jo,'(" Minimally expected value (MB) = ",i13)') TAVP_WRK_MIN_HOST_MEM
                jerr=-5
               endif
              else
               write(jo,'("#FATAL(exatns_start:prepare_tavp_wrk): Invalid QF_MEM_PER_PROCESS variable value!")')
+              write(jo,'(" Minimally expected value (MB) = ",i13)') TAVP_WRK_MIN_HOST_MEM
               jerr=-4
              endif
             else
