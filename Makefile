@@ -127,7 +127,7 @@ ifeq ($(EXA_OS),LINUX)
 ifeq ($(TOOLKIT),GNU)
 	g++ -shared -o libexatensor.so ./lib/*.o
 else
-	ld -shared -o libexatensor.so ./lib/*.o
+	ld -shared -o libexatensor.so ./lib/*.o -lstdc++
 endif
 	cp -u ./TALSH/libtalsh.so ./
 	cp -u ./TALSH/libtalsh.so ./lib/

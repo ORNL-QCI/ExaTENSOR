@@ -372,7 +372,7 @@ ifeq ($(EXA_OS),LINUX)
 ifeq ($(TOOLKIT),GNU)
 	g++ -shared -o lib$(NAME).so $(OBJS) ./tmp_obj__/*.o
 else
-	ld -shared -o lib$(NAME).so $(OBJS) ./tmp_obj__/*.o
+	ld -shared -o lib$(NAME).so $(OBJS) ./tmp_obj__/*.o -lstdc++
 endif
 endif
 	rm -rf ./tmp_obj__
@@ -382,7 +382,7 @@ ifeq ($(EXA_OS),LINUX)
 ifeq ($(TOOLKIT),GNU)
 	g++ -shared -o lib$(NAME).so $(OBJS)
 else
-	ld -shared -o lib$(NAME).so $(OBJS)
+	ld -shared -o lib$(NAME).so $(OBJS) -lstdc++
 endif
 endif
 endif
