@@ -370,9 +370,9 @@ ifeq ($(WITH_CUTT),YES)
 	ar cr lib$(NAME).a $(OBJS) ./tmp_obj__/*.o
 ifeq ($(EXA_OS),LINUX)
 ifeq ($(TOOLKIT),GNU)
-	g++ -shared -o lib$(NAME).so $(OBJS) ./tmp_obj__/*.o
+	$(CPPCOMP) -shared -o lib$(NAME).so $(OBJS) ./tmp_obj__/*.o
 else
-	ld -shared -o lib$(NAME).so $(OBJS) ./tmp_obj__/*.o -lstdc++
+	$(CPPCOMP) -shared -o lib$(NAME).so $(OBJS) ./tmp_obj__/*.o
 endif
 endif
 	rm -rf ./tmp_obj__
@@ -380,9 +380,9 @@ else
 	ar cr lib$(NAME).a $(OBJS)
 ifeq ($(EXA_OS),LINUX)
 ifeq ($(TOOLKIT),GNU)
-	g++ -shared -o lib$(NAME).so $(OBJS)
+	$(CPPCOMP) -shared -o lib$(NAME).so $(OBJS)
 else
-	ld -shared -o lib$(NAME).so $(OBJS) -lstdc++
+	$(CPPCOMP) -shared -o lib$(NAME).so $(OBJS)
 endif
 endif
 endif
