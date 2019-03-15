@@ -52,7 +52,7 @@ export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.1.0
 
 #BLAS library (whichever you have chosen above):
 # Set this path if you have chosen ATLAS (default Linux BLAS):
-export PATH_BLAS_ATLAS ?= /usr/lib
+export PATH_BLAS_ATLAS ?= /usr/lib/x86_64-linux-gnu
 # Set this path if you have chosen Intel MKL:
 export PATH_INTEL ?= /opt/intel
 #  Only reset these if Intel MKL libraries are spread in system directories:
@@ -124,13 +124,13 @@ endif
 	mv ./*.o ./lib/
 	ar cr libexatensor.a ./lib/*.o
 ifeq ($(EXA_OS),LINUX)
-ifeq ($(TOOLKIT),GNU)
-	g++ -shared -o libexatensor.so ./lib/*.o
+ifeq ($(WRAP),WRAP)
+	CC -shared -o libexatensor.so ./lib/*.o
 else
-ifeq ($(TOOLKIT),INTEL)
-	ifort -shared -o libexatensor.so ./lib/*.o
+ifeq ($(TOOLKIT),IBM)
+	$(PATH_$(MPILIB)_BIN)/mpicxx -qmkshrobj -o libexatensor.so ./lib/*.o
 else
-	ld -shared -o libexatensor.so ./lib/*.o
+	$(PATH_$(MPILIB)_BIN)/mpicxx -shared -o libexatensor.so ./lib/*.o
 endif
 endif
 	cp -u ./TALSH/libtalsh.so ./
