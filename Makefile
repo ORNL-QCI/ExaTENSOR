@@ -102,11 +102,19 @@ endif
 	rm -f ./lib/*
 	rm -f ./bin/*
 ifeq ($(EXA_OS),LINUX)
+ifeq ($(TOOLKIT),CRAY)
+	cp -u ./[A-Z]*/OBJ/*.mod ./include/
+else
 	cp -u ./[A-Z]*/*.mod ./include/
+endif
 	cp -u ./TALSH/*.h ./include/
 	cp -u ./TALSH/*.hpp ./include/
 else
+ifeq ($(TOOLKIT),CRAY)
+	cp ./[A-Z]*/OBJ/*.mod ./include/
+else
 	cp ./[A-Z]*/*.mod ./include/
+endif
 	cp ./TALSH/*.h ./include/
 	cp ./TALSH/*.hpp ./include/
 endif
