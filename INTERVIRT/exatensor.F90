@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/03/12
+!REVISION: 2019/03/21
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -1712,6 +1712,7 @@
         logical, intent(in), optional:: sync              !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
         class(tens_instr_mng_t), pointer:: tens_instr
         type(tens_contraction_t):: tens_contr
+        integer:: drank,lrank,rrank
         integer(INTD):: errc,cpl,conj_bits,contr_ptrn(1:MAX_TENSOR_RANK*2)
         integer(INTL):: ip
         logical:: check
@@ -1724,8 +1725,9 @@
         check=tensor2%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-10
         if(check.and.ierr.eq.EXA_SUCCESS) then
 !Convert the symbolic tensor contraction pattern into a digital one used by TAL-SH:
-         call get_contr_pattern(pattern,contr_ptrn,cpl,ierr,conj_bits) !conj_bits: tensor conjugation bits {0:D,1:L,2:R}
+         call get_contr_pattern_dig(pattern,drank,lrank,rrank,contr_ptrn,ierr,conj_bits) !conj_bits: tensor conjugation bits {0:D,1:L,2:R}
          if(ierr.eq.0) then
+          cpl=lrank+rrank
 !Construct the tensor operation object:
           call tens_contr%set_argument(tensor0,ierr)
           if(ierr.eq.TEREC_SUCCESS) then
