@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/03/10
+REVISION: 2019/03/23
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -476,21 +476,19 @@ static int talsh_choose_image_for_device(talsh_tens_t * tens, unsigned int coh_c
 /** For a given execution device <[dvk,dvn]>, chooses the most appropriate
     tensor body image to be used on that device. Priority is given to the
     same device, then to the same device kind, then to the Host. If no image
-    is found in that sequence, a blocking copy will be posted to the Host
-    with a copy control value equal to COPY_K, thus creating an additional
-    image of the tensor body (on Host)! If <dvn> = DEV_NULL, only the search
-    within the given device kind will be performed. A negative return code
-    indicates an error. **/
+    is found in that sequence, a blocking copy will be posted to the Host,
+    thus creating an additional image of the tensor body (on Host).
+    A negative return code indicates an error. **/
 {
  int i,image_id,host_image,dn,dk,coh;
 
  *copied=0; image_id=-1; host_image=-1;
  if(tens == NULL) return -1;
- if(talshTensorIsEmpty(tens) != NOPE) return -1;
- if(talshTensorIsHealthy(tens) != YEP) return -1;
+ if(talshTensorIsEmpty(tens) != NOPE) return -2;
+ if(talshTensorIsHealthy(tens) != YEP) return -3;
  for(i=0;i<tens->ndev;++i){
   if(tens->avail[i] == YEP){
-   dn=talshKindDevId(tens->dev_rsc[i].dev_id,&dk); if(dn < 0) return -1;
+   dn=talshKindDevId(tens->dev_rsc[i].dev_id,&dk); if(dn < 0) return -4;
    if(dk == dvk){image_id=i; if(dn == dvn) return image_id;}
    if(dk == DEV_HOST) host_image=i;
   }
@@ -502,11 +500,11 @@ static int talsh_choose_image_for_device(talsh_tens_t * tens, unsigned int coh_c
     case COPY_M: coh=COPY_M; break;
     case COPY_T: coh=COPY_K; break;
     case COPY_K: coh=COPY_K; break;
-    default: return -1;
+    default: return -5;
    }
-   i=talshTensorPlace(tens,0,DEV_HOST,NULL,coh); if(i) return -1;
-   *copied=1; image_id=tens->ndev-1;
-   if(tens->dev_rsc[image_id].dev_id != talshFlatDevId(DEV_HOST,0)) return -1;
+   i=talshTensorPlace(tens,0,DEV_HOST,NULL,coh); if(i != TALSH_SUCCESS) return -6;
+   *copied=1; image_id=tens->ndev-1; //newly added Host image is the last
+   if(tens->dev_rsc[image_id].dev_id != talshFlatDevId(DEV_HOST,0)) return -7; //trap
   }else{
    image_id=host_image;
   }
@@ -3003,7 +3001,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
     tsk->task_error=117; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
     return errc;
    }else{ //coherence control
-    errc=host_task_record(host_task,coh_ctrl,0); //record task success (no coherence control on Host)
+    errc=host_task_record(host_task,coh_ctrl,0); //record task success (finalized, no coherence control on Host)
     if(errc){tsk->task_error=118; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
     if(rtens->avail[rimg] == NOPE){
      errc=talsh_tensor_image_discard(rtens,rimg);
