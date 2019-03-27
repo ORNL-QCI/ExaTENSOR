@@ -2266,12 +2266,15 @@ int talshTensorPlace(talsh_tens_t * tens,
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
+   //Associate TAL-SH tensor image with <TensBlck_t> object:
    errc=talsh_tensor_c_assoc(tens,image_id,&ctens);
    if(errc || ctens == NULL){
     tsk->task_error=113; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
     if(errc != TRY_LATER){return TALSH_FAILURE;}else{return errc;}
    }
+   //Get the CUDA task:
    cuda_task=(cudaTask_t*)(tsk->task_p);
+   //Determine the execution device:
    if(dvk == DEV_HOST && dvn == 0){ //destination is Host
     j=-1; //Host
    }else if(dvk == DEV_NVIDIA_GPU){ //destination is Nvidia GPU
@@ -2280,19 +2283,23 @@ int talshTensorPlace(talsh_tens_t * tens,
     j=talsh_tensor_c_dissoc(ctens); ctens=NULL;
     tsk->task_error=114; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
    }
+   //Mark source image unavailable:
+   if(copy_ctrl == COPY_M && (dn != dvn || dk != dvk)) tens->avail[image_id] = NOPE;
+   //Schedule data transfer operation via the device-kind specific runtime:
    errc=gpu_tensor_block_place(ctens,j,(unsigned int)copy_ctrl,cuda_task,dev_mem); //if source == destination, no transfer will be initiated (ok)
    if(errc){ //in case of error, CUDA task has already been finalized (with error) without coherence control
-    if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
+    if(errc == TRY_LATER || errc == DEVICE_UNABLE){
+     tens->avail[image_id] = YEP;
+    }else{
+     errc=TALSH_FAILURE;
+    }
     j=talsh_tensor_c_dissoc(ctens); if(j) errc=TALSH_FAILURE;
     j=cuda_task_destroy(cuda_task); tsk->task_p=NULL; if(j) errc=TALSH_FAILURE;
     tsk->task_error=115; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
     return errc;
-   }else{ //coherence control
-    if(copy_ctrl == COPY_M){
-     if(dn != dvn || dk != dvk) tens->avail[image_id]=NOPE; //mark the image not available since it will be discarded in case of successful execution
-    }
    }
-   if(errc == TALSH_SUCCESS && talsh_task == NULL){ //blocking call
+   //If blocking call, complete it here:
+   if(errc == TALSH_SUCCESS && talsh_task == NULL){
     errc=talshTaskWait(tsk,&j); if(errc == TALSH_SUCCESS && j != TALSH_TASK_COMPLETED) errc=TALSH_TASK_ERROR;
     j=talsh_tensor_c_dissoc(ctens); if(j) errc=TALSH_FAILURE;
     j=talshTaskDestroy(tsk); if(j != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=j;
@@ -2321,8 +2328,7 @@ int talshTensorPlace(talsh_tens_t * tens,
 #endif
    //break;
   default:
-   tsk->task_error=121; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
-   return TALSH_INVALID_ARGS;
+   tsk->task_error=121; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
  }
 #pragma omp flush
  return errc;
