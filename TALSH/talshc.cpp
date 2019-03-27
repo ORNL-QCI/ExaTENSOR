@@ -3010,7 +3010,11 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
    j=talsh_tensor_f_dissoc(dftr); if(j) errc=TALSH_FAILURE;
    //Host task finalization and coherence control:
    if(errc){ //task error
-    if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
+    if(errc == TRY_LATER || errc == DEVICE_UNABLE){
+     dtens->avail[0] = YEP; ltens->avail[limg] = YEP; rtens->avail[rimg] = YEP;
+    }else{
+     errc=TALSH_FAILURE;
+    }
     j=host_task_record(host_task,coh_ctrl,13);
     j=host_task_destroy(host_task); tsk->task_p=NULL; if(j) errc=TALSH_FAILURE;
     tsk->task_error=119; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
@@ -3018,7 +3022,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
    }else{ //task success (host tasks perform finalization here)
     errc=host_task_record(host_task,coh_ctrl,0); //record task success (finalized, no deferred coherence control on Host)
     if(errc){tsk->task_error=120; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
-    dtens->avail[0] == YEP;
+    dtens->avail[0] = YEP;
     if(ltens->avail[limg] == NOPE){
      errc=talsh_tensor_image_discard(ltens,limg);
      if(errc){tsk->task_error=121; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
@@ -3078,7 +3082,11 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
    //printf("#DEBUG(talshc:talshTensorContract): Printing cuda_task after scheduling:\n"); cuda_task_print(cuda_task); //debug
    dvn=cuda_task_gpu_id(cuda_task);
    if(errc || dvn < 0){ //in case of error, CUDA task has already been finalized (with error) without coherence control
-    if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
+    if(errc == TRY_LATER || errc == DEVICE_UNABLE){
+     dtens->avail[0] = YEP; ltens->avail[limg] = YEP; rtens->avail[rimg] = YEP;
+    }else{
+     errc=TALSH_FAILURE;
+    }
     j=talsh_tensor_c_dissoc(rctr); if(j) errc=TALSH_FAILURE;
     j=talsh_tensor_c_dissoc(lctr); if(j) errc=TALSH_FAILURE;
     j=talsh_tensor_c_dissoc(dctr); if(j) errc=TALSH_FAILURE;
