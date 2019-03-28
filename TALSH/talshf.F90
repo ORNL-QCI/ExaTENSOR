@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2019/03/21
+!REVISION: 2019/03/28
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -396,6 +396,45 @@
           integer(C_INT), value, intent(in):: copy_ctrl
           type(talsh_task_t), intent(inout):: talsh_task
          end function talshTensorInit_
+  !Tensor slicing:
+         integer(C_INT) function talshTensorSlice_(dtens,ltens,offsets,dev_id,dev_kind,copy_ctrl,talsh_task)&
+                                                  &bind(c,name='talshTensorSlice_')
+          import
+          implicit none
+          type(talsh_tens_t), intent(inout):: dtens
+          type(talsh_tens_t), intent(inout):: ltens
+          integer(C_INT), intent(in):: offsets(*)
+          integer(C_INT), value, intent(in):: dev_id
+          integer(C_INT), value, intent(in):: dev_kind
+          integer(C_INT), value, intent(in):: copy_ctrl
+          type(talsh_task_t), intent(inout):: talsh_task
+         end function talshTensorSlice_
+  !Tensor insertion:
+         integer(C_INT) function talshTensorInsert_(dtens,ltens,offsets,dev_id,dev_kind,copy_ctrl,talsh_task)&
+                                                   &bind(c,name='talshTensorInsert_')
+          import
+          implicit none
+          type(talsh_tens_t), intent(inout):: dtens
+          type(talsh_tens_t), intent(inout):: ltens
+          integer(C_INT), intent(in):: offsets(*)
+          integer(C_INT), value, intent(in):: dev_id
+          integer(C_INT), value, intent(in):: dev_kind
+          integer(C_INT), value, intent(in):: copy_ctrl
+          type(talsh_task_t), intent(inout):: talsh_task
+         end function talshTensorInsert_
+  !Tensor copy:
+         integer(C_INT) function talshTensorCopy_(dtens,ltens,permutation,dev_id,dev_kind,copy_ctrl,talsh_task)&
+                                                 &bind(c,name='talshTensorCopy_')
+          import
+          implicit none
+          type(talsh_tens_t), intent(inout):: dtens
+          type(talsh_tens_t), intent(inout):: ltens
+          integer(C_INT), intent(in):: permutation(*)
+          integer(C_INT), value, intent(in):: dev_id
+          integer(C_INT), value, intent(in):: dev_kind
+          integer(C_INT), value, intent(in):: copy_ctrl
+          type(talsh_task_t), intent(inout):: talsh_task
+         end function talshTensorCopy_
   !Tensor addition:
          integer(C_INT) function talshTensorAdd_(cptrn,dtens,ltens,scale_real,scale_imag,dev_id,dev_kind,&
                                                 &copy_ctrl,talsh_task) bind(c,name='talshTensorAdd_')
@@ -1398,6 +1437,83 @@
          endif
          return
         end function cpu_tensor_block_init
+!--------------------------------------------------------------------------------------------------------------------
+        integer(C_INT) function cpu_tensor_block_slice(ltens_p,dtens_p,offsets) bind(c,name='cpu_tensor_block_slice')
+         implicit none
+         type(C_PTR), value:: ltens_p            !in: left tensor argument (tensor)
+         type(C_PTR), value:: dtens_p            !inout: destination tensor argument (tensor slice)
+         integer(C_INT), intent(in):: offsets(*) !in: slice base offsets (each dimension numeration starts from 0)
+         type(tensor_block_t), pointer:: dtp,ltp
+         integer:: ierr
+
+         cpu_tensor_block_slice=0
+         if(c_associated(dtens_p).and.c_associated(ltens_p)) then
+          call c_f_pointer(dtens_p,dtp); call c_f_pointer(ltens_p,ltp)
+          if(associated(dtp).and.associated(ltp)) then
+           call tensor_block_slice(ltp,dtp,offsets,ierr)
+           cpu_tensor_block_slice=ierr
+          else
+           cpu_tensor_block_slice=-2
+          endif
+         else
+          cpu_tensor_block_slice=-1
+         endif
+         return
+        end function cpu_tensor_block_slice
+!----------------------------------------------------------------------------------------------------------------------
+        integer(C_INT) function cpu_tensor_block_insert(ltens_p,dtens_p,offsets) bind(c,name='cpu_tensor_block_insert')
+         implicit none
+         type(C_PTR), value:: ltens_p            !in: left tensor argument (tensor slice)
+         type(C_PTR), value:: dtens_p            !inout: destination tensor argument (tensor)
+         integer(C_INT), intent(in):: offsets(*) !in: slice base offsets (each dimension numeration starts from 0)
+         type(tensor_block_t), pointer:: dtp,ltp
+         integer:: ierr
+
+         cpu_tensor_block_insert=0
+         if(c_associated(dtens_p).and.c_associated(ltens_p)) then
+          call c_f_pointer(dtens_p,dtp); call c_f_pointer(ltens_p,ltp)
+          if(associated(dtp).and.associated(ltp)) then
+           call tensor_block_insert(dtp,ltp,offsets,ierr)
+           cpu_tensor_block_insert=ierr
+          else
+           cpu_tensor_block_insert=-2
+          endif
+         else
+          cpu_tensor_block_insert=-1
+         endif
+         return
+        end function cpu_tensor_block_insert
+!-------------------------------------------------------------------------------------------------------------------------------
+        integer(C_INT) function cpu_tensor_block_copy(permutation,ltens_p,dtens_p,arg_conj) bind(c,name='cpu_tensor_block_copy')
+         implicit none
+         integer(C_INT), intent(in):: permutation(1:*) !in: sign-free O2N tensor dimension permutation (1-based)
+         type(C_PTR), value:: ltens_p                  !in: left tensor argument
+         type(C_PTR), value:: dtens_p                  !inout: destination tensor argument
+         integer(C_INT), value:: arg_conj              !in: argument complex conjugation bits (0:D,1:L)
+         type(tensor_block_t), pointer:: dtp,ltp
+         integer:: transp(0:MAX_TENSOR_RANK),conj_bits,n,ierr
+
+         cpu_tensor_block_copy=0
+         if(c_associated(dtens_p).and.c_associated(ltens_p)) then
+          call c_f_pointer(dtens_p,dtp); call c_f_pointer(ltens_p,ltp)
+          if(associated(dtp).and.associated(ltp)) then
+           n=dtp%tensor_shape%num_dim
+           if(n.ge.0) then
+            transp(0)=+1; if(n.gt.0) transp(1:n)=permutation(1:n)
+            conj_bits=arg_conj
+            call tensor_block_copy(ltp,dtp,ierr,transp,conj_bits)
+            cpu_tensor_block_copy=ierr
+           else
+            cpu_tensor_block_copy=-3
+           endif
+          else
+           cpu_tensor_block_copy=-2
+          endif
+         else
+          cpu_tensor_block_copy=-1
+         endif
+         return
+        end function cpu_tensor_block_copy
 !---------------------------------------------------------------------------------------------------------------
         integer(C_INT) function cpu_tensor_block_add(contr_ptrn,ltens_p,dtens_p,scale_real,scale_imag,arg_conj)&
                                                     &bind(c,name='cpu_tensor_block_add')
