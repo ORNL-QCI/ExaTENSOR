@@ -540,10 +540,12 @@
         public talsh_tensor_discard
         public talsh_tensor_discard_other
         public talsh_tensor_init
-!        public talsh_tensor_scale
-!        public talsh_tensor_norm1
-!        public talsh_tensor_norm2
-!        public talsh_tensor_copy
+!       public talsh_tensor_scale
+!       public talsh_tensor_norm1
+!       public talsh_tensor_norm2
+        public talsh_tensor_slice
+        public talsh_tensor_insert
+!       public talsh_tensor_copy
         public talsh_tensor_add
         public talsh_tensor_contract
 
@@ -1315,6 +1317,66 @@
          endif
          return
         end function talsh_tensor_init
+!---------------------------------------------------------------------------------------------------------
+        function talsh_tensor_slice(dtens,ltens,offsets,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                            !out: error code (0:success)
+         type(talsh_tens_t), intent(inout):: dtens        !inout: destination tensor block (tensor slice)
+         type(talsh_tens_t), intent(inout):: ltens        !inout: left source tensor block
+         integer(C_INT), intent(in):: offsets(1:*)        !in: base offsets of the slice (0-based)
+         integer(C_INT), intent(in), optional:: dev_id    !in: device id (flat or kind-specific)
+         integer(C_INT), intent(in), optional:: dev_kind  !in: device kind (if present, <dev_id> is kind-specific)
+         integer(C_INT), intent(in), optional:: copy_ctrl !in: copy control (COPY_XXX), defaults to COPY_MT
+         type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task (must be clean)
+         integer(C_INT):: coh_ctrl,devn,devk,sts
+         type(talsh_task_t):: tsk
+
+         ierr=TALSH_SUCCESS
+         if(present(copy_ctrl)) then; coh_ctrl=copy_ctrl; else; coh_ctrl=COPY_MT; endif
+         if(present(dev_id)) then; devn=dev_id; else; devn=DEV_DEFAULT; endif
+         if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_DEFAULT; endif
+         if(present(talsh_task)) then
+          ierr=talshTensorSlice_(dtens,ltens,offsets,devn,devk,coh_ctrl,talsh_task)
+         else
+          ierr=talsh_task_clean(tsk)
+          ierr=talshTensorSlice_(dtens,ltens,offsets,devn,devk,coh_ctrl,tsk)
+          if(ierr.eq.TALSH_SUCCESS) then
+           ierr=talsh_task_wait(tsk,sts); if(sts.ne.TALSH_TASK_COMPLETED) ierr=TALSH_TASK_ERROR
+          endif
+          sts=talsh_task_destruct(tsk)
+         endif
+         return
+        end function talsh_tensor_slice
+!----------------------------------------------------------------------------------------------------------
+        function talsh_tensor_insert(dtens,ltens,offsets,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                            !out: error code (0:success)
+         type(talsh_tens_t), intent(inout):: dtens        !inout: destination tensor block
+         type(talsh_tens_t), intent(inout):: ltens        !inout: left source tensor block (tensor slice)
+         integer(C_INT), intent(in):: offsets(1:*)        !in: base offsets of the slice (0-based)
+         integer(C_INT), intent(in), optional:: dev_id    !in: device id (flat or kind-specific)
+         integer(C_INT), intent(in), optional:: dev_kind  !in: device kind (if present, <dev_id> is kind-specific)
+         integer(C_INT), intent(in), optional:: copy_ctrl !in: copy control (COPY_XXX), defaults to COPY_MT
+         type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task (must be clean)
+         integer(C_INT):: coh_ctrl,devn,devk,sts
+         type(talsh_task_t):: tsk
+
+         ierr=TALSH_SUCCESS
+         if(present(copy_ctrl)) then; coh_ctrl=copy_ctrl; else; coh_ctrl=COPY_MT; endif
+         if(present(dev_id)) then; devn=dev_id; else; devn=DEV_DEFAULT; endif
+         if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_DEFAULT; endif
+         if(present(talsh_task)) then
+          ierr=talshTensorInsert_(dtens,ltens,offsets,devn,devk,coh_ctrl,talsh_task)
+         else
+          ierr=talsh_task_clean(tsk)
+          ierr=talshTensorInsert_(dtens,ltens,offsets,devn,devk,coh_ctrl,tsk)
+          if(ierr.eq.TALSH_SUCCESS) then
+           ierr=talsh_task_wait(tsk,sts); if(sts.ne.TALSH_TASK_COMPLETED) ierr=TALSH_TASK_ERROR
+          endif
+          sts=talsh_task_destruct(tsk)
+         endif
+         return
+        end function talsh_tensor_insert
 !-----------------------------------------------------------------------------------------------------------
         function talsh_tensor_add(cptrn,dtens,ltens,scale,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
          implicit none
