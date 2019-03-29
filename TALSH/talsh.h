@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/03/28
+REVISION: 2019/03/29
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -168,10 +168,14 @@ extern "C"{
 //  Find the least busy device:
  int talshDeviceBusyLeast(int dev_kind = DEV_NULL);
  int talshDeviceBusyLeast_(int dev_kind);
-//  Query device memory size:
+//  Query device memory size (bytes):
  size_t talshDeviceMemorySize(int dev_num,
                               int dev_kind = DEV_NULL);
  size_t talshDeviceMemorySize_(int dev_num, int dev_kind);
+//  Query device max tensor size (bytes):
+ size_t talshDeviceTensorSize(int dev_num,
+                              int dev_kind = DEV_NULL);
+ size_t talshDeviceTensorSize_(int dev_num, int dev_kind);
 //  Print TAL-SH statistics for specific devices:
  int talshStats(int dev_id = -1,
                 int dev_kind = DEV_NULL);

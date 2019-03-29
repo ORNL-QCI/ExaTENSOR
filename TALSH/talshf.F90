@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2019/03/28
+!REVISION: 2019/03/29
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -174,6 +174,13 @@
           integer(C_INT), value, intent(in):: dev_num
           integer(C_INT), value, intent(in):: dev_kind
          end function talshDeviceMemorySize_
+  !Query the device max tensor size in bytes:
+         integer(C_SIZE_T) function talshDeviceTensorSize_(dev_num,dev_kind) bind(c,name='talshDeviceTensorSize_')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_num
+          integer(C_INT), value, intent(in):: dev_kind
+         end function talshDeviceTensorSize_
   !Print run-time TAL-SH statistics for chosen devices:
          integer(C_INT) function talshStats_(dev_id,dev_kind) bind(c,name='talshStats_')
           import
@@ -506,6 +513,7 @@
         public talsh_device_state
         public talsh_device_busy_least
         public talsh_device_memory_size
+        public talsh_device_tensor_size
         public talsh_stats
  !TAL-SH tensor block API:
         public talsh_tensor_is_empty
@@ -913,6 +921,18 @@
          mem_size=talshDeviceMemorySize_(dev_num,devk)
          return
         end function talsh_device_memory_size
+!----------------------------------------------------------------------------
+        function talsh_device_tensor_size(dev_num,dev_kind) result(tens_size)
+         implicit none
+         integer(C_SIZE_T):: tens_size                   !out: max tensor size in bytes on a given device
+         integer(C_INT), intent(in):: dev_num            !in: either a flat or kind specific (when <dev_kind> is present) device id
+         integer(C_INT), intent(in), optional:: dev_kind !in: device kind (note that it changes the meaning of the <dev_num> argument)
+         integer(C_INT):: devk
+
+         if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_NULL; endif
+         tens_size=talshDeviceTensorSize_(dev_num,devk)
+         return
+        end function talsh_device_tensor_size
 !---------------------------------------------------------
         function talsh_stats(dev_id,dev_kind) result(ierr)
          implicit none

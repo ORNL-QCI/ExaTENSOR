@@ -319,4 +319,10 @@ void shutdown()
 }
 
 
+std::size_t getDeviceMaxTensorSize(const int device_kind, const int device_id)
+{
+ return talshDeviceTensorSize(device_id,device_kind);
+}
+
+
 } //namespace talsh

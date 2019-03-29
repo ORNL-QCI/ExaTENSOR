@@ -1,6 +1,6 @@
 !ExaTensor::TAL-SH: Parameters, types, C function interfaces:
 !Keep consistent with "tensor_algebra.h" when appropriate!
-!REVISION: 2019/03/21
+!REVISION: 2019/03/29
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -275,6 +275,18 @@
           implicit none
           integer(C_INT), value, intent(in):: gpu_num
          end function arg_buf_clean_gpu
+#endif
+  !Get the max allocatable size (bytes) in the Host argument buffer:
+         integer(C_SIZE_T) function get_blck_max_size_host() bind(c,name='get_blck_max_size_host')
+          import
+         end function get_blck_max_size_host
+#ifndef NO_GPU
+  !Get the max allocatable size (bytes) in the GPU argument buffer:
+         integer(C_SIZE_T) function get_blck_max_size_gpu(gpu_num) bind(c,name='get_blck_max_size_gpu')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: gpu_num
+         end function get_blck_max_size_gpu
 #endif
   !Get the buffer block sizes for each level of the Host argument buffer:
          integer(C_INT) function get_blck_buf_sizes_host(blck_sizes) bind(c,name='get_blck_buf_sizes_host')

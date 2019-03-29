@@ -782,6 +782,49 @@ size_t talshDeviceMemorySize_(int dev_num, int dev_kind) //Fortran wrapper
  return talshDeviceMemorySize(dev_num,dev_kind);
 }
 
+size_t talshDeviceTensorSize(int dev_num,
+                             int dev_kind)
+{
+ int devk,i;
+ size_t bytes;
+
+ bytes=0;
+ if(talsh_on != 0){
+  if(dev_kind == DEV_NULL){
+   i=talshKindDevId(dev_num,&devk); if(i < 0) return 0;
+  }else{
+   devk=dev_kind;
+   i=dev_num;
+  }
+  switch(devk){
+   case DEV_HOST:
+    bytes=get_blck_max_size_host();
+    break;
+   case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
+    bytes=get_blck_max_size_gpu(i);
+#endif
+    break;
+   case DEV_INTEL_MIC:
+#ifndef NO_PHI
+    //`Implement
+#endif
+    break;
+   case DEV_AMD_GPU:
+#ifndef NO_AMD
+    //`Implement
+#endif
+    break;
+  }
+ }
+ return bytes;
+}
+
+size_t talshDeviceTensorSize_(int dev_num, int dev_kind) //Fortran wrapper
+{
+ return talshDeviceTensorSize(dev_num,dev_kind);
+}
+
 int talshStats(int dev_id,   //in: device id (either flat or kind specific device id, see below)
                int dev_kind) //in: device kind (if present, <dev_id> will be interpreted as kind specific)
 /** Prints the run-time statistics for devices of interest. **/

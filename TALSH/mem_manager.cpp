@@ -398,6 +398,24 @@ Negative return status means that an error occurred. **/
 }
 #endif /*NO_GPU*/
 
+size_t get_blck_max_size_host()
+{
+#pragma omp flush
+ if(bufs_ready == 0) return 0;
+ return blck_sizes_host[0];
+}
+
+#ifndef NO_GPU
+size_t get_blck_max_size_gpu(int gpu_num)
+{
+#pragma omp flush
+ if(bufs_ready == 0) return 0;
+ if(gpu_num < 0 || gpu_num >= MAX_GPUS_PER_NODE) return 0;
+ if(gpu_is_mine(gpu_num) == 0) return 0;
+ return blck_sizes_gpu[gpu_num][0];
+}
+#endif /*NO_GPU*/
+
 int get_blck_buf_sizes_host(size_t *blck_sizes)
 /** This function returns the registered block (buffered) sizes for each level of the Host argument buffer.
 Negative return status means that an error occurred. **/

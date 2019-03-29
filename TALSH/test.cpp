@@ -193,6 +193,8 @@ void test_talsh_cxx(int * ierr)
  *ierr=0;
  //Initialize TAL-SH:
  talsh::initialize();
+ //Check max tensor size:
+ std::cout << "Max tensor size on accelerator = " << talsh::getDeviceMaxTensorSize(device,0) << std::endl;
 
  //Test tensor contraction (brackets are needed to push talsh::shutdown() out of scope):
  {
