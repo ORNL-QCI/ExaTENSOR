@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/03/29
+REVISION: 2019/03/31
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -79,7 +79,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_TENSOR_KHATRIRAO 84
 
 //TAL-SH DATA TYPES:
-// Interoperable dense tensor block:
+// Dense tensor with multiple images (interoperable):
 typedef struct{
  talsh_tens_shape_t * shape_p; //shape of the tensor block
  talsh_dev_rsc_t * dev_rsc;    //list of device resources occupied by the tensor block body on each device
@@ -102,7 +102,7 @@ typedef struct{
  int source_image;      //specific body image of that tensor block participating in the operation
 } talshTensArg_t;
 
-// Interoperable TAL-SH task handle:
+// TAL-SH task (interoperable):
 typedef struct{
  void * task_p;    //pointer to the corresponding device-kind-specific task object
  int task_error;   //-1:undefined(task in progress or empty); 0:successfully completed; >0: error code
@@ -116,17 +116,17 @@ typedef struct{
  double exec_time; //execution time in seconds (information)
 } talsh_task_t;
 
-// Basic tensor operation specification:
+// Basic tensor operation:
 typedef struct{
  int opkind;                                         //operation kind
  int num_args;                                       //number of tensor operands: [0..MAX_TENSOR_OPERANDS]
- talsh_tens_slice_t tens_slice[MAX_TENSOR_OPERANDS]; //tensor operands (tensor slice views)
- char * symb_pattern;                                //symbolic index pattern specification (non-owning pointer)
- talshComplex8 alpha;                                //alpha prefactor
- talsh_tens_t tens_arg[MAX_TENSOR_OPERANDS];         //tensor operands (actual TAL-SH tensors)
+ talsh_tens_slice_t tens_slice[MAX_TENSOR_OPERANDS]; //formal tensor operands (tensor slice views)
+ char * symb_pattern;                                //symbolic index pattern specification (non-owning pointer to a C-string)
+ talshComplex8 alpha;                                //alpha prefactor (scalar factor)
+ talsh_tens_t tens_arg[MAX_TENSOR_OPERANDS];         //actual tensor operands (actual TAL-SH tensors)
  talsh_task_t task_handle;                           //task handle
  int exec_dev_id;                                    //execution device id (flat device id)
-} tens_operation_t;
+} talsh_tens_op_t;
 
 
 //EXPORTED FUNCTIONS:
@@ -372,10 +372,22 @@ extern "C"{
                          int dev_kind = DEV_DEFAULT,        //in: device kind (if present, <dev_id> is kind-specific)
                          int copy_ctrl = COPY_MTT,          //in: copy control (COPY_XXX), defaults to COPY_MTT
                          int accumulative = YEP,            //in: accumulate in (default) VS overwrite destination tensor: [YEP|NOPE]
-                         talsh_task_t * talsh_task = NULL); ////inout: TAL-SH task (must be clean)
+                         talsh_task_t * talsh_task = NULL); //inout: TAL-SH task (must be clean)
  int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens,
                           double scale_real, double scale_imag, int dev_id, int dev_kind,
                           int copy_ctrl, int accumulative, talsh_task_t * talsh_task);
+//  Tensor contraction (extra large):
+ int talshTensorContractXL(const char * cptrn,         //in: C-string: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
+                           talsh_tens_t * dtens,       //inout: destination tensor block
+                           talsh_tens_t * ltens,       //inout: left source tensor block
+                           talsh_tens_t * rtens,       //inout: right source tensor block
+                           double scale_real = 1.0,    //in: scaling value (real part), defaults to 1
+                           double scale_imag = 0.0,    //in: scaling value (imaginary part), defaults to 0
+                           int dev_id = DEV_DEFAULT,   //in: device id (flat or kind-specific)
+                           int dev_kind = DEV_DEFAULT, //in: device kind (if present, <dev_id> is kind-specific)
+                           int accumulative = YEP);    //in: accumulate in (default) VS overwrite destination tensor: [YEP|NOPE]
+ int talshTensorContractXL_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens,
+                            double scale_real, double scale_imag, int dev_id, int dev_kind, int accumulative);
 // TAL-SH debugging:
 //  1-norm of the tensor body image on Host:
  double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens);

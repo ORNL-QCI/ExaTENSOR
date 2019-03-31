@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/03/29
+REVISION: 2019/03/31
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -3772,6 +3772,26 @@ int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t 
                          int copy_ctrl, int accumulative, talsh_task_t * talsh_task) //Fortran wrapper
 {
  return talshTensorContract(cptrn,dtens,ltens,rtens,scale_real,scale_imag,dev_id,dev_kind,copy_ctrl,accumulative,talsh_task);
+}
+
+int talshTensorContractXL(const char * cptrn,   //in: C-string: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
+                          talsh_tens_t * dtens, //inout: destination tensor block
+                          talsh_tens_t * ltens, //inout: left source tensor block
+                          talsh_tens_t * rtens, //inout: right source tensor block
+                          double scale_real,    //in: scaling value (real part), defaults to 1
+                          double scale_imag,    //in: scaling value (imaginary part), defaults to 0
+                          int dev_id,           //in: device id (flat or kind-specific)
+                          int dev_kind,         //in: device kind (if present, <dev_id> is kind-specific)
+                          int accumulative)     //in: accumulate in (default) VS overwrite destination tensor: [YEP|NOPE]
+/** Extra large tensor contraction dispatcher **/
+{
+ return TALSH_NOT_IMPLEMENTED;
+}
+
+int talshTensorContractXL_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens,
+                           double scale_real, double scale_imag, int dev_id, int dev_kind, int accumulative) //Fortran wrapper
+{
+ return talshTensorContractXL(cptrn,dtens,ltens,rtens,scale_real,scale_imag,dev_id,dev_kind,accumulative);
 }
 
 double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens)
