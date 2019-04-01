@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/03/31
+REVISION: 2019/04/01
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -119,7 +119,7 @@ typedef struct{
 // Basic tensor operation:
 typedef struct{
  int opkind;                                         //operation kind
- int num_args;                                       //number of tensor operands: [0..MAX_TENSOR_OPERANDS]
+ unsigned int num_args;                              //number of tensor operands: [0..MAX_TENSOR_OPERANDS]
  talsh_tens_slice_t tens_slice[MAX_TENSOR_OPERANDS]; //formal tensor operands (tensor slice views)
  char * symb_pattern;                                //symbolic index pattern specification (non-owning pointer to a C-string)
  talshComplex8 alpha;                                //alpha prefactor (scalar factor)
@@ -292,6 +292,16 @@ extern "C"{
 //  Print TAL-SH task info:
  void talshTaskPrint(const talsh_task_t * talsh_task);
 // TAL-SH tensor operations API:
+//  Tensor operation byte count (memory requirements):
+ double talshTensorOpGetByteCount(const talsh_tens_op_t * tens_op);
+//  Tensor operation floating point count (compute requirements):
+ double talshTensorOpGetFlopCount(const talsh_tens_op_t * tens_op);
+//  Tensor operation arithmetic intensity:
+ double talshTensorOpGetIntensity(const talsh_tens_op_t * tens_op);
+//  Tensor operation decomposition:
+ int talshTensorOpDecompose(const talsh_tens_op_t * tens_op, //in: parent tensor operation
+                            int * num_child_ops,             //inout: suggested (in) and actual (out) number of children
+                            talsh_tens_op_t ** child_op);    //inout: children tensor operations
 //  Place a tensor block on a specific device:
  int talshTensorPlace(talsh_tens_t * tens,               //inout: tensor block
                       int dev_id,                        //in: device id (flat or kind-specific)

@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2019/03/31
+REVISION: 2019/04/01
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -302,8 +302,8 @@ FOR DEVELOPERS ONLY:
 //DERIVED TYPES (keep consistent with tensor_algebra.F90):
 // Tensor signature (interoperable):
 typedef struct{
- int num_dim;        //tensor rank (number of dimensions): >=0; -1:empty
- size_t * signature; //tensor signature: An array of size <num_dim> (long integers)
+ int num_dim;      //tensor rank (number of dimensions): >=0; -1:empty
+ size_t * offsets; //tensor signature: An array of size <num_dim> (long integers)
 } talsh_tens_signature_t;
 
 // Tensor shape (interoperable):
@@ -447,6 +447,15 @@ extern "C"{
  int gpu_print_stats(int gpu_num = -1);
 #endif /*NO_GPU */
 //  NV-TAL tensor block API:
+//   Tensor signature:
+ int tensSignature_create(talsh_tens_signature_t ** tsigna);
+ int tensSignature_clean(talsh_tens_signature_t * tsigna);
+ int tensSignature_construct(talsh_tens_signature_t * tsigna,
+                             int rank,
+                             const size_t * offsets = NULL);
+ int tensSignature_destruct(talsh_tens_signature_t * tsigna);
+ int tensSignature_destroy(talsh_tens_signature_t * tsigna);
+//   Tensor shape:
  int tensShape_create(talsh_tens_shape_t ** tshape);
  int tensShape_clean(talsh_tens_shape_t * tshape);
  int tensShape_construct(talsh_tens_shape_t * tshape, int pinned,
@@ -455,6 +464,7 @@ extern "C"{
  int tensShape_destroy(talsh_tens_shape_t * tshape);
  size_t tensShape_volume(const talsh_tens_shape_t * tshape);
  int tensShape_rank(const talsh_tens_shape_t * tshape);
+//   Tensor block:
  int tensBlck_create(tensBlck_t **ctens);
  int tensBlck_clean(tensBlck_t *ctens);
  int tensBlck_destroy(tensBlck_t *ctens);

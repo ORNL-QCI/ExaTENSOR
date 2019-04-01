@@ -1,6 +1,6 @@
 !ExaTensor::TAL-SH: Parameters, types, C function interfaces:
 !Keep consistent with "tensor_algebra.h" when appropriate!
-!REVISION: 2019/03/31
+!REVISION: 2019/04/01
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -183,8 +183,8 @@
 !INTEROPERABLE TYPES (keep consistent with tensor_algebra.h):
  !TAL-SH tensor signature:
         type, public, bind(C):: talsh_tens_signature_t
-         integer(C_INT):: num_dim=-1        !tensor rank (number of dimensions): >=0; -1:empty
-         type(C_PTR):: signature=C_NULL_PTR !tensor signature (C_SIZE_T integer per tensor dimension)
+         integer(C_INT):: num_dim=-1      !tensor rank (number of dimensions): >=0; -1:empty
+         type(C_PTR):: offsets=C_NULL_PTR !tensor signature (C_SIZE_T integer per tensor dimension)
         end type talsh_tens_signature_t
  !TAL-SH tensor shape:
         type, public, bind(C):: talsh_tens_shape_t

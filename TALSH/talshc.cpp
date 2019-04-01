@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/03/31
+REVISION: 2019/04/01
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -784,6 +784,8 @@ size_t talshDeviceMemorySize_(int dev_num, int dev_kind) //Fortran wrapper
 
 size_t talshDeviceTensorSize(int dev_num,
                              int dev_kind)
+/** Returns the max size (bytes) of a tensor that
+    can fit in the argument buffer of a given device. **/
 {
  int devk,i;
  size_t bytes;
@@ -2225,6 +2227,46 @@ void talshTaskPrint(const talsh_task_t * talsh_task)
 }
 
 // TAL-SH tensor operations API:
+double talshTensorOpGetByteCount(const talsh_tens_op_t * tens_op)
+/** Returns the total number of bytes required by the tensor operation. **/
+{
+ double bytes = -1.0;
+
+ return bytes;
+}
+
+double talshTensorOpGetFlopCount(const talsh_tens_op_t * tens_op)
+/** Returns the total number of flops required by the tensor operation. **/
+{
+ double flops = -1.0;
+
+ return flops;
+}
+
+double talshTensorOpGetIntensity(const talsh_tens_op_t * tens_op)
+/** Return the arithmetic intensity of the tensor operation. **/
+{
+ double flops = talshTensorOpGetFlopCount(tens_op);
+ double bytes = talshTensorOpGetByteCount(tens_op);
+ if(bytes > 0.0) return flops/bytes;
+ return -1.0;
+}
+
+int talshTensorOpDecompose(const talsh_tens_op_t * tens_op, //in: parent tensor operation
+                           int * num_child_ops,             //inout: suggested (in) and actual (out) number of children
+                           talsh_tens_op_t ** child_op)     //inout: children tensor operations
+{
+ int errc = TALSH_SUCCESS;
+ switch(tens_op->opkind){
+  case TALSH_TENSOR_CONTRACT:
+   
+   break;
+  default:
+   errc=TALSH_NOT_IMPLEMENTED;
+ }
+ return errc;
+}
+
 int talshTensorPlace(talsh_tens_t * tens,
                      int dev_id,
                      int dev_kind,
