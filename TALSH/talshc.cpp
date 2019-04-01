@@ -103,7 +103,8 @@ int cpu_tensor_block_add(const int * contr_ptrn, void * lftr, void * dftr,
 int cpu_tensor_block_contract(const int * contr_ptrn, void * lftr, void * rftr, void * dftr,
                               double scale_real, double scale_imag, int arg_conj, int accumulative);
 // Contraction pattern conversion:
-int talsh_get_contr_ptrn_str2dig(const char * c_str, int * dig_ptrn, int * dig_len, int * conj_bits);
+int talsh_get_contr_ptrn_str2dig(const char * c_str, int * dig_ptrn,
+                                 int * drank, int * lrank, int * rrank, int * conj_bits);
 // Fortran tensor block aliasing:
 int talsh_tensor_f_assoc(const talsh_tens_t * talsh_tens, int image_id, void ** tensF);
 int talsh_tensor_f_dissoc(void * tensF);
@@ -2252,14 +2253,67 @@ double talshTensorOpGetIntensity(const talsh_tens_op_t * tens_op)
  return -1.0;
 }
 
-int talshTensorOpDecompose(const talsh_tens_op_t * tens_op, //in: parent tensor operation
-                           int * num_child_ops,             //inout: suggested (in) and actual (out) number of children
-                           talsh_tens_op_t ** child_op)     //inout: children tensor operations
+int talshTensorOpDecompose2(         //out: error code
+    const talsh_tens_op_t * tens_op, //in: parent tensor operation (must be defined on entrance)
+    talsh_tens_op_t * child_op1,     //inout: children tensor operation 1 (must be empty on entrance)
+    talsh_tens_op_t * child_op2)     //inout: children tensor operation 2 (must be empty on entrance)
+/** Decomposes a parent tensor operation into two sub-operations (children operations).
+    The parent tensor operation must involve at least one tensor of rank > 0. **/
 {
- int errc = TALSH_SUCCESS;
+ int contr_ptrn[MAX_TENSOR_RANK*2],cpl,drank,lrank,rrank,conj_bits;
+ int mr,ml,mc,d0,d1,d2,errc;
+ size_t lr,ll,lc,sr,sl,sc,cd;
+
+ if(tens_op == NULL || child_op1 == NULL || child_op2 == NULL) return TALSH_INVALID_ARGS;
+ errc = TALSH_SUCCESS;
  switch(tens_op->opkind){
   case TALSH_TENSOR_CONTRACT:
-   
+   // Parse the tensor contraction pattern and extract necessary information:
+   errc=talsh_get_contr_ptrn_str2dig(tens_op->symb_pattern,contr_ptrn,&drank,&lrank,&rrank,&conj_bits);
+   if(errc == TALSH_SUCCESS){
+    cpl = lrank + rrank;
+    if(cpl > 0){
+     // Compute matrix dimensions:
+     mc = -1; ml = -1; mr = -1; sc = 0; sl = 0; sr = 0;
+     lc = 1; ll = 1; lr = 1;
+     for(int i = 0; i < lrank; ++i){
+      if(contr_ptrn[i] < 0){
+       cd = tens_op->tens_slice[1].shape.dims[i];
+       lc *= cd;
+       if(cd > sc){sc = cd; mc = i;}
+      }else if(contr_ptrn[i] > 0){
+       cd = tens_op->tens_slice[1].shape.dims[i];
+       ll *= cd;
+       if(cd > sl){sl = cd; ml = i;}
+      }
+     }
+     for(int i = 0; i < rrank; ++i){
+      if(contr_ptrn[lrank + i] > 0){
+       cd = tens_op->tens_slice[2].shape.dims[i];
+       lr *= cd;
+       if(cd > sr){sr = cd; mr = lrank + i;}
+      }
+     }
+     // Identify the dimensions to split in half:
+     if(lr > ll && lr > lc){ //right
+      d2 = mr - lrank; d1 = -1; d0 = contr_ptrn[mr] - 1;
+      for(int i = 0; i < lrank; ++i){
+       if(contr_ptrn[i] - 1 == d0){d1 = i; break;}
+      }
+     }else if(ll > lr && ll > lc){ //left
+      d2 = -1; d1 = ml; d0 = contr_ptrn[ml] - 1;
+      for(int i = 0; i < rrank; ++i){
+       if(contr_ptrn[lrank + i] - 1 == d0){d2 = i; break;}
+      }
+     }else if(lc > lr && lc > ll){ //contracted
+      d2 = -contr_ptrn[mc] - 1; d1 = mc; d0 = -1;
+     }
+     // Split the parent tensor operation into two sub-operations:
+
+    }else{
+     errc = TALSH_NOT_ALLOWED;
+    }
+   }
    break;
   default:
    errc=TALSH_NOT_IMPLEMENTED;
@@ -3259,7 +3313,7 @@ int talshTensorAdd(const char * cptrn,   //in: tensor addition pattern
 /** Tensor addition dispatcher **/
 {
  int j,devid,dvk,dvn,dimg,limg,dcp,lcp,errc;
- int contr_ptrn[MAX_TENSOR_RANK],cpl,conj_bits;
+ int contr_ptrn[MAX_TENSOR_RANK],cpl,drnk,lrnk,rrnk,conj_bits;
  unsigned int coh_ctrl,coh,cohd,cohl;
  talsh_task_t * tsk;
  host_task_t * host_task;
@@ -3290,7 +3344,8 @@ int talshTensorAdd(const char * cptrn,   //in: tensor addition pattern
   tsk->task_error=102; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
  }
  //Check and parse the index correspondence pattern:
- errc=talsh_get_contr_ptrn_str2dig(cptrn,contr_ptrn,&cpl,&conj_bits);
+ errc=talsh_get_contr_ptrn_str2dig(cptrn,contr_ptrn,&drnk,&lrnk,&rrnk,&conj_bits);
+ cpl=lrnk+rrnk;
  if(errc){tsk->task_error=103; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_INVALID_ARGS;}
  //Determine the execution device (devid:[dvk,dvn]):
  if(dev_kind == DEV_DEFAULT){ //device kind is not specified explicitly
@@ -3525,7 +3580,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
 /** Tensor contraction dispatcher **/
 {
  int j,devid,dvk,dvn,dimg,limg,rimg,dcp,lcp,rcp,errc;
- int contr_ptrn[MAX_TENSOR_RANK*2],cpl,conj_bits;
+ int contr_ptrn[MAX_TENSOR_RANK*2],cpl,drnk,lrnk,rrnk,conj_bits;
  unsigned int coh_ctrl,coh,cohd,cohl,cohr;
  talsh_task_t * tsk;
  host_task_t * host_task;
@@ -3556,7 +3611,8 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
   tsk->task_error=102; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
  }
  //Check and parse the index correspondence pattern:
- errc=talsh_get_contr_ptrn_str2dig(cptrn,contr_ptrn,&cpl,&conj_bits);
+ errc=talsh_get_contr_ptrn_str2dig(cptrn,contr_ptrn,&drnk,&lrnk,&rrnk,&conj_bits);
+ cpl=lrnk+rrnk;
  if(errc){tsk->task_error=103; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_INVALID_ARGS;}
  //Determine the execution device (devid:[dvk,dvn]):
  if(dev_kind == DEV_DEFAULT){ //device kind is not specified explicitly

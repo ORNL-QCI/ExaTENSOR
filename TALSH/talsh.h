@@ -298,10 +298,11 @@ extern "C"{
  double talshTensorOpGetFlopCount(const talsh_tens_op_t * tens_op);
 //  Tensor operation arithmetic intensity:
  double talshTensorOpGetIntensity(const talsh_tens_op_t * tens_op);
-//  Tensor operation decomposition:
- int talshTensorOpDecompose(const talsh_tens_op_t * tens_op, //in: parent tensor operation
-                            int * num_child_ops,             //inout: suggested (in) and actual (out) number of children
-                            talsh_tens_op_t ** child_op);    //inout: children tensor operations
+//  Tensor operation decomposition into two sub-operations:
+ int talshTensorOpDecompose2(const talsh_tens_op_t * tens_op, //in: parent tensor operation (defined on entrance)
+                             talsh_tens_op_t * child_op1,     //inout: children tensor operation 1 (empty on entrance)
+                             talsh_tens_op_t * child_op2);    //inout: children tensor operation 2 (empty on entrance)
+
 //  Place a tensor block on a specific device:
  int talshTensorPlace(talsh_tens_t * tens,               //inout: tensor block
                       int dev_id,                        //in: device id (flat or kind-specific)

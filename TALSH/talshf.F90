@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2019/03/29
+!REVISION: 2019/04/01
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -559,20 +559,23 @@
 
        contains
 !INTERNAL FUNCTIONS:
-!----------------------------------------------------------------------------------------------
-        integer(C_INT) function talsh_get_contr_ptrn_str2dig(c_str,dig_ptrn,dig_len,conj_bits)&
+!--------------------------------------------------------------------------------------------------------
+        integer(C_INT) function talsh_get_contr_ptrn_str2dig(c_str,dig_ptrn,drank,lrank,rrank,conj_bits)&
                        &bind(c,name='talsh_get_contr_ptrn_str2dig')
          implicit none
          character(C_CHAR), intent(in):: c_str(1:*)  !in: C-string (NULL terminated) containing the mnemonic contraction pattern
          integer(C_INT), intent(out):: dig_ptrn(1:*) !out: digitial tensor contraction pattern
-         integer(C_INT), intent(out):: dig_len       !out: length of the digital tensor contraction pattern
+         integer(C_INT), intent(out):: drank         !out: destination tensor rank
+         integer(C_INT), intent(out):: lrank         !out: left tensor rank
+         integer(C_INT), intent(out):: rrank         !out: right tensor rank
          integer(C_INT), intent(out):: conj_bits     !out: argument complex conjugation flags (Bit 0 -> Destination, Bit 1 - > Left, Bit 2 -> Right)
          integer, parameter:: MAX_CONTR_STR_LEN=1024 !max length of the tensor contraction string
-         integer:: dgp(MAX_TENSOR_RANK*2),dgl,csl,drank,lrank,rrank,ierr
+         integer:: dgp(MAX_TENSOR_RANK*2),dgl,csl,ierr
          character(MAX_CONTR_STR_LEN):: contr_str
          integer(INTD):: i,star_pos
 
-         talsh_get_contr_ptrn_str2dig=0; dig_len=0; conj_bits=0
+         talsh_get_contr_ptrn_str2dig=0
+         drank=-1; lrank=-1; rrank=-1; conj_bits=0
 !Convert C-string to a Fortran string:
          csl=1; star_pos=0
          do while(iachar(c_str(csl)).ne.0)
@@ -599,7 +602,7 @@
          if(csl.gt.0) then
           call get_contr_pattern_dig(contr_str(1:csl),drank,lrank,rrank,dgp,ierr,conj_bits)
           if(ierr.eq.0) then
-           dgl=lrank+rrank; dig_len=dgl; if(dgl.gt.0) dig_ptrn(1:dgl)=dgp(1:dgl)
+           dgl=lrank+rrank; if(dgl.gt.0) dig_ptrn(1:dgl)=dgp(1:dgl)
           else
            talsh_get_contr_ptrn_str2dig=ierr; return
           endif
