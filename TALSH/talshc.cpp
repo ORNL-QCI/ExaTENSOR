@@ -1207,6 +1207,16 @@ size_t talshTensorSizeAllImages(const talsh_tens_t * tens_block, int * num_image
  return tot_size;
 }
 
+const int * talshTensorDimExtents(const talsh_tens_t * tens_block, int * rank)
+{
+ *rank = -1;
+#pragma omp flush
+ if(tens_block == NULL) return NULL;
+ if(tens_block->shape_p == NULL) return NULL;
+ *rank = tens_block->shape_p->num_dim;
+ return tens_block->shape_p->dims;
+}
+
 int talshTensorShape(const talsh_tens_t * tens_block, talsh_tens_shape_t * tens_shape)
 /** Returns the shape of the tensor block. The tensor shape object <tens_shape>
     passed here must either be either empty defined or value defined. It is errorneous
@@ -1612,21 +1622,33 @@ int talshTensorSliceConstruct(talsh_tens_slice_t * slice,
                               const int * divs,
                               const int * grps)
 {
+ int rank;
+
  int errc = TALSH_SUCCESS;
- if(slice == NULL) return TALSH_INVALID_ARGS;
- if(tensor == NULL) return TALSH_INVALID_ARGS;
- int rank = talshTensorRank(tensor);
+ if(slice == NULL || tensor == NULL) return TALSH_INVALID_ARGS;
+ //Check consistency:
+ const int * tens_dims = talshTensorDimExtents(tensor,&rank);
  if(rank <= 0) return TALSH_INVALID_ARGS;
- if(errc == 0) errc = tensSignature_construct(&(slice->bases),rank,offsets);
+ if(offsets == NULL || dims == NULL) return TALSH_INVALID_ARGS;
+ for(int i = 0; i < rank; ++i){
+  if(dims[i] <= 0 || offsets[i] + dims[i] > tens_dims[i]) return TALSH_INVALID_ARGS;
+ }
+ //Construct tensor slice:
+ errc = tensSignature_construct(&(slice->bases),rank,offsets);
  if(errc == 0) errc = tensShape_construct(&(slice->shape),NOPE,rank,dims,divs,grps);
  if(errc == 0){
   slice->tensor = tensor;
-  //Check consistency:
-  
  }else{
   talshTensorSliceDestruct(slice);
  }
  return errc;
+}
+
+size_t talshTensorSliceVolume(const talsh_tens_slice_t * slice)
+{
+ size_t vol = 0;
+ if(slice != NULL) vol = tensShape_volume(&(slice->shape));
+ return vol;
 }
 
 int talshTensorSliceDestruct(talsh_tens_slice_t * slice)
@@ -2296,16 +2318,68 @@ void talshTaskPrint(const talsh_task_t * talsh_task)
 double talshTensorOpGetByteCount(const talsh_tens_op_t * tens_op)
 /** Returns the total number of bytes required by the tensor operation. **/
 {
- double bytes = -1.0;
+ int dks;
 
+ double bytes = 0.0;
+ if(tens_op != NULL){
+  if(talshValidDataKind(tens_op->data_kind,&dks) == YEP){
+   double des = (double)dks;
+   for(int i = 0; i < tens_op->num_args; ++i){
+    bytes += (double)(talshTensorSliceVolume(&(tens_op->tens_slice[i]))) * des;
+   }
+  }
+ }
  return bytes;
 }
 
 double talshTensorOpGetFlopCount(const talsh_tens_op_t * tens_op)
 /** Returns the total number of flops required by the tensor operation. **/
 {
- double flops = -1.0;
+ int contr_ptrn[MAX_TENSOR_RANK*2],dst[MAX_TENSOR_RANK],drank,lrank,rrank,conj_bits,errc;
+ double fma;
 
+ double flops = 0.0;
+ if(tens_op != NULL){
+  if(tens_op->data_kind == R4 || tens_op->data_kind == R8){
+   fma = 2.0;
+  }else if(tens_op->data_kind == C4 || tens_op->data_kind == C8){
+   fma = 8.0;
+  }else{
+   return flops;
+  }
+  switch(tens_op->opkind){
+  case TALSH_TENSOR_CONTRACT:
+   errc=talsh_get_contr_ptrn_str2dig(tens_op->symb_pattern,contr_ptrn,&drank,&lrank,&rrank,&conj_bits);
+   if(errc == TALSH_SUCCESS){
+    flops = 1.0;
+    for(int i = 0; i < drank; ++i) dst[i] = 1;
+    for(int i = 0; i < lrank; ++i){
+     double nd = (double)(tens_op->tens_slice[1].shape.dims[i]);
+     if(contr_ptrn[i] > 0){
+      int m = contr_ptrn[i] - 1;
+      if(dst[m] == 1){
+       dst[m] = 0;
+       flops *= nd;
+      }
+     }else if(contr_ptrn[i] < 0){
+      flops *= nd;
+     }
+    }
+    for(int i = 0; i < rrank; ++i){
+     double nd = (double)(tens_op->tens_slice[2].shape.dims[i]);
+     if(contr_ptrn[lrank + i] > 0){
+      int m = contr_ptrn[lrank + i] - 1;
+      if(dst[m] == 1){
+       dst[m] = 0;
+       flops *= nd;
+      }
+     }
+    }
+    flops *= fma;
+   }
+   break;
+  }
+ }
  return flops;
 }
 

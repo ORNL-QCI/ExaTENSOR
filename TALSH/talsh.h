@@ -119,6 +119,7 @@ typedef struct{
 // Basic tensor operation:
 typedef struct{
  int opkind;                                         //operation kind
+ int data_kind;                                      //operational data kind: {R4,R8,C4,C8}
  unsigned int num_args;                              //number of tensor operands: [0..MAX_TENSOR_OPERANDS]
  talsh_tens_slice_t tens_slice[MAX_TENSOR_OPERANDS]; //formal tensor operands (tensor slice views)
  char * symb_pattern;                                //symbolic index pattern specification (non-owning pointer to a C-string)
@@ -215,6 +216,8 @@ extern "C"{
 //  Get the size of all tensor images in bytes:
  size_t talshTensorSizeAllImages(const talsh_tens_t * tens_block,
                                  int * num_images);
+//  Get tensor dimension extents:
+ const int * talshTensorDimExtents(const talsh_tens_t * tens_block, int * rank);
 //  Get the shape of the tensor block:
  int talshTensorShape(const talsh_tens_t * tens_block,
                       talsh_tens_shape_t * tens_shape);
@@ -265,6 +268,8 @@ extern "C"{
                                const int * dims,
                                const int * divs = NULL,
                                const int * grps = NULL);
+//  Get the volume of the TAL-SH tensor slice:
+ size_t talshTensorSliceVolume(const talsh_tens_slice_t * slice);
 //  Destruct a TAL-SH tensor slice:
  int talshTensorSliceDestruct(talsh_tens_slice_t * slice);
 //  Destroy a TAL-SH tensor slice:
