@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/04/01
+REVISION: 2019/04/02
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2227,6 +2227,7 @@ __host__ int gpu_print_stats(int gpu_num)
 //TENSOR BLOCK API:
 int tensSignature_create(talsh_tens_signature_t ** tsigna)
 {
+ if(tsigna == NULL) return -1;
  *tsigna = (talsh_tens_signature_t*)malloc(sizeof(talsh_tens_signature_t));
  if(*tsigna == NULL) return TRY_LATER;
  return tensSignature_clean(*tsigna);
@@ -2288,12 +2289,10 @@ int tensSignature_destroy(talsh_tens_signature_t * tsigna)
 int tensShape_create(talsh_tens_shape_t ** tshape)
 /** Creates a tensor shape and cleans it. **/
 {
- int errc;
  if(tshape == NULL) return -1;
- (*tshape)=(talsh_tens_shape_t*)malloc(sizeof(talsh_tens_shape_t));
+ *tshape=(talsh_tens_shape_t*)malloc(sizeof(talsh_tens_shape_t));
  if(*tshape == NULL) return TRY_LATER;
- errc=tensShape_clean(*tshape); if(errc) return 1;
- return 0;
+ return tensShape_clean(*tshape);
 }
 
 int tensShape_clean(talsh_tens_shape_t * tshape)

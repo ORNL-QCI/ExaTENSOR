@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/04/01
+REVISION: 2019/04/02
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -91,7 +91,7 @@ typedef struct{
 
 // Dense tensor slice view (view of a dense tensor slice within an actual dense tensor):
 typedef struct{
- talsh_tens_t * tensor;        //non-owning pointer to the host-tensor
+ const talsh_tens_t * tensor;  //non-owning pointer to the host-tensor
  talsh_tens_signature_t bases; //tensor slice signature: base offsets of the tensor slice inside the host-tensor
  talsh_tens_shape_t shape;     //tensor slice shape: extents of tensor slice dimensions
 } talsh_tens_slice_t;
@@ -253,6 +253,22 @@ extern "C"{
  void talshTensorPrintInfo(const talsh_tens_t * tens_block);
 //  Print tensor elements larger by absolute value than some threshold:
  void talshTensorPrintBody(const talsh_tens_t * tens_block, double thresh);
+// TAL-SH tensor slice API:
+//  Create an empty TAL-SH tensor slice:
+ int talshTensorSliceCreate(talsh_tens_slice_t ** slice);
+//  Clean an undefined TAL-SH tensor slice:
+ int talshTensorSliceClean(talsh_tens_slice_t * slice);
+//  Construct a TAL-SH tensor slice:
+ int talshTensorSliceConstruct(talsh_tens_slice_t * slice,
+                               const talsh_tens_t * tensor,
+                               const size_t * offsets,
+                               const int * dims,
+                               const int * divs = NULL,
+                               const int * grps = NULL);
+//  Destruct a TAL-SH tensor slice:
+ int talshTensorSliceDestruct(talsh_tens_slice_t * slice);
+//  Destroy a TAL-SH tensor slice:
+ int talshTensorSliceDestroy(talsh_tens_slice_t * slice);
 // TAL-SH task API:
 //  Create a clean (defined-empty) TAL-SH task:
  int talshTaskCreate(talsh_task_t ** talsh_task);

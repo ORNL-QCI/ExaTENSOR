@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/04/01
+REVISION: 2019/04/02
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -1583,10 +1583,75 @@ void talshTensorPrintBody(const talsh_tens_t * tens_block, double thresh)
  return;
 }
 
+// TAL-SH tensor slice API:
+int talshTensorSliceCreate(talsh_tens_slice_t ** slice)
+{
+ if(slice == NULL) return TALSH_INVALID_ARGS;
+ *slice = (talsh_tens_slice_t*)malloc(sizeof(talsh_tens_slice_t));
+ if(*slice == NULL) return TRY_LATER;
+ return talshTensorSliceClean(*slice);
+}
+
+int talshTensorSliceClean(talsh_tens_slice_t * slice)
+{
+ int errc = TALSH_SUCCESS;
+ if(slice != NULL){
+  slice->tensor = NULL;
+  if(errc == 0) errc = tensSignature_clean(&(slice->bases));
+  if(errc == 0) errc = tensShape_clean(&(slice->shape));
+ }else{
+  errc = TALSH_INVALID_ARGS;
+ }
+ return errc;
+}
+
+int talshTensorSliceConstruct(talsh_tens_slice_t * slice,
+                              const talsh_tens_t * tensor,
+                              const size_t * offsets,
+                              const int * dims,
+                              const int * divs,
+                              const int * grps)
+{
+ int errc = TALSH_SUCCESS;
+ if(slice == NULL) return TALSH_INVALID_ARGS;
+ if(tensor == NULL) return TALSH_INVALID_ARGS;
+ int rank = talshTensorRank(tensor);
+ if(rank <= 0) return TALSH_INVALID_ARGS;
+ if(errc == 0) errc = tensSignature_construct(&(slice->bases),rank,offsets);
+ if(errc == 0) errc = tensShape_construct(&(slice->shape),NOPE,rank,dims,divs,grps);
+ if(errc == 0){
+  slice->tensor = tensor;
+  //Check consistency:
+  
+ }else{
+  talshTensorSliceDestruct(slice);
+ }
+ return errc;
+}
+
+int talshTensorSliceDestruct(talsh_tens_slice_t * slice)
+{
+ int errc = TALSH_SUCCESS;
+ if(slice == NULL) return TALSH_INVALID_ARGS;
+ if(errc == 0) errc = tensSignature_destruct(&(slice->bases));
+ if(errc == 0) errc = tensShape_destruct(&(slice->shape));
+ int ierr = talshTensorSliceClean(slice); if(ierr != 0 && errc == 0) errc = ierr;
+ return errc;
+}
+
+int talshTensorSliceDestroy(talsh_tens_slice_t * slice)
+{
+ if(slice == NULL) return TALSH_INVALID_ARGS;
+ int errc = talshTensorSliceDestruct(slice);
+ free(slice);
+ return errc;
+}
+
 // TAL-SH task API:
 int talshTaskCreate(talsh_task_t ** talsh_task)
 /** Creates a clean <talsh_task_t> object on heap. **/
 {
+ if(talsh_task == NULL) return TALSH_INVALID_ARGS;
  *talsh_task=(talsh_task_t*)malloc(sizeof(talsh_task_t));
  if(*talsh_task == NULL) return TRY_LATER;
  return talshTaskClean(*talsh_task);
@@ -2309,8 +2374,8 @@ int talshTensorOpDecompose2(         //out: error code
       d2 = -contr_ptrn[mc] - 1; d1 = mc; d0 = -1;
      }
      // Split the parent tensor operation into two sub-operations:
-
-    }else{
+     
+    }else{ //only scalars case (not allowed)
      errc = TALSH_NOT_ALLOWED;
     }
    }
