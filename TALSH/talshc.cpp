@@ -2412,24 +2412,24 @@ int talshTensorOpDecompose2(         //out: error code
    if(errc == TALSH_SUCCESS){
     cpl = lrank + rrank; //length of contr_ptrn[]
     if(cpl > 0){
-     // Compute matrix dimensions (lr, ll, lc):
+     // Compute matrix dimensions (lb, lr, ll, lc):
      lc = 1; ll = 1; lr = 1; lb = 1;
-     mc = -1; ml = -1; mr = -1; mb = 0;
+     mc = -1; ml = -1; mr = -1; mb = -1;
      sc = 0; sl = 0; sr = 0; sb = 0;
      for(int i = 0; i < drank; ++i) dst[i] = 0;
      for(int i = 0; i < lrank; ++i){
       cd = tens_op->tens_slice[1].shape.dims[i];
       if(contr_ptrn[i] < 0){ //contracted index
        lc *= cd; if(cd > sc){sc = cd; mc = i;}
-      }else if(contr_ptrn[i] > 0){ //left index
-       ++dst[contr_ptrn[i] - 1];
+      }else if(contr_ptrn[i] > 0){ //left (or batch) index
+       dst[contr_ptrn[i] - 1] = (i+1);
        ll *= cd; if(cd > sl){sl = cd; ml = i;}
       }
      }
      for(int i = 0; i < rrank; ++i){
       cd = tens_op->tens_slice[2].shape.dims[i];
       if(contr_ptrn[lrank + i] > 0){ //right index
-       if(++dst[contr_ptrn[lrank + i] - 1] == 1){
+       if(dst[contr_ptrn[lrank + i] - 1] == 0){
         lr *= cd; if(cd > sr){sr = cd; mr = lrank + i;}
        }else{ //batch index
         ll /= cd; lb *= cd;
@@ -2437,19 +2437,17 @@ int talshTensorOpDecompose2(         //out: error code
        }
       }
      }
-     // Identify the dimensions to split in half:
-     if(lr > ll && lr > lc){ //right
-      d2 = mr - lrank; d1 = -1; d0 = contr_ptrn[mr] - 1;
-      for(int i = 0; i < lrank; ++i){
-       if(contr_ptrn[i] - 1 == d0){d1 = i; break;}
+     // Identify the tensor dimensions to split in half:
+     if(lb > 1){ //non-trivial batch dimensions exist
+      d0 = contr_ptrn[mb] - 1; d1 = dst[d0] - 1; d2 = mb - lrank;
+     }else{ //no non-trivial batch dimensions
+      if(lr > ll && lr > lc){ //right dimension
+       d0 = contr_ptrn[mr] - 1; d1 = -1; d2 = mr - lrank;
+      }else if(ll > lr && ll > lc){ //left dimension
+       d0 = contr_ptrn[ml] - 1; d1 = ml; d2 = -1;
+      }else if(lc > lr && lc > ll){ //contracted dimension
+       d0 = -1; d1 = mc; d2 = -contr_ptrn[mc] - 1;
       }
-     }else if(ll > lr && ll > lc){ //left
-      d2 = -1; d1 = ml; d0 = contr_ptrn[ml] - 1;
-      for(int i = 0; i < rrank; ++i){
-       if(contr_ptrn[lrank + i] - 1 == d0){d2 = i; break;}
-      }
-     }else if(lc > lr && lc > ll){ //contracted
-      d2 = -contr_ptrn[mc] - 1; d1 = mc; d0 = -1;
      }
      // Split the parent tensor operation into two sub-operations:
      
