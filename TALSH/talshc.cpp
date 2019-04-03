@@ -2399,9 +2399,9 @@ int talshTensorOpDecompose2(         //out: error code
 /** Decomposes a parent tensor operation into two sub-operations (children operations).
     The parent tensor operation must involve at least one tensor of rank > 0. **/
 {
- int contr_ptrn[MAX_TENSOR_RANK*2],cpl,drank,lrank,rrank,conj_bits;
- int mr,ml,mc,d0,d1,d2,errc;
- size_t lr,ll,lc,sr,sl,sc,cd;
+ int contr_ptrn[MAX_TENSOR_RANK*2],dst[MAX_TENSOR_RANK],cpl,drank,lrank,rrank,conj_bits;
+ int mb,mr,ml,mc,d0,d1,d2,errc;
+ size_t lb,lr,ll,lc,sb,sr,sl,sc,cd;
 
  if(tens_op == NULL || child_op1 == NULL || child_op2 == NULL) return TALSH_INVALID_ARGS;
  errc = TALSH_SUCCESS;
@@ -2410,27 +2410,31 @@ int talshTensorOpDecompose2(         //out: error code
    // Parse the tensor contraction pattern and extract necessary information:
    errc=talsh_get_contr_ptrn_str2dig(tens_op->symb_pattern,contr_ptrn,&drank,&lrank,&rrank,&conj_bits);
    if(errc == TALSH_SUCCESS){
-    cpl = lrank + rrank;
+    cpl = lrank + rrank; //length of contr_ptrn[]
     if(cpl > 0){
-     // Compute matrix dimensions:
-     mc = -1; ml = -1; mr = -1; sc = 0; sl = 0; sr = 0;
-     lc = 1; ll = 1; lr = 1;
+     // Compute matrix dimensions (lr, ll, lc):
+     lc = 1; ll = 1; lr = 1; lb = 1;
+     mc = -1; ml = -1; mr = -1; mb = 0;
+     sc = 0; sl = 0; sr = 0; sb = 0;
+     for(int i = 0; i < drank; ++i) dst[i] = 0;
      for(int i = 0; i < lrank; ++i){
-      if(contr_ptrn[i] < 0){
-       cd = tens_op->tens_slice[1].shape.dims[i];
-       lc *= cd;
-       if(cd > sc){sc = cd; mc = i;}
-      }else if(contr_ptrn[i] > 0){
-       cd = tens_op->tens_slice[1].shape.dims[i];
-       ll *= cd;
-       if(cd > sl){sl = cd; ml = i;}
+      cd = tens_op->tens_slice[1].shape.dims[i];
+      if(contr_ptrn[i] < 0){ //contracted index
+       lc *= cd; if(cd > sc){sc = cd; mc = i;}
+      }else if(contr_ptrn[i] > 0){ //left index
+       ++dst[contr_ptrn[i] - 1];
+       ll *= cd; if(cd > sl){sl = cd; ml = i;}
       }
      }
      for(int i = 0; i < rrank; ++i){
-      if(contr_ptrn[lrank + i] > 0){
-       cd = tens_op->tens_slice[2].shape.dims[i];
-       lr *= cd;
-       if(cd > sr){sr = cd; mr = lrank + i;}
+      cd = tens_op->tens_slice[2].shape.dims[i];
+      if(contr_ptrn[lrank + i] > 0){ //right index
+       if(++dst[contr_ptrn[lrank + i] - 1] == 1){
+        lr *= cd; if(cd > sr){sr = cd; mr = lrank + i;}
+       }else{ //batch index
+        ll /= cd; lb *= cd;
+        if(cd > sb){sb = cd; mb = lrank + i;}
+       }
       }
      }
      // Identify the dimensions to split in half:
