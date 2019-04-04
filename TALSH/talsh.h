@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/04/02
+REVISION: 2019/04/04
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -60,6 +60,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_TASK_COMPLETED 2000005
 
 //TAL-SH TENSOR OPERATION KINDS:
+#define TALSH_TENSOR_NOOP -1
 #define TALSH_TENSOR_INIT 68
 #define TALSH_TENSOR_NORM1 69
 #define TALSH_TENSOR_NORM2 70
@@ -122,7 +123,7 @@ typedef struct{
  int data_kind;                                      //operational data kind: {R4,R8,C4,C8}
  unsigned int num_args;                              //number of tensor operands: [0..MAX_TENSOR_OPERANDS]
  talsh_tens_slice_t tens_slice[MAX_TENSOR_OPERANDS]; //formal tensor operands (tensor slice views)
- char * symb_pattern;                                //symbolic index pattern specification (non-owning pointer to a C-string)
+ const char * symb_pattern;                          //symbolic index pattern specification (non-owning pointer to a C-string)
  talshComplex8 alpha;                                //alpha prefactor (scalar factor)
  talsh_tens_t tens_arg[MAX_TENSOR_OPERANDS];         //actual tensor operands (actual TAL-SH tensors)
  talsh_task_t task_handle;                           //task handle
@@ -313,6 +314,42 @@ extern "C"{
 //  Print TAL-SH task info:
  void talshTaskPrint(const talsh_task_t * talsh_task);
 // TAL-SH tensor operations API:
+//  Create an empty tensor operation:
+ int talshTensorOpCreate(talsh_tens_op_t ** tens_op);
+//  Clean an undefined tensor operation:
+ int talshTensorOpClean(talsh_tens_op_t * tens_op);
+//  Set a tensor operation argument (tensor slice):
+ int talshTensorOpSetArgument(talsh_tens_op_t * tens_op,
+                              const talsh_tens_t * tensor,
+                              const size_t * offsets,
+                              const int * dims);
+//  Specify the kind of the tensor operation:
+ int talshTensorOpSpecify(talsh_tens_op_t * tens_op,
+                          int operation_kind,
+                          const char * symbolic_pattern = NULL,
+                          double prefactor_real = 1.0,
+                          double prefactor_imag = 0.0);
+//  Activate tensor operation for subsequent processing (resources acquired):
+ int talshTensorOpActivate(talsh_tens_op_t * tens_op,
+                           int data_kind);
+//  Load input (extract input tensor slices):
+ int talshTensorOpLoadInput(talsh_tens_op_t * tens_op);
+//  Schedule tensor operation for execution of a given device:
+ int talshTensorOpExecute(talsh_tens_op_t * tens_op,
+                          int dev_id = DEV_DEFAULT,
+                          int dev_kind = DEV_DEFAULT);
+//  Test for tensor operation completion:
+ int talshTensorOpTest(talsh_tens_op_t * tens_op,
+                       int * completed,
+                       int wait = NOPE);
+//  Store output (insert/accumulate output tensor slice):
+ int talshTensorOpStoreOutput(talsh_tens_op_t * tens_op);
+//  Deactivate tensor operation (resources released):
+ int talshTensorOpDeactivate(talsh_tens_op_t * tens_op);
+//  Destruct tensor operation (back to an empty state):
+ int talshTensorOpDestruct(talsh_tens_op_t * tens_op);
+//  Destroy tensor operation:
+ int talshTensorOpDestroy(talsh_tens_op_t * tens_op);
 //  Tensor operation byte count (memory requirements):
  double talshTensorOpGetByteCount(const talsh_tens_op_t * tens_op);
 //  Tensor operation floating point count (compute requirements):

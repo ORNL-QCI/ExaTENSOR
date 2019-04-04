@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/04/02
+REVISION: 2019/04/04
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2315,6 +2315,190 @@ void talshTaskPrint(const talsh_task_t * talsh_task)
 }
 
 // TAL-SH tensor operations API:
+int talshTensorOpCreate(talsh_tens_op_t ** tens_op)
+/** Creates an empty tensor operation. **/
+{
+ if(tens_op == NULL) return TALSH_INVALID_ARGS;
+ *tens_op = (talsh_tens_op_t*)malloc(sizeof(talsh_tens_op_t));
+ if(*tens_op == NULL) return TRY_LATER;
+ return talshTensorOpClean(*tens_op);
+}
+
+int talshTensorOpClean(talsh_tens_op_t * tens_op)
+/** Cleans an undefined tensor operation to an empty state. **/
+{
+ int errc = TALSH_SUCCESS;
+ if(tens_op != NULL){
+  tens_op->opkind = TALSH_TENSOR_NOOP;
+  tens_op->data_kind = NO_TYPE;
+  tens_op->num_args = 0;
+  tens_op->symb_pattern = NULL;
+  tens_op->alpha = talshComplex8Set(0.0,0.0);
+  tens_op->exec_dev_id = DEV_NULL;
+  errc = talshTaskClean(&(tens_op->task_handle));
+  if(errc == TALSH_SUCCESS){
+   for(int i = 0; i < MAX_TENSOR_RANK; ++i){
+    errc = talshTensorSliceClean(&(tens_op->tens_slice[i])); if(errc != TALSH_SUCCESS) break;
+   }
+   if(errc == TALSH_SUCCESS){
+    for(int i = 0; i < MAX_TENSOR_RANK; ++i){
+     errc = talshTensorClean(&(tens_op->tens_arg[i])); if(errc != TALSH_SUCCESS) break;
+    }
+   }
+  }
+ }else{
+  errc = TALSH_INVALID_ARGS;
+ }
+ return errc;
+}
+
+int talshTensorOpSetArgument(talsh_tens_op_t * tens_op, const talsh_tens_t * tensor,
+                             const size_t * offsets, const int * dims)
+/** Sets up the next tensor argument (tensor slice) in an unspecified tensor operation. **/
+{
+ if(tens_op == NULL || tensor == NULL) return TALSH_INVALID_ARGS;
+ int errc = TALSH_SUCCESS;
+ if(tens_op->opkind == TALSH_TENSOR_NOOP){ //operation has not been specified yet
+  if(tens_op->num_args < MAX_TENSOR_OPERANDS){
+   errc = talshTensorSliceConstruct(&(tens_op->tens_slice[tens_op->num_args]),tensor,offsets,dims);
+   if(errc == TALSH_SUCCESS) ++(tens_op->num_args);
+  }else{
+   errc = TALSH_LIMIT_EXCEEDED;
+  }
+ }else{
+  errc = TALSH_NOT_ALLOWED;
+ }
+ return errc;
+}
+
+int talshTensorOpSpecify(talsh_tens_op_t * tens_op, int operation_kind, const char * symbolic_pattern,
+                         double prefactor_real, double prefactor_imag)
+/** Specifies the tensor operation kind. No more tensor arguments can be added. **/
+{
+ if(tens_op == NULL) return TALSH_INVALID_ARGS;
+ int errc = TALSH_SUCCESS;
+ if(tens_op->opkind == TALSH_TENSOR_NOOP){
+  tens_op->symb_pattern = symbolic_pattern;
+  tens_op->alpha = talshComplex8Set(prefactor_real,prefactor_imag);
+  tens_op->opkind = operation_kind;
+ }else{
+  errc = TALSH_NOT_ALLOWED;
+ }
+ return errc;
+}
+
+int talshTensorOpActivate(talsh_tens_op_t * tens_op, int data_kind)
+/** Activates the tensor operation for a subsequent execution with
+    the specified data kind for all tensors (acquires execution resources). **/
+{
+ int dks;
+
+ if(tens_op == NULL) return TALSH_INVALID_ARGS;
+ if(talshValidDataKind(data_kind,&dks) != YEP) return TALSH_INVALID_ARGS;
+ int errc = TALSH_SUCCESS;
+ if(tens_op->opkind != TALSH_TENSOR_NOOP){
+  for(int i = 0; i < tens_op->num_args; ++i){
+   talsh_tens_slice_t * slice = &(tens_op->tens_slice[i]);
+   const talsh_tens_t * host_tensor = slice->tensor;
+   talsh_tens_t * tensor = &(tens_op->tens_arg[i]);
+   errc = talshTensorConstruct(tensor,data_kind,talshTensorRank(host_tensor),slice->shape.dims,
+                               talshFlatDevId(DEV_HOST,0),NULL,YEP);
+   if(errc != TALSH_SUCCESS) break;
+  }
+  if(errc == TALSH_SUCCESS) tens_op->data_kind = data_kind;
+ }else{
+  errc = TALSH_NOT_ALLOWED;
+ }
+ return errc;
+}
+
+int talshTensorOpLoadInput(talsh_tens_op_t * tens_op)
+/** Loads input tensor slices. **/
+{
+ if(tens_op == NULL) return TALSH_INVALID_ARGS;
+ int errc = TALSH_SUCCESS;
+
+ return errc;
+}
+
+int talshTensorOpExecute(talsh_tens_op_t * tens_op, int dev_id, int dev_kind)
+/** Schedules execution of the tensor operation on a given device. **/
+{
+ int errc = TALSH_SUCCESS;
+
+ return errc;
+}
+
+int talshTensorOpTest(talsh_tens_op_t * tens_op, int * completed, int wait)
+/** Tests for completion of the execution of the tensor operation. **/
+{
+ int errc = TALSH_SUCCESS;
+
+ return errc;
+}
+
+int talshTensorOpStoreOutput(talsh_tens_op_t * tens_op)
+/** Stores/accumulates output tensor slice. **/
+{
+ int errc = TALSH_SUCCESS;
+
+ return errc;
+}
+
+int talshTensorOpDeactivate(talsh_tens_op_t * tens_op)
+/** Deactivates the tensor operation (releases execution resources). **/
+{
+ if(tens_op == NULL) return TALSH_INVALID_ARGS;
+ int errc = TALSH_SUCCESS;
+ if(tens_op->data_kind != NO_TYPE){
+  for(int i = tens_op->num_args - 1; i >= 0; --i){
+   errc = talshTensorDestruct(&(tens_op->tens_arg[i])); if(errc != TALSH_SUCCESS) break;
+  }
+  if(errc == TALSH_SUCCESS) tens_op->data_kind = NO_TYPE;
+ }else{
+  errc = TALSH_NOT_ALLOWED;
+ }
+ return errc;
+}
+
+int talshTensorOpDestruct(talsh_tens_op_t * tens_op)
+/** Destructs the tensor operation back to an empty state.
+    It is not allowed to pass tensor operations here which
+    are currently being executed. **/
+{
+ if(tens_op == NULL) return TALSH_INVALID_ARGS;
+ int errc = TALSH_SUCCESS;
+ int stat = talshTaskStatus(&(tens_op->task_handle));
+ if(stat == TALSH_TASK_COMPLETED || stat == TALSH_TASK_ERROR) errc = talshTaskDestruct(&(tens_op->task_handle));
+ if(errc == TALSH_SUCCESS){
+  if(stat == TALSH_TASK_EMPTY){
+   tens_op->exec_dev_id = DEV_NULL;
+   errc = talshTensorOpDeactivate(tens_op);
+   if(errc == TALSH_SUCCESS){
+    tens_op->opkind = TALSH_TENSOR_NOOP;
+    tens_op->symb_pattern = NULL;
+    for(int i = 0; i < tens_op->num_args; ++i){
+     errc = talshTensorSliceDestruct(&(tens_op->tens_slice[i])); if(errc != TALSH_SUCCESS) break;
+    }
+    tens_op->num_args = 0;
+   }
+  }else{
+   errc = TALSH_IN_PROGRESS;
+  }
+ }
+ if(errc == TALSH_SUCCESS) errc = talshTensorOpClean(tens_op);
+ return errc;
+}
+
+int talshTensorOpDestroy(talsh_tens_op_t * tens_op)
+/** Destroy the tensor operation. **/
+{
+ if(tens_op == NULL) return TALSH_INVALID_ARGS;
+ int errc = talshTensorOpDestruct(tens_op);
+ free(tens_op);
+ return errc;
+}
+
 double talshTensorOpGetByteCount(const talsh_tens_op_t * tens_op)
 /** Returns the total number of bytes required by the tensor operation. **/
 {
