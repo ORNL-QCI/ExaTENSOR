@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/04/04
+REVISION: 2019/04/05
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -367,7 +367,8 @@ extern "C"{
 //  Destroy tensor operation:
  int talshTensorOpDestroy(talsh_tens_op_t * tens_op);
 //  Tensor operation byte count (memory requirements):
- double talshTensorOpGetByteCount(const talsh_tens_op_t * tens_op);
+ double talshTensorOpGetByteCount(const talsh_tens_op_t * tens_op,
+                                  unsigned int element_size = 1);
 //  Tensor operation floating point count (compute requirements):
  double talshTensorOpGetFlopCount(const talsh_tens_op_t * tens_op);
 //  Tensor operation arithmetic intensity:

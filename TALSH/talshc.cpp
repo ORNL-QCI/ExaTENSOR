@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/04/04
+REVISION: 2019/04/05
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2577,14 +2577,19 @@ int talshTensorOpDestroy(talsh_tens_op_t * tens_op)
  return errc;
 }
 
-double talshTensorOpGetByteCount(const talsh_tens_op_t * tens_op)
+double talshTensorOpGetByteCount(const talsh_tens_op_t * tens_op, unsigned int element_size)
 /** Returns the total number of bytes required by the tensor operation. **/
 {
  int dks;
 
  double bytes = 0.0;
  if(tens_op != NULL){
-  if(talshValidDataKind(tens_op->data_kind,&dks) == YEP){
+  if(tens_op->opkind != TALSH_TENSOR_NOOP){
+   if(tens_op->data_kind != NO_TYPE){
+    if(talshValidDataKind(tens_op->data_kind,&dks) != YEP) return bytes;
+   }else{
+    dks = element_size;
+   }
    double des = (double)dks;
    for(int i = 0; i < tens_op->num_args; ++i){
     bytes += (double)(talshTensorSliceVolume(&(tens_op->tens_slice[i]))) * des;
@@ -2662,8 +2667,8 @@ int talshTensorOpDecompose2(         //out: error code
     The parent tensor operation must involve at least one tensor of rank > 0. **/
 {
  int contr_ptrn[MAX_TENSOR_RANK*2],dst[MAX_TENSOR_RANK],cpl,drank,lrank,rrank,conj_bits;
- int mb,mr,ml,mc,d0,d1,d2,errc;
- size_t lb,lr,ll,lc,sb,sr,sl,sc,cd;
+ int dims[MAX_TENSOR_RANK],mb,mr,ml,mc,d0,d1,d2,h1,h2,errc;
+ size_t offs[MAX_TENSOR_RANK],lb,lr,ll,lc,sb,sr,sl,sc,cd;
 
  if(tens_op == NULL || child_op1 == NULL || child_op2 == NULL) return TALSH_INVALID_ARGS;
  errc = TALSH_SUCCESS;
@@ -2699,20 +2704,85 @@ int talshTensorOpDecompose2(         //out: error code
        }
       }
      }
-     // Identify the tensor dimensions to split in half:
-     if(lb > 1){ //non-trivial batch dimensions exist
-      d0 = contr_ptrn[mb] - 1; d1 = dst[d0] - 1; d2 = mb - lrank;
-     }else{ //no non-trivial batch dimensions
-      if(lr > ll && lr > lc){ //right dimension
-       d0 = contr_ptrn[mr] - 1; d1 = -1; d2 = mr - lrank;
-      }else if(ll > lr && ll > lc){ //left dimension
-       d0 = contr_ptrn[ml] - 1; d1 = ml; d2 = -1;
-      }else if(lc > lr && lc > ll){ //contracted dimension
-       d0 = -1; d1 = mc; d2 = -contr_ptrn[mc] - 1;
+     // Identify the tensor dimension to split in half:
+     if(lb > 1 || lr > 1 || ll > 1 || lc > 1){
+      if(lb > 1){ //non-trivial batch dimensions exist
+       d0 = contr_ptrn[mb] - 1; d1 = dst[d0] - 1; d2 = mb - lrank;
+      }else{ //no non-trivial batch dimensions
+       if(lr > ll && lr > lc){ //right dimension
+        d0 = contr_ptrn[mr] - 1; d1 = -1; d2 = mr - lrank;
+       }else if(ll > lr && ll > lc){ //left dimension
+        d0 = contr_ptrn[ml] - 1; d1 = ml; d2 = -1;
+       }else if(lc > lr && lc > ll){ //contracted dimension
+        d0 = -1; d1 = mc; d2 = -contr_ptrn[mc] - 1;
+       }
       }
+      // Split the parent tensor operation into two sub-operations:
+      if(errc == TALSH_SUCCESS){
+       // Set up destination tensor:
+       for(int i = 0; i < drank; ++i) offs[i] = tens_op->tens_slice[0].bases.offsets[i];
+       for(int i = 0; i < drank; ++i) dims[i] = tens_op->tens_slice[0].shape.dims[i];
+       if(d0 >= 0){
+        h1 = (dims[d0]+1)/2; h2 = dims[d0] - h1;
+        dims[d0] = h1;
+        errc = talshTensorOpSetArgument(child_op1,tens_op->tens_slice[0].tensor,offs,dims);
+        if(errc == TALSH_SUCCESS){
+         dims[d0] = h2; offs[d0] += h1;
+         errc = talshTensorOpSetArgument(child_op2,tens_op->tens_slice[0].tensor,offs,dims);
+        }
+       }else{
+        errc = talshTensorOpSetArgument(child_op1,tens_op->tens_slice[0].tensor,offs,dims);
+        if(errc == TALSH_SUCCESS){
+         errc = talshTensorOpSetArgument(child_op2,tens_op->tens_slice[0].tensor,offs,dims);
+        }
+       }
+       if(errc == TALSH_SUCCESS){
+        // Set up left tensor:
+        for(int i = 0; i < lrank; ++i) offs[i] = tens_op->tens_slice[1].bases.offsets[i];
+        for(int i = 0; i < lrank; ++i) dims[i] = tens_op->tens_slice[1].shape.dims[i];
+        if(d1 >= 0){
+         h1 = (dims[d1]+1)/2; h2 = dims[d1] - h1;
+         dims[d1] = h1;
+         errc = talshTensorOpSetArgument(child_op1,tens_op->tens_slice[1].tensor,offs,dims);
+         if(errc == TALSH_SUCCESS){
+          dims[d1] = h2; offs[d1] += h1;
+          errc = talshTensorOpSetArgument(child_op2,tens_op->tens_slice[1].tensor,offs,dims);
+         }
+        }else{
+         errc = talshTensorOpSetArgument(child_op1,tens_op->tens_slice[1].tensor,offs,dims);
+         if(errc == TALSH_SUCCESS){
+          errc = talshTensorOpSetArgument(child_op2,tens_op->tens_slice[1].tensor,offs,dims);
+         }
+        }
+        if(errc == TALSH_SUCCESS){
+         // Set up right tensor:
+         for(int i = 0; i < rrank; ++i) offs[i] = tens_op->tens_slice[2].bases.offsets[i];
+         for(int i = 0; i < rrank; ++i) dims[i] = tens_op->tens_slice[2].shape.dims[i];
+         if(d2 >= 0){
+          h1 = (dims[d2]+1)/2; h2 = dims[d2] - h1;
+          dims[d2] = h1;
+          errc = talshTensorOpSetArgument(child_op1,tens_op->tens_slice[2].tensor,offs,dims);
+          if(errc == TALSH_SUCCESS){
+           dims[d2] = h2; offs[d2] += h1;
+           errc = talshTensorOpSetArgument(child_op2,tens_op->tens_slice[2].tensor,offs,dims);
+          }
+         }else{
+          errc = talshTensorOpSetArgument(child_op1,tens_op->tens_slice[2].tensor,offs,dims);
+          if(errc == TALSH_SUCCESS){
+           errc = talshTensorOpSetArgument(child_op2,tens_op->tens_slice[2].tensor,offs,dims);
+          }
+         }
+         // Finalize operation specification:
+         if(errc == TALSH_SUCCESS) errc = talshTensorOpSpecify(child_op1,tens_op->opkind,tens_op->symb_pattern,
+                                           talshComplex8Real(tens_op->alpha),talshComplex8Imag(tens_op->alpha));
+         if(errc == TALSH_SUCCESS) errc = talshTensorOpSpecify(child_op2,tens_op->opkind,tens_op->symb_pattern,
+                                           talshComplex8Real(tens_op->alpha),talshComplex8Imag(tens_op->alpha));
+        }
+       }
+      }
+     }else{
+      errc = TALSH_INVALID_REQUEST;
      }
-     // Split the parent tensor operation into two sub-operations:
-     
     }else{ //only scalars case (not allowed)
      errc = TALSH_NOT_ALLOWED;
     }
