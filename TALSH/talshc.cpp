@@ -1637,7 +1637,7 @@ int talshTensorSliceConstruct(talsh_tens_slice_t * slice,
  errc = tensSignature_construct(&(slice->bases),rank,offsets);
  if(errc == 0) errc = tensShape_construct(&(slice->shape),NOPE,rank,dims,divs,grps);
  if(errc == 0){
-  slice->tensor = tensor;
+  slice->tensor = (talsh_tens_t*)tensor;
  }else{
   talshTensorSliceDestruct(slice);
  }
@@ -2329,6 +2329,7 @@ int talshTensorOpClean(talsh_tens_op_t * tens_op)
 {
  int errc = TALSH_SUCCESS;
  if(tens_op != NULL){
+  tens_op->stage = TALSH_OP_UNDEFINED;
   tens_op->opkind = TALSH_TENSOR_NOOP;
   tens_op->data_kind = NO_TYPE;
   tens_op->num_args = 0;
@@ -2344,6 +2345,7 @@ int talshTensorOpClean(talsh_tens_op_t * tens_op)
     for(int i = 0; i < MAX_TENSOR_RANK; ++i){
      errc = talshTensorClean(&(tens_op->tens_arg[i])); if(errc != TALSH_SUCCESS) break;
     }
+    tens_op->stage = TALSH_OP_EMPTY;
    }
   }
  }else{
@@ -2361,7 +2363,10 @@ int talshTensorOpSetArgument(talsh_tens_op_t * tens_op, const talsh_tens_t * ten
  if(tens_op->opkind == TALSH_TENSOR_NOOP){ //operation has not been specified yet
   if(tens_op->num_args < MAX_TENSOR_OPERANDS){
    errc = talshTensorSliceConstruct(&(tens_op->tens_slice[tens_op->num_args]),tensor,offsets,dims);
-   if(errc == TALSH_SUCCESS) ++(tens_op->num_args);
+   if(errc == TALSH_SUCCESS){
+    ++(tens_op->num_args);
+    tens_op->stage = TALSH_OP_PARTIAL;
+   }
   }else{
    errc = TALSH_LIMIT_EXCEEDED;
   }
@@ -2381,6 +2386,7 @@ int talshTensorOpSpecify(talsh_tens_op_t * tens_op, int operation_kind, const ch
   tens_op->symb_pattern = symbolic_pattern;
   tens_op->alpha = talshComplex8Set(prefactor_real,prefactor_imag);
   tens_op->opkind = operation_kind;
+  tens_op->stage = TALSH_OP_DEFINED;
  }else{
   errc = TALSH_NOT_ALLOWED;
  }
@@ -2405,7 +2411,10 @@ int talshTensorOpActivate(talsh_tens_op_t * tens_op, int data_kind)
                                talshFlatDevId(DEV_HOST,0),NULL,YEP);
    if(errc != TALSH_SUCCESS) break;
   }
-  if(errc == TALSH_SUCCESS) tens_op->data_kind = data_kind;
+  if(errc == TALSH_SUCCESS){
+   tens_op->data_kind = data_kind;
+   tens_op->stage = TALSH_OP_RESOURCED;
+  }
  }else{
   errc = TALSH_NOT_ALLOWED;
  }
@@ -2415,33 +2424,95 @@ int talshTensorOpActivate(talsh_tens_op_t * tens_op, int data_kind)
 int talshTensorOpLoadInput(talsh_tens_op_t * tens_op)
 /** Loads input tensor slices. **/
 {
+ int offs[MAX_TENSOR_RANK];
+
  if(tens_op == NULL) return TALSH_INVALID_ARGS;
  int errc = TALSH_SUCCESS;
-
+ if(tens_op->data_kind != NO_TYPE){
+  for(int i = 1; i < tens_op->num_args; ++i){ //input slices only
+   talsh_tens_t * dtens = &(tens_op->tens_arg[i]);
+   talsh_tens_t * ltens = tens_op->tens_slice[i].tensor;
+   int nd = talshTensorRank(ltens);
+   if(nd != talshTensorRank(dtens)){errc = TALSH_OBJECT_BROKEN; break;}
+   for(int j = 0; j < nd; ++j) offs[j] = (int)(tens_op->tens_slice[i].bases.offsets[j]); //`integer overflow
+   errc = talshTensorSlice(dtens,ltens,offs,0,DEV_HOST,COPY_MT); if(errc != TALSH_SUCCESS) break;
+  }
+  if(errc == TALSH_SUCCESS) tens_op->stage = TALSH_OP_LOADED;
+ }else{
+  errc = TALSH_NOT_ALLOWED;
+ }
  return errc;
 }
 
 int talshTensorOpExecute(talsh_tens_op_t * tens_op, int dev_id, int dev_kind)
 /** Schedules execution of the tensor operation on a given device. **/
 {
+ if(tens_op == NULL) return TALSH_INVALID_ARGS;
  int errc = TALSH_SUCCESS;
-
+ if(tens_op->stage == TALSH_OP_LOADED){
+  switch(tens_op->opkind){
+  case TALSH_TENSOR_CONTRACT:
+   errc = talshTensorContract(tens_op->symb_pattern,
+                              &(tens_op->tens_arg[0]),&(tens_op->tens_arg[1]),&(tens_op->tens_arg[2]),
+                              talshComplex8Real(tens_op->alpha),talshComplex8Imag(tens_op->alpha),
+                              dev_id,dev_kind,COPY_TTT,NOPE,&(tens_op->task_handle));
+   break;
+  default:
+   errc = TALSH_NOT_IMPLEMENTED;
+  }
+  if(errc == TALSH_SUCCESS) tens_op->stage = TALSH_OP_SCHEDULED;
+ }else{
+  errc = TALSH_NOT_ALLOWED;
+ }
  return errc;
 }
 
 int talshTensorOpTest(talsh_tens_op_t * tens_op, int * completed, int wait)
 /** Tests for completion of the execution of the tensor operation. **/
 {
- int errc = TALSH_SUCCESS;
+ int sts;
 
+ if(tens_op == NULL || completed == NULL) return TALSH_INVALID_ARGS;
+ *completed = NOPE;
+ int errc = TALSH_SUCCESS;
+ if(tens_op->stage == TALSH_OP_SCHEDULED){
+  if(wait == YEP){
+   errc = talshTaskWait(&(tens_op->task_handle),&sts);
+   if(errc == TALSH_SUCCESS && sts == TALSH_TASK_COMPLETED) *completed = YEP;
+  }else{
+   int ans = talshTaskComplete(&(tens_op->task_handle),&sts,&errc);
+   if(errc == TALSH_SUCCESS && ans == YEP && sts == TALSH_TASK_COMPLETED) *completed = YEP;
+  }
+  if(errc == TALSH_SUCCESS) tens_op->stage = TALSH_OP_COMPLETED;
+ }else{
+  errc = TALSH_NOT_ALLOWED;
+ }
  return errc;
 }
 
 int talshTensorOpStoreOutput(talsh_tens_op_t * tens_op)
 /** Stores/accumulates output tensor slice. **/
 {
- int errc = TALSH_SUCCESS;
+ int offs[MAX_TENSOR_RANK];
 
+ if(tens_op == NULL) return TALSH_INVALID_ARGS;
+ int errc = TALSH_SUCCESS;
+ if(tens_op->stage == TALSH_OP_COMPLETED){
+  if(tens_op->num_args > 0){
+   talsh_tens_t * ltens = &(tens_op->tens_arg[0]);
+   talsh_tens_t * dtens = tens_op->tens_slice[0].tensor;
+   int nd = talshTensorRank(dtens);
+   if(nd == talshTensorRank(ltens)){
+    for(int j = 0; j < nd; ++j) offs[j] = (int)(tens_op->tens_slice[0].bases.offsets[j]); //`integer overflow
+    errc = talshTensorInsert(dtens,ltens,offs,0,DEV_HOST,COPY_MT);
+   }else{
+    errc = TALSH_OBJECT_BROKEN;
+   }
+  }
+  if(errc == TALSH_SUCCESS) tens_op->stage = TALSH_OP_STORED;
+ }else{
+  errc = TALSH_NOT_ALLOWED;
+ }
  return errc;
 }
 
@@ -2454,7 +2525,10 @@ int talshTensorOpDeactivate(talsh_tens_op_t * tens_op)
   for(int i = tens_op->num_args - 1; i >= 0; --i){
    errc = talshTensorDestruct(&(tens_op->tens_arg[i])); if(errc != TALSH_SUCCESS) break;
   }
-  if(errc == TALSH_SUCCESS) tens_op->data_kind = NO_TYPE;
+  if(errc == TALSH_SUCCESS){
+   tens_op->data_kind = NO_TYPE;
+   tens_op->stage = TALSH_OP_DEFINED;
+  }
  }else{
   errc = TALSH_NOT_ALLOWED;
  }
@@ -2486,7 +2560,11 @@ int talshTensorOpDestruct(talsh_tens_op_t * tens_op)
    errc = TALSH_IN_PROGRESS;
   }
  }
- if(errc == TALSH_SUCCESS) errc = talshTensorOpClean(tens_op);
+ if(errc == TALSH_SUCCESS){
+  errc = talshTensorOpClean(tens_op);
+ }else{
+  tens_op->stage = TALSH_OP_UNDEFINED;
+ }
  return errc;
 }
 
@@ -2572,8 +2650,8 @@ double talshTensorOpGetIntensity(const talsh_tens_op_t * tens_op)
 {
  double flops = talshTensorOpGetFlopCount(tens_op);
  double bytes = talshTensorOpGetByteCount(tens_op);
- if(bytes > 0.0) return flops/bytes;
- return -1.0;
+ if(bytes <= 0.0 || flops < 0.0) return -1.0;
+ return flops/bytes;
 }
 
 int talshTensorOpDecompose2(         //out: error code

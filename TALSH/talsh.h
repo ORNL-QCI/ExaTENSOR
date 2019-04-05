@@ -49,6 +49,8 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_NOT_ALLOWED 1000007
 #define TALSH_LIMIT_EXCEEDED 1000008
 #define TALSH_NOT_FOUND 1000009
+#define TALSH_OBJECT_BROKEN 1000010
+#define TALSH_INVALID_REQUEST 1000011
 
 //TAL-SH TASK STATUS:
 #define TALSH_TASK_ERROR 1999999
@@ -79,6 +81,19 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_TENSOR_HADAMARD 83
 #define TALSH_TENSOR_KHATRIRAO 84
 
+//TAL-SH TENSOR OPERATION STAGES:
+#define TALSH_OP_UNDEFINED -1
+#define TALSH_OP_EMPTY 0
+#define TALSH_OP_PARTIAL 1
+#define TALSH_OP_DEFINED 2
+#define TALSH_OP_RESOURCED 3
+#define TALSH_OP_LOADED 4
+#define TALSH_OP_SCHEDULED 5
+#define TALSH_OP_COMPLETED 6
+#define TALSH_OP_STORED 7
+#define TALSH_OP_RETIRED 8
+
+
 //TAL-SH DATA TYPES:
 // Dense tensor with multiple images (interoperable):
 typedef struct{
@@ -92,7 +107,7 @@ typedef struct{
 
 // Dense tensor slice view (view of a dense tensor slice within an actual dense tensor):
 typedef struct{
- const talsh_tens_t * tensor;  //non-owning pointer to the host-tensor
+ talsh_tens_t * tensor;        //non-owning pointer to the host-tensor
  talsh_tens_signature_t bases; //tensor slice signature: base offsets of the tensor slice inside the host-tensor
  talsh_tens_shape_t shape;     //tensor slice shape: extents of tensor slice dimensions
 } talsh_tens_slice_t;
@@ -128,6 +143,7 @@ typedef struct{
  talsh_tens_t tens_arg[MAX_TENSOR_OPERANDS];         //actual tensor operands (actual TAL-SH tensors)
  talsh_task_t task_handle;                           //task handle
  int exec_dev_id;                                    //execution device id (flat device id)
+ int stage;                                          //tensor operation stage
 } talsh_tens_op_t;
 
 
