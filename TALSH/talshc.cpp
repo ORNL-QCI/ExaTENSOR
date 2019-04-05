@@ -4356,7 +4356,23 @@ int talshTensorContractXL(const char * cptrn,   //in: C-string: symbolic contrac
                           int accumulative)     //in: accumulate in (default) VS overwrite destination tensor: [YEP|NOPE]
 /** Extra large tensor contraction dispatcher **/
 {
- return TALSH_NOT_IMPLEMENTED;
+ int errc,devid;
+ talsh_tens_op_t *que,*q1,*q2,*inq,*ouq;
+
+ errc = TALSH_SUCCESS;
+ // Check function arguments:
+ if(cptrn == NULL || dtens == NULL || ltens == NULL || rtens == NULL) return TALSH_INVALID_ARGS;
+ if(talshTensorIsEmpty(dtens) != NOPE || talshTensorIsEmpty(ltens) != NOPE || talshTensorIsEmpty(rtens) != NOPE)
+  return TALSH_OBJECT_IS_EMPTY;
+ if(talshTensorIsHealthy(dtens) != YEP || talshTensorIsHealthy(ltens) != YEP || talshTensorIsHealthy(rtens) != YEP)
+  return TALSH_OBJECT_BROKEN;
+ // Check execution device:
+ if(dev_kind == DEV_DEFAULT) dev_kind = DEV_HOST;
+ if(dev_id == DEV_DEFAULT) dev_id = 0;
+ devid = talshFlatDevId(dev_kind,dev_id);
+ printf("#DEBUG(talshTensorContractXL): Execution device = %d\n",devid); //debug
+ 
+ return errc;
 }
 
 int talshTensorContractXL_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens,
