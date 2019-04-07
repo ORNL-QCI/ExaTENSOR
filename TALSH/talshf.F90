@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2019/04/01
+!REVISION: 2019/04/06
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -174,6 +174,13 @@
           integer(C_INT), value, intent(in):: dev_num
           integer(C_INT), value, intent(in):: dev_kind
          end function talshDeviceMemorySize_
+  !Query the device argument buffer size in bytes:
+         integer(C_SIZE_T) function talshDeviceBufferSize_(dev_num,dev_kind) bind(c,name='talshDeviceBufferSize_')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_num
+          integer(C_INT), value, intent(in):: dev_kind
+         end function talshDeviceBufferSize_
   !Query the device max tensor size in bytes:
          integer(C_SIZE_T) function talshDeviceTensorSize_(dev_num,dev_kind) bind(c,name='talshDeviceTensorSize_')
           import

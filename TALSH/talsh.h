@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/04/05
+REVISION: 2019/04/06
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -190,6 +190,10 @@ extern "C"{
  size_t talshDeviceMemorySize(int dev_num,
                               int dev_kind = DEV_NULL);
  size_t talshDeviceMemorySize_(int dev_num, int dev_kind);
+//  Query device argument buffer size (bytes):
+ size_t talshDeviceBufferSize(int dev_num,
+                              int dev_kind = DEV_NULL);
+ size_t talshDeviceBufferSize_(int dev_num, int dev_kind);
 //  Query device max tensor size (bytes):
  size_t talshDeviceTensorSize(int dev_num,
                               int dev_kind = DEV_NULL);
