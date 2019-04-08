@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/04/07
+REVISION: 2019/04/08
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -346,12 +346,16 @@ extern "C"{
 //  Specify the kind of the tensor operation:
  int talshTensorOpSpecify(talsh_tens_op_t * tens_op,
                           int operation_kind,
+                          int data_kind,
                           const char * symbolic_pattern = NULL,
                           double prefactor_real = 1.0,
                           double prefactor_imag = 0.0);
+//  Preset execution device:
+ int talshTensorOpSetExecDevice(talsh_tens_op_t * tens_op,
+                                int dev_id,
+                                int dev_kind = DEV_DEFAULT);
 //  Activate tensor operation for subsequent processing (resources acquired):
- int talshTensorOpActivate(talsh_tens_op_t * tens_op,
-                           int data_kind);
+ int talshTensorOpActivate(talsh_tens_op_t * tens_op);
 //  Load input (extract input tensor slices):
  int talshTensorOpLoadInput(talsh_tens_op_t * tens_op);
 //  Schedule tensor operation for execution of a given device:
@@ -370,6 +374,8 @@ extern "C"{
  int talshTensorOpDestruct(talsh_tens_op_t * tens_op);
 //  Destroy tensor operation:
  int talshTensorOpDestroy(talsh_tens_op_t * tens_op);
+//  Progress tensor operation execution:
+ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done);
 //  Get tensor argument volume:
  size_t talshTensorOpGetArgVolume(const talsh_tens_op_t * tens_op,
                                   unsigned int arg_num);
@@ -473,17 +479,16 @@ extern "C"{
                           double scale_real, double scale_imag, int dev_id, int dev_kind,
                           int copy_ctrl, int accumulative, talsh_task_t * talsh_task);
 //  Tensor contraction (extra large):
- int talshTensorContractXL(const char * cptrn,         //in: C-string: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
-                           talsh_tens_t * dtens,       //inout: destination tensor block
-                           talsh_tens_t * ltens,       //inout: left source tensor block
-                           talsh_tens_t * rtens,       //inout: right source tensor block
-                           double scale_real = 1.0,    //in: scaling value (real part), defaults to 1
-                           double scale_imag = 0.0,    //in: scaling value (imaginary part), defaults to 0
-                           int dev_id = DEV_DEFAULT,   //in: device id (flat or kind-specific)
-                           int dev_kind = DEV_DEFAULT, //in: device kind (if present, <dev_id> is kind-specific)
-                           int accumulative = YEP);    //in: accumulate in (default) VS overwrite destination tensor: [YEP|NOPE]
+ int talshTensorContractXL(const char * cptrn,          //in: C-string: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
+                           talsh_tens_t * dtens,        //inout: destination tensor block
+                           talsh_tens_t * ltens,        //inout: left source tensor block
+                           talsh_tens_t * rtens,        //inout: right source tensor block
+                           double scale_real = 1.0,     //in: scaling value (real part), defaults to 1
+                           double scale_imag = 0.0,     //in: scaling value (imaginary part), defaults to 0
+                           int dev_id = DEV_DEFAULT,    //in: device id (flat or kind-specific)
+                           int dev_kind = DEV_DEFAULT); //in: device kind (if present, <dev_id> is kind-specific)
  int talshTensorContractXL_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens,
-                            double scale_real, double scale_imag, int dev_id, int dev_kind, int accumulative);
+                            double scale_real, double scale_imag, int dev_id, int dev_kind);
 // TAL-SH debugging:
 //  1-norm of the tensor body image on Host:
  double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens);

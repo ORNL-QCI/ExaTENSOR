@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2019/03/31
+REVISION: 2019/04/08
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -701,12 +701,12 @@ int Tensor::contractAccumulateXL(TensorTask * task_handle,    //out: task handle
  if(task_handle != nullptr){ //asynchronous
   assert(task_handle->isEmpty());
   //++left; ++right; ++(*this);
-  errc = talshTensorContractXL(contr_ptrn,dtens,ltens,rtens,realPart(factor),imagPart(factor),device_id,device_kind,accum);
+  errc = talshTensorContractXL(contr_ptrn,dtens,ltens,rtens,realPart(factor),imagPart(factor),device_id,device_kind);
   if(errc != TALSH_SUCCESS && errc != TRY_LATER && errc != DEVICE_UNABLE)
    std::cout << "#ERROR(talsh::Tensor::contractAccumulateXL): talshTensorContractXL error " << errc << std::endl; //debug
   assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
  }else{ //synchronous
-  errc = talshTensorContractXL(contr_ptrn,dtens,ltens,rtens,realPart(factor),imagPart(factor),device_id,device_kind,accum);
+  errc = talshTensorContractXL(contr_ptrn,dtens,ltens,rtens,realPart(factor),imagPart(factor),device_id,device_kind);
   if(errc != TALSH_SUCCESS && errc != TRY_LATER && errc != DEVICE_UNABLE)
    std::cout << "#ERROR(talsh::Tensor::contractAccumulateXL): talshTensorContractXL error " << errc << std::endl; //debug
   assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
