@@ -300,8 +300,6 @@ void test_talsh_cxx(int * ierr)
 
 void test_talsh_xl(int * ierr)
 {
- const int VDIM=40; //virtual dimension size
- const int ODIM=20; //occupied dimension size
 #ifndef NO_GPU
  int device = DEV_NVIDIA_GPU;
 #else
@@ -312,12 +310,26 @@ void test_talsh_xl(int * ierr)
  *ierr = 0;
  //Initialize TAL-SH:
  talsh::initialize(&host_buf_size);
+ const int ODIM = static_cast<int>(std::pow(static_cast<double>(host_buf_size/(4*4*8)),0.25));
+ const int VDIM = ODIM * 2;
  //Check max buffer/tensor size:
- std::cout << "Max buffer size on accelerator = " << talsh::getDeviceMaxBufferSize(device,0) << std::endl;
- std::cout << "Max tensor size on accelerator = " << talsh::getDeviceMaxTensorSize(device,0) << std::endl;
+ if(device != DEV_HOST){
+  std::cout << " Max buffer size on Host             = " << talsh::getDeviceMaxBufferSize(DEV_HOST,0) << std::endl;
+  std::cout << " Max tensor size on Host             = " << talsh::getDeviceMaxTensorSize(DEV_HOST,0) << std::endl;
+ }
+ std::cout << " Max buffer size on execution device = " << talsh::getDeviceMaxBufferSize(device,0) << std::endl;
+ std::cout << " Max tensor size on execution device = " << talsh::getDeviceMaxTensorSize(device,0) << std::endl;
  //Test body (scoped):
  {
-  
+  talsh::Tensor rtens({ODIM,VDIM,ODIM,VDIM},std::complex<float>{0.001,0.0});
+  talsh::Tensor ltens({ODIM,VDIM,ODIM,VDIM},std::complex<float>{0.01,0.0});
+  talsh::Tensor dtens({ODIM,VDIM,ODIM,VDIM},std::complex<float>{0.0,0.0});
+  std::cout << " Created tensor arguments of size " << dtens.getVolume()*8 << std::endl;
+  *ierr = dtens.contractAccumulateXL(nullptr,
+                                     std::string("D(i,a,j,b)+=L(j,a,k,c)*R(k,b,i,c)"),
+                                     ltens,rtens,device,0,std::complex<float>{1.0,0.0});
+  bool done = dtens.sync();
+  std::cout << " Tensor contraction completion status = " << done << "; Error " << *ierr << std::endl;
  }
  //Shutdown TAL-SH:
  talsh::shutdown();
