@@ -360,8 +360,12 @@ int unpinHostMemory(T * host_ptr)
  return host_mem_unregister((void*)host_ptr);
 }
 
-//Max allocatable tensor size (bytes) in pinned TAL-SH buffer (per device):
+// Max allocatable tensor size (bytes) in the device buffer per specified device:
 std::size_t getDeviceMaxTensorSize(const int device_kind = DEV_HOST, //in: device kind
+                                   const int device_id = 0);         //in: device id
+
+// Max device memory buffer size (bytes) per specified device:
+std::size_t getDeviceMaxBufferSize(const int device_kind = DEV_HOST, //in: device kind
                                    const int device_id = 0);         //in: device id
 
 

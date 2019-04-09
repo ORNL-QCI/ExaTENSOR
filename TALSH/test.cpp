@@ -39,6 +39,7 @@ extern "C"{
 #endif
 void test_talsh_c(int * ierr);
 void test_talsh_cxx(int * ierr);
+void test_talsh_xl(int * ierr);
 void test_talsh_qc(int * ierr);
 void test_nwchem_c(int * ierr);
 #ifndef NO_GPU
@@ -291,6 +292,33 @@ void test_talsh_cxx(int * ierr)
   }
  }
 
+ //Shutdown TAL-SH:
+ talsh::shutdown();
+ return;
+}
+
+
+void test_talsh_xl(int * ierr)
+{
+ const int VDIM=40; //virtual dimension size
+ const int ODIM=20; //occupied dimension size
+#ifndef NO_GPU
+ int device = DEV_NVIDIA_GPU;
+#else
+ int device = DEV_HOST;
+#endif
+ std::size_t host_buf_size = static_cast<std::size_t>(1024*1024*1024)*8;
+
+ *ierr = 0;
+ //Initialize TAL-SH:
+ talsh::initialize(&host_buf_size);
+ //Check max buffer/tensor size:
+ std::cout << "Max buffer size on accelerator = " << talsh::getDeviceMaxBufferSize(device,0) << std::endl;
+ std::cout << "Max tensor size on accelerator = " << talsh::getDeviceMaxTensorSize(device,0) << std::endl;
+ //Test body (scoped):
+ {
+  
+ }
  //Shutdown TAL-SH:
  talsh::shutdown();
  return;
