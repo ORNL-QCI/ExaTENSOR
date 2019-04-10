@@ -2711,6 +2711,7 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   break;
  case TALSH_OP_LOADED:
   errc = talshTensorOpExecute(tens_op); //yields
+  if(errc == TALSH_SUCCESS) printf("#DEBUG(talshTensorOpProgress): Scheduled tensor operation\n"); //debug
   if(errc != TALSH_SUCCESS && errc != TRY_LATER){
    if(VERBOSE) printf("#ERROR(talshTensorOpProgress): LOADED->SCHEDULED error %d\n",errc);
   }
@@ -2718,6 +2719,7 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
  case TALSH_OP_SCHEDULED:
   errc = talshTensorOpTest(tens_op,&completed,NOPE);
   if(errc == TALSH_SUCCESS && completed == YEP){
+   printf("#DEBUG(talshTensorOpProgress): Completed tensor operation\n"); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TALSH_SUCCESS && errc != TRY_LATER && VERBOSE)
