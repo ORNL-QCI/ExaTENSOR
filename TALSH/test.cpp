@@ -319,7 +319,7 @@ void test_talsh_xl(int * ierr)
  *ierr = 0;
  //Initialize TAL-SH:
  talsh::initialize(&host_buf_size);
- const int ODIM = static_cast<int>(std::pow(static_cast<double>(host_buf_size/(4*8*6)),0.25));
+ const int ODIM = static_cast<int>(std::pow(static_cast<double>(host_buf_size/(4*8*8)),0.25));
  const int VDIM = ODIM * 2;
  //Check max buffer/tensor size:
  if(device != DEV_HOST){
