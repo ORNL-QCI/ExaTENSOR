@@ -4680,7 +4680,7 @@ int talshTensorContractXL(const char * cptrn,   //in: C-string: symbolic contrac
           lsz = talshTensorOpGetArgSize(op,1);
           rsz = talshTensorOpGetArgSize(op,2);
           if(dsz == 0 || lsz == 0 || rsz == 0){errc = TALSH_FAILURE; break;}
-          if(dsz > argmem || lsz > argmem || rsz > argmem || dsz+lsz+rsz > totmem){ //need to decompose further
+          if(dsz > argmem || lsz > argmem || rsz > argmem || (dsz+lsz+rsz)*13 > totmem){ //need to decompose further (13 = 12: Pipeline for 2 contractions)
            // Get new talsh_tens_op_t:
            errc = slab_entry_get(op_stack,&ptr); if(errc != TALSH_SUCCESS) break;
            ouq[oulen] = (talsh_tens_op_t*)ptr;
