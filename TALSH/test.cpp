@@ -306,12 +306,14 @@ void test_talsh_cxx(int * ierr)
 
 void test_talsh_xl(int * ierr)
 {
+ const std::size_t DESKTOP_MEM = 8; //GB
+ const std::size_t SUMMIT_MEM = 32; //GB
 #ifndef NO_GPU
  int device = DEV_NVIDIA_GPU;
 #else
  int device = DEV_HOST;
 #endif
- std::size_t host_buf_size = static_cast<std::size_t>(1024*1024*1024)*8;
+ std::size_t host_buf_size = static_cast<std::size_t>(1024*1024*1024)*DESKTOP_MEM;
 
  *ierr = 0;
  //Initialize TAL-SH:
