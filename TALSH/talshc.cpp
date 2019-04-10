@@ -2696,7 +2696,8 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   if(errc == TALSH_SUCCESS){
    errc = talshTensorOpProgress(tens_op,done);
   }else{
-   if(VERBOSE) printf("#ERROR(talshTensorOpProgress): DEFINED->RESOURCED error %d\n",errc);
+   if(errc != TRY_LATER && VERBOSE)
+   printf("#ERROR(talshTensorOpProgress): DEFINED->RESOURCED error %d\n",errc);
   }
   break;
  case TALSH_OP_RESOURCED:
@@ -2704,7 +2705,8 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   if(errc == TALSH_SUCCESS){
    errc = talshTensorOpProgress(tens_op,done);
   }else{
-   if(VERBOSE) printf("#ERROR(talshTensorOpProgress): RESOURCED->LOADED error %d\n",errc);
+   if(errc != TRY_LATER && VERBOSE)
+   printf("#ERROR(talshTensorOpProgress): RESOURCED->LOADED error %d\n",errc);
   }
   break;
  case TALSH_OP_LOADED:
@@ -2718,7 +2720,8 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   if(errc == TALSH_SUCCESS && completed == YEP){
    errc = talshTensorOpProgress(tens_op,done);
   }else{
-   if(errc != TALSH_SUCCESS && VERBOSE) printf("#ERROR(talshTensorOpProgress): SCHEDULED->COMPLETED error %d\n",errc);
+   if(errc != TALSH_SUCCESS && errc != TRY_LATER && VERBOSE)
+   printf("#ERROR(talshTensorOpProgress): SCHEDULED->COMPLETED error %d\n",errc);
   }
   break;
  case TALSH_OP_COMPLETED:
@@ -2726,7 +2729,8 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   if(errc == TALSH_SUCCESS){
    errc = talshTensorOpProgress(tens_op,done);
   }else{
-   if(VERBOSE) printf("#ERROR(talshTensorOpProgress): COMPLETED->STORED error %d\n",errc);
+   if(errc != TRY_LATER && VERBOSE)
+   printf("#ERROR(talshTensorOpProgress): COMPLETED->STORED error %d\n",errc);
   }
   break;
  case TALSH_OP_STORED:
@@ -2734,7 +2738,8 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   if(errc == TALSH_SUCCESS){
    errc = talshTensorOpProgress(tens_op,done);
   }else{
-   if(VERBOSE) printf("#ERROR(talshTensorOpProgress): STORED->RETIRED error %d\n",errc);
+   if(errc != TRY_LATER && VERBOSE)
+   printf("#ERROR(talshTensorOpProgress): STORED->RETIRED error %d\n",errc);
   }
   break;
  case TALSH_OP_RETIRED:
