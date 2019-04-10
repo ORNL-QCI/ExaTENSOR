@@ -4727,6 +4727,7 @@ int talshTensorContractXL(const char * cptrn,   //in: C-string: symbolic contrac
          }
          // Execute all tensor operations:
          if(errc == TALSH_SUCCESS){
+          printf(" #DEBUG(talshTensorContractXL): Executing %d tensor operations\n",inlen); fflush(stdout); //debug
           wid = MAX_ACTIVE; beg = 0; fin = MIN(beg+wid,inlen);
           num_dec = inlen; //number of unfinished tensor operations
           while(errc == TALSH_SUCCESS && num_dec > 0){

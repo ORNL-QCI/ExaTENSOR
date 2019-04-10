@@ -308,17 +308,18 @@ void test_talsh_xl(int * ierr)
 {
  const std::size_t DESKTOP_MEM = 8; //GB
  const std::size_t SUMMIT_MEM = 32; //GB
+ const std::size_t HOST_MEM_LIM = DESKTOP_MEM;
 #ifndef NO_GPU
  int device = DEV_NVIDIA_GPU;
 #else
  int device = DEV_HOST;
 #endif
- std::size_t host_buf_size = static_cast<std::size_t>(1024*1024*1024)*DESKTOP_MEM;
+ std::size_t host_buf_size = static_cast<std::size_t>(1024*1024*1024)*HOST_MEM_LIM;
 
  *ierr = 0;
  //Initialize TAL-SH:
  talsh::initialize(&host_buf_size);
- const int ODIM = static_cast<int>(std::pow(static_cast<double>(host_buf_size/(4*4*8)),0.25));
+ const int ODIM = static_cast<int>(std::pow(static_cast<double>(host_buf_size/(4*8*6)),0.25));
  const int VDIM = ODIM * 2;
  //Check max buffer/tensor size:
  if(device != DEV_HOST){
