@@ -96,8 +96,8 @@ extern "C"{
 #endif
 // CP-TAL tensor operations:
 int cpu_tensor_block_init(void * dftr, double val_real, double val_imag, int arg_conj);
-int cpu_tensor_block_slice(void * lftr, void * dftr, const int * offsets);
-int cpu_tensor_block_insert(void * lftr, void * dftr, const int * offsets);
+int cpu_tensor_block_slice(void * lftr, void * dftr, const int * offsets, int accumulative);
+int cpu_tensor_block_insert(void * lftr, void * dftr, const int * offsets, int accumulative);
 int cpu_tensor_block_copy(const int * permut, void * lftr, void * dftr, int arg_conj);
 int cpu_tensor_block_add(const int * contr_ptrn, void * lftr, void * dftr,
                          double scale_real, double scale_imag, int arg_conj);
@@ -2593,7 +2593,7 @@ int talshTensorOpStoreOutput(talsh_tens_op_t * tens_op)
    int nd = talshTensorRank(dtens);
    if(nd == talshTensorRank(ltens)){
     for(int j = 0; j < nd; ++j) offs[j] = (int)(tens_op->tens_slice[0].bases.offsets[j]); //`integer overflow
-    errc = talshTensorInsert(dtens,ltens,offs,0,DEV_HOST,COPY_MT);
+    errc = talshTensorInsert(dtens,ltens,offs,0,DEV_HOST,COPY_MT,YEP);
    }else{
     errc = TALSH_OBJECT_BROKEN;
    }
@@ -3490,6 +3490,7 @@ int talshTensorSlice(talsh_tens_t * dtens, //inout: destination tensor block (te
                      int dev_id,
                      int dev_kind,
                      int copy_ctrl,
+                     int accumulative,
                      talsh_task_t * talsh_task)
 /** Tensor slicing dispatcher **/
 {
@@ -3620,7 +3621,7 @@ int talshTensorSlice(talsh_tens_t * dtens, //inout: destination tensor block (te
    if(cohl == COPY_D || (cohl == COPY_M && ltens->dev_rsc[limg].dev_id != devid)) ltens->avail[limg] = NOPE;
    //Schedule tensor operation via the device-kind specific runtime:
    ctm=clock();
-   errc=cpu_tensor_block_slice(lftr,dftr,offsets); //blocking call
+   errc=cpu_tensor_block_slice(lftr,dftr,offsets,accumulative); //blocking call
    if(errc == TALSH_SUCCESS && talshTensorRank(dtens) == 0){ //an explicit update is needed for scalar destinations
     j=talsh_update_f_scalar(dftr,dtens->data_kind[0],dtens->dev_rsc[0].gmem_p);
     if(j) errc=TALSH_FAILURE;
@@ -3685,7 +3686,7 @@ int talshTensorSlice(talsh_tens_t * dtens, //inout: destination tensor block (te
    dtens->avail[0] = NOPE;
    if(cohl == COPY_D || (cohl == COPY_M && ltens->dev_rsc[limg].dev_id != devid)) ltens->avail[limg] = NOPE;
    //Schedule tensor operation via the device-kind specific runtime:
-   errc=gpu_tensor_block_slice(lctr,dctr,offsets,coh_ctrl,cuda_task,dvn); //non-blocking call
+   errc=gpu_tensor_block_slice(lctr,dctr,offsets,coh_ctrl,cuda_task,dvn,accumulative); //non-blocking call
    dvn=cuda_task_gpu_id(cuda_task);
    if(errc || dvn < 0){ //in case of error, CUDA task has already been finalized (with error) without coherence control
     if(errc == TRY_LATER || errc == DEVICE_UNABLE){
@@ -3737,9 +3738,9 @@ int talshTensorSlice(talsh_tens_t * dtens, //inout: destination tensor block (te
 }
 
 int talshTensorSlice_(talsh_tens_t * dtens, talsh_tens_t * ltens, const int * offsets,
-                      int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task) //Fortran wrapper
+                      int dev_id, int dev_kind, int copy_ctrl, int accumulative, talsh_task_t * talsh_task) //Fortran wrapper
 {
- return talshTensorSlice(dtens,ltens,offsets,dev_id,dev_kind,copy_ctrl,talsh_task);
+ return talshTensorSlice(dtens,ltens,offsets,dev_id,dev_kind,copy_ctrl,accumulative,talsh_task);
 }
 
 int talshTensorInsert(talsh_tens_t * dtens, //inout: destination tensor block
@@ -3748,6 +3749,7 @@ int talshTensorInsert(talsh_tens_t * dtens, //inout: destination tensor block
                       int dev_id,
                       int dev_kind,
                       int copy_ctrl,
+                      int accumulative,
                       talsh_task_t * talsh_task)
 /** Tensor insertion dispatcher **/
 {
@@ -3878,7 +3880,7 @@ int talshTensorInsert(talsh_tens_t * dtens, //inout: destination tensor block
    if(cohl == COPY_D || (cohl == COPY_M && ltens->dev_rsc[limg].dev_id != devid)) ltens->avail[limg] = NOPE;
    //Schedule tensor operation via the device-kind specific runtime:
    ctm=clock();
-   errc=cpu_tensor_block_insert(lftr,dftr,offsets); //blocking call
+   errc=cpu_tensor_block_insert(lftr,dftr,offsets,accumulative); //blocking call
    if(errc == TALSH_SUCCESS && talshTensorRank(dtens) == 0){ //an explicit update is needed for scalar destinations
     j=talsh_update_f_scalar(dftr,dtens->data_kind[0],dtens->dev_rsc[0].gmem_p);
     if(j) errc=TALSH_FAILURE;
@@ -3943,7 +3945,7 @@ int talshTensorInsert(talsh_tens_t * dtens, //inout: destination tensor block
    dtens->avail[0] = NOPE;
    if(cohl == COPY_D || (cohl == COPY_M && ltens->dev_rsc[limg].dev_id != devid)) ltens->avail[limg] = NOPE;
    //Schedule tensor operation via the device-kind specific runtime:
-   errc=gpu_tensor_block_insert(lctr,dctr,offsets,coh_ctrl,cuda_task,dvn); //non-blocking call
+   errc=gpu_tensor_block_insert(lctr,dctr,offsets,coh_ctrl,cuda_task,dvn,accumulative); //non-blocking call
    dvn=cuda_task_gpu_id(cuda_task);
    if(errc || dvn < 0){ //in case of error, CUDA task has already been finalized (with error) without coherence control
     if(errc == TRY_LATER || errc == DEVICE_UNABLE){
@@ -3995,9 +3997,9 @@ int talshTensorInsert(talsh_tens_t * dtens, //inout: destination tensor block
 }
 
 int talshTensorInsert_(talsh_tens_t * dtens, talsh_tens_t * ltens, const int * offsets,
-                       int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task) //Fortran wrapper
+                       int dev_id, int dev_kind, int copy_ctrl, int accumulative, talsh_task_t * talsh_task) //Fortran wrapper
 {
- return talshTensorInsert(dtens,ltens,offsets,dev_id,dev_kind,copy_ctrl,talsh_task);
+ return talshTensorInsert(dtens,ltens,offsets,dev_id,dev_kind,copy_ctrl,accumulative,talsh_task);
 }
 
 int talshTensorAdd(const char * cptrn,   //in: tensor addition pattern
