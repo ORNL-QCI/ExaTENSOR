@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/04/09
+REVISION: 2019/04/10
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2863,16 +2863,21 @@ int talshTensorOpDecompose2(         //out: error code
 
  if(tens_op == NULL || child_op1 == NULL || child_op2 == NULL) return TALSH_INVALID_ARGS;
  errc = TALSH_SUCCESS;
+ //printf("#DEBUG(talshTensorOpDecompose2): Parent tensor operation:\n "); //debug
+ //talshTensorOpPrint(tens_op); //debug
  switch(tens_op->opkind){
   case TALSH_TENSOR_CONTRACT:
    // Parse the tensor contraction pattern and extract necessary information:
    errc=talsh_get_contr_ptrn_str2dig(tens_op->symb_pattern,contr_ptrn,&drank,&lrank,&rrank,&conj_bits);
+   if(drank <= 0 && lrank <= 0 && rrank <= 0) errc = TALSH_NOT_ALLOWED; //at least one argument must have positive order
    if(errc == TALSH_SUCCESS){
     cpl = lrank + rrank; //length of contr_ptrn[]
-    if(cpl > 0){
+    //printf("#DEBUG(talshTensorOpDecompose2): Digital index pattern: "); //debug
+    //for(int i = 0; i < cpl; ++i) printf(" %d",contr_ptrn[i]); printf("\n"); //debug
+    if(cpl > 0){ //at least one argument must have positive order
      // Compute matrix dimensions (lb, lr, ll, lc):
-     lc = 1; ll = 1; lr = 1; lb = 1;
-     mc = -1; ml = -1; mr = -1; mb = -1;
+     lc = 1; ll = 1; lr = 1; lb = 1; //matrix dimensions (contracted, left, rigtht, batched)
+     mc = -1; ml = -1; mr = -1; mb = -1; //position of the largest tensor dimension in contr_ptrn[]
      sc = 0; sl = 0; sr = 0; sb = 0;
      for(int i = 0; i < drank; ++i) dst[i] = 0;
      for(int i = 0; i < lrank; ++i){
@@ -2890,24 +2895,27 @@ int talshTensorOpDecompose2(         //out: error code
        if(dst[contr_ptrn[lrank + i] - 1] == 0){
         lr *= cd; if(cd > sr){sr = cd; mr = lrank + i;}
        }else{ //batch index
-        ll /= cd; lb *= cd;
-        if(cd > sb){sb = cd; mb = lrank + i;}
+        ll /= cd; lb *= cd; if(cd > sb){sb = cd; mb = lrank + i;}
        }
       }
      }
+     //printf("#DEBUG(talshTensorOpDecompose2): [mb, mr, ml, mc] = %d %d %d %d\n",mb,mr,ml,mc); //debug
+     //printf("#DEBUG(talshTensorOpDecompose2): [sb, sr, sl, sc] = %lu %lu %lu %lu\n",sb,sr,sl,sc); //debug
+     //printf("#DEBUG(talshTensorOpDecompose2): [lb, lr, ll, lc] = %lu %lu %lu %lu\n",lb,lr,ll,lc); //debug
      // Identify the tensor dimension to split in half:
      if(lb > 1 || lr > 1 || ll > 1 || lc > 1){
-      if(lb > 1){ //non-trivial batch dimensions exist
+      if(lb > 1){ //non-trivial batch dimensions exist: split one
        d0 = contr_ptrn[mb] - 1; d1 = dst[d0] - 1; d2 = mb - lrank;
       }else{ //no non-trivial batch dimensions
-       if(lr > ll && lr > lc){ //right dimension
+       if(lr >= ll && lr >= lc){ //split right dimension
         d0 = contr_ptrn[mr] - 1; d1 = -1; d2 = mr - lrank;
-       }else if(ll > lr && ll > lc){ //left dimension
+       }else if(ll >= lr && ll >= lc){ //split left dimension
         d0 = contr_ptrn[ml] - 1; d1 = ml; d2 = -1;
-       }else if(lc > lr && lc > ll){ //contracted dimension
+       }else if(lc >= lr && lc >= ll){ //split contracted dimension
         d0 = -1; d1 = mc; d2 = -contr_ptrn[mc] - 1;
        }
       }
+      //printf("#DEBUG(talshTensorOpDecompose2): [d0, d1, d2] = %d %d %d\n",d0,d1,d2); //debug
       // Split the parent tensor operation into two sub-operations:
       if(errc == TALSH_SUCCESS){
        // Set up destination tensor:
@@ -2984,23 +2992,31 @@ int talshTensorOpDecompose2(         //out: error code
   default:
    errc=TALSH_NOT_IMPLEMENTED;
  }
+ //printf("#DEBUG(talshTensorOpDecompose2): Child tensor operations:\n"); //debug
+ //printf(" "); talshTensorOpPrint(child_op1); //debug
+ //printf(" "); talshTensorOpPrint(child_op2); //debug
  return errc;
 }
 
 void talshTensorOpPrint(const talsh_tens_op_t * tens_op)
 {
 #pragma omp flush
- printf("OP: %d:",tens_op->opkind);
- for(int i = 0; i < tens_op->num_args; ++i){
-  const talsh_tens_slice_t * slice = &(tens_op->tens_slice[i]);
-  const int n = talshTensorRank(slice->tensor);
-  printf(" Tensor%d[",i);
-  for(int j = 0; j < n; ++j) printf("%lu,",slice->bases.offsets[j]);
-  printf("](");
-  for(int j = 0; j < n; ++j) printf("%d,",slice->shape.dims[j]);
-  printf(")");
+ if(tens_op != NULL){
+  printf("OP: %d:",tens_op->opkind);
+  for(int i = 0; i < tens_op->num_args; ++i){
+   const talsh_tens_slice_t * slice = &(tens_op->tens_slice[i]);
+   const int n = talshTensorRank(slice->tensor);
+   printf(" Tensor%d[",i);
+   for(int j = 0; j < n; ++j) printf("%lu,",slice->bases.offsets[j]);
+   printf("](");
+   for(int j = 0; j < n; ++j) printf("%d,",slice->shape.dims[j]);
+   printf(")");
+  }
+  if(tens_op->symb_pattern != NULL) printf(": %s",tens_op->symb_pattern);
+  printf("\n");
+ }else{
+  printf("#ERROR(talshTensorOpPrint): Null pointer!\n");
  }
- printf("\n");
  return;
 }
 
