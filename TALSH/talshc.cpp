@@ -2756,6 +2756,7 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   if(VERBOSE) printf("#ERROR(talshTensorOpProgress): Invalid tensor operation stage: %d\n",tens_op->stage);
   errc = TALSH_NOT_ALLOWED;
  }
+ fflush(stdout); //debug
  return errc;
 }
 
@@ -4605,7 +4606,7 @@ int talshTensorContractXL(const char * cptrn,   //in: C-string: symbolic contrac
  double tm;
 
  errc = TALSH_SUCCESS;
- printf("#DEBUG(talshTensorContractXL): Entered:\n"); //debug
+ printf("#DEBUG(talshTensorContractXL): Entered:\n"); fflush(stdout); //debug
  tm = time_sys_sec();
  // Check function arguments:
  if(cptrn == NULL || dtens == NULL || ltens == NULL || rtens == NULL) return TALSH_INVALID_ARGS;
