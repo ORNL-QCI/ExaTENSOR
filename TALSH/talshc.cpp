@@ -2706,6 +2706,7 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
         a synchronous operation. **/
 {
  const bool SHOW_PROGRESS = false;
+ const bool CHECK_NORMS = false;
  int completed;
  double tm;
 
@@ -2761,6 +2762,11 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   }
   break;
  case TALSH_OP_COMPLETED:
+  if(CHECK_NORMS){
+   double norm1 = talshTensorImageNorm1_cpu(&(tens_op->tens_arg[0]));
+   talshTensorOpPrint(tens_op);
+   printf("#DEBUG(talshTensorOpProgress): Tensor operation %p result 1-norm = %e\n",tens_op,norm1);
+  }
   tm = time_sys_sec();
   errc = talshTensorOpStoreOutput(tens_op);
   tm = time_sys_sec() - tm;
