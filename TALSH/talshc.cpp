@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/04/10
+REVISION: 2019/04/11
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -520,11 +520,19 @@ static int talsh_choose_image_for_device(talsh_tens_t * tens, unsigned int coh_c
 
 //EXPORTED FUNCTIONS:
 // TAL-SH helper functions:
+int talsh_tens_no_init(const talsh_tens_data_t * tens_data,
+                       const talsh_tens_shape_t * tens_shape,
+                       const talsh_tens_signature_t * tens_signa)
+{
+ return TALSH_SUCCESS;
+}
+
 int talshValidDataKind(int datk, int * datk_size)
 /** Returns YEP if <datk> is a valid data kind (also returns its size in bytes in <datk_size>). **/
 {
  return tens_valid_data_kind(datk,datk_size);
 }
+
 // TAL-SH control API:
 int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in bytes (in: suggested; out: actual)
               int * host_arg_max,        //out: Max number of arguments that can fit into the Host Argument Buffer
@@ -2477,7 +2485,7 @@ int talshTensorOpActivate(talsh_tens_op_t * tens_op)
    talsh_tens_t * tensor = &(tens_op->tens_arg[i]);
    errc = talshTensorClean(tensor); if(errc != TALSH_SUCCESS) break;
    errc = talshTensorConstruct(tensor,tens_op->data_kind,talshTensorRank(host_tensor),slice->shape.dims,
-                               talshFlatDevId(DEV_HOST,0),NULL,YEP);
+                               talshFlatDevId(DEV_HOST,0),NULL,YEP,talsh_tens_no_init);
    if(errc != TALSH_SUCCESS) break;
   }
   if(errc == TALSH_SUCCESS) tens_op->stage = TALSH_OP_RESOURCED;
@@ -2593,7 +2601,7 @@ int talshTensorOpStoreOutput(talsh_tens_op_t * tens_op)
    int nd = talshTensorRank(dtens);
    if(nd == talshTensorRank(ltens)){
     for(int j = 0; j < nd; ++j) offs[j] = (int)(tens_op->tens_slice[0].bases.offsets[j]); //`integer overflow
-    errc = talshTensorInsert(dtens,ltens,offs,0,DEV_HOST,COPY_MT,YEP);
+    errc = talshTensorInsert(dtens,ltens,offs,0,DEV_HOST,COPY_MT,YEP); //accumulative insert
    }else{
     errc = TALSH_OBJECT_BROKEN;
    }
@@ -2686,15 +2694,18 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
         a synchronous operation. **/
 {
  int completed;
+ double tm;
 
  *done = NOPE;
  if(tens_op == NULL) return TALSH_INVALID_ARGS;
  int errc = TALSH_SUCCESS;
  switch(tens_op->stage){
  case TALSH_OP_DEFINED:
+  tm = time_sys_sec();
   errc = talshTensorOpActivate(tens_op);
+  tm = time_sys_sec() - tm;
   if(errc == TALSH_SUCCESS){
-   //printf("#DEBUG(talshTensorOpProgress): Activated tensor operation %p\n",tens_op); //debug
+   printf("#DEBUG(talshTensorOpProgress): Activated tensor operation %p in %.4f sec\n",tens_op,tm); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TRY_LATER && VERBOSE)
@@ -2702,9 +2713,11 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   }
   break;
  case TALSH_OP_RESOURCED:
+  tm = time_sys_sec();
   errc = talshTensorOpLoadInput(tens_op);
+  tm = time_sys_sec() - tm;
   if(errc == TALSH_SUCCESS){
-   //printf("#DEBUG(talshTensorOpProgress): Loaded tensor operation %p\n",tens_op); //debug
+   printf("#DEBUG(talshTensorOpProgress): Loaded tensor operation %p in %.4f sec\n",tens_op,tm); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TRY_LATER && VERBOSE)
@@ -2712,8 +2725,11 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   }
   break;
  case TALSH_OP_LOADED:
+  tm = time_sys_sec();
   errc = talshTensorOpExecute(tens_op); //yields
-  //if(errc == TALSH_SUCCESS) printf("#DEBUG(talshTensorOpProgress): Scheduled tensor operation %p\n",tens_op); //debug
+  tm = time_sys_sec() - tm;
+  if(errc == TALSH_SUCCESS)
+  printf("#DEBUG(talshTensorOpProgress): Scheduled tensor operation %p in %.4f sec\n",tens_op,tm); //debug
   if(errc != TALSH_SUCCESS && errc != TRY_LATER){
    if(VERBOSE) printf("#ERROR(talshTensorOpProgress): LOADED->SCHEDULED error %d\n",errc);
   }
@@ -2721,7 +2737,7 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
  case TALSH_OP_SCHEDULED:
   errc = talshTensorOpTest(tens_op,&completed,NOPE);
   if(errc == TALSH_SUCCESS && completed == YEP){
-   //printf("#DEBUG(talshTensorOpProgress): Completed tensor operation %p\n",tens_op); //debug
+   printf("#DEBUG(talshTensorOpProgress): Completed tensor operation %p\n",tens_op); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TALSH_SUCCESS && errc != TRY_LATER && VERBOSE)
@@ -2729,9 +2745,11 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   }
   break;
  case TALSH_OP_COMPLETED:
+  tm = time_sys_sec();
   errc = talshTensorOpStoreOutput(tens_op);
+  tm = time_sys_sec() - tm;
   if(errc == TALSH_SUCCESS){
-   //printf("#DEBUG(talshTensorOpProgress): Stored tensor operation %p\n",tens_op); //debug
+   printf("#DEBUG(talshTensorOpProgress): Stored tensor operation %p in %.4f sec\n",tens_op,tm); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TRY_LATER && VERBOSE)
@@ -2739,9 +2757,11 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   }
   break;
  case TALSH_OP_STORED:
+  tm = time_sys_sec();
   errc = talshTensorOpDeactivate(tens_op);
+  tm = time_sys_sec() - tm;
   if(errc == TALSH_SUCCESS){
-   //printf("#DEBUG(talshTensorOpProgress): Deactivated tensor operation %p\n",tens_op); //debug
+   printf("#DEBUG(talshTensorOpProgress): Deactivated tensor operation %p in %.4f sec\n",tens_op,tm); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TRY_LATER && VERBOSE)
@@ -2750,7 +2770,7 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   break;
  case TALSH_OP_RETIRED:
   *done = YEP;
-  //printf("#DEBUG(talshTensorOpProgress): Retired tensor operation %p\n",tens_op); //debug
+  printf("#DEBUG(talshTensorOpProgress): Retired tensor operation %p\n",tens_op); //debug
   break;
  default:
   if(VERBOSE) printf("#ERROR(talshTensorOpProgress): Invalid tensor operation stage: %d\n",tens_op->stage);
@@ -4818,18 +4838,22 @@ double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens)
      switch(dtk[i]){
       case R4:
        r4p=(float*)(talsh_tens->dev_rsc[i].gmem_p);
+#pragma omp parallel for shared(r4p,n) reduction(+:norm1) schedule(guided)
        for(j=0;j<n;++j){norm1+=(double)(ABS(r4p[j]));}
        break;
       case R8:
        r8p=(double*)(talsh_tens->dev_rsc[i].gmem_p);
+#pragma omp parallel for shared(r8p,n) reduction(+:norm1) schedule(guided)
        for(j=0;j<n;++j){norm1+=ABS(r8p[j]);}
        break;
       case C4:
        c4p=(talshComplex4*)(talsh_tens->dev_rsc[i].gmem_p);
+#pragma omp parallel for shared(c4p,n) reduction(+:norm1) schedule(guided)
        for(j=0;j<n;++j){norm1+=(double)(talshComplex4Abs(c4p[j]));}
        break;
       case C8:
        c8p=(talshComplex8*)(talsh_tens->dev_rsc[i].gmem_p);
+#pragma omp parallel for shared(c8p,n) reduction(+:norm1) schedule(guided)
        for(j=0;j<n;++j){norm1+=talshComplex8Abs(c8p[j]);}
        break;
      }
