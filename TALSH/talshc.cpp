@@ -2762,10 +2762,12 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   }
   break;
  case TALSH_OP_COMPLETED:
+  double tnorm1,snorm1;
   if(CHECK_NORMS){
-   double norm1 = talshTensorImageNorm1_cpu(&(tens_op->tens_arg[0]));
    talshTensorOpPrint(tens_op);
-   printf("#DEBUG(talshTensorOpProgress): Tensor operation %p result 1-norm = %e\n",tens_op,norm1);
+   tnorm1 = talshTensorImageNorm1_cpu(tens_op->tens_slice[0].tensor);
+   snorm1 = talshTensorImageNorm1_cpu(&(tens_op->tens_arg[0]));
+   printf("#DEBUG(talshTensorOpProgress): Tensor operation %p slice 1-norm = %e\n",tens_op,snorm1);
   }
   tm = time_sys_sec();
   errc = talshTensorOpStoreOutput(tens_op);
@@ -2773,6 +2775,10 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   if(errc == TALSH_SUCCESS){
    if(SHOW_PROGRESS)
    printf("#DEBUG(talshTensorOpProgress): Stored tensor operation %p in %.4f sec\n",tens_op,tm); //debug
+   if(CHECK_NORMS){
+    snorm1 = talshTensorImageNorm1_cpu(tens_op->tens_slice[0].tensor);
+    printf("#DEBUG(talshTensorOpProgress): Tensor operation %p inserted 1-norm = %e\n",tens_op,snorm1-tnorm1);
+   }
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TRY_LATER && VERBOSE)
