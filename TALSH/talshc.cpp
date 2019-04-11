@@ -4737,7 +4737,9 @@ int talshTensorContractXL(const char * cptrn,   //in: C-string: symbolic contrac
             if(ier == TALSH_SUCCESS){
              if(done == YEP){
               --num_dec;
-              if(opn == beg){++beg; fin = MIN(beg+wid,inlen);}
+              if(opn == beg){
+               ++beg; fin = MIN(beg+wid,inlen); opn = fin - 2;
+              }
              }
             }else{
              if(ier != TRY_LATER){
