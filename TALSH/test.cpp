@@ -341,6 +341,7 @@ void test_talsh_xl(int * ierr)
   std::cout << " Tensor contraction completion status = " << done << "; Error " << *ierr << std::endl;
  }
  //Shutdown TAL-SH:
+ talshStats(); //GPU statistics
  talsh::shutdown();
  return;
 }
