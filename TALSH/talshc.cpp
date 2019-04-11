@@ -2381,6 +2381,10 @@ int talshTensorOpClean(talsh_tens_op_t * tens_op)
 {
  int errc = TALSH_SUCCESS;
  if(tens_op != NULL){
+  tens_op->time_started = -1.0;
+  tens_op->time_scheduled = -1.0;
+  tens_op->time_completed = -1.0;
+  tens_op->time_finished = -1.0;
   tens_op->stage = TALSH_OP_UNDEFINED;
   tens_op->opkind = TALSH_TENSOR_NOOP;
   tens_op->data_kind = NO_TYPE;
@@ -2479,6 +2483,7 @@ int talshTensorOpActivate(talsh_tens_op_t * tens_op)
  if(tens_op == NULL) return TALSH_INVALID_ARGS;
  int errc = TALSH_SUCCESS;
  if(tens_op->opkind != TALSH_TENSOR_NOOP){
+  tens_op->time_started = time_sys_sec();
   for(int i = 0; i < tens_op->num_args; ++i){
    talsh_tens_slice_t * slice = &(tens_op->tens_slice[i]);
    const talsh_tens_t * host_tensor = slice->tensor;
@@ -2543,6 +2548,7 @@ int talshTensorOpExecute(talsh_tens_op_t * tens_op, int dev_id, int dev_kind)
    }
   }
   if(errc == TALSH_SUCCESS){
+   tens_op->time_scheduled = time_sys_sec();
    switch(tens_op->opkind){
    case TALSH_TENSOR_CONTRACT:
     errc = talshTensorContract(tens_op->symb_pattern,
@@ -2580,7 +2586,10 @@ int talshTensorOpTest(talsh_tens_op_t * tens_op, int * completed, int wait)
    int ans = talshTaskComplete(&(tens_op->task_handle),&sts,&errc);
    if(errc == TALSH_SUCCESS && ans == YEP && sts == TALSH_TASK_COMPLETED) *completed = YEP;
   }
-  if(errc == TALSH_SUCCESS && *completed == YEP) tens_op->stage = TALSH_OP_COMPLETED;
+  if(errc == TALSH_SUCCESS && *completed == YEP){
+   tens_op->time_completed = time_sys_sec();
+   tens_op->stage = TALSH_OP_COMPLETED;
+  }
  }else{
   errc = TALSH_NOT_ALLOWED;
  }
@@ -2617,8 +2626,9 @@ int talshTensorOpDeactivate(talsh_tens_op_t * tens_op)
 /** Deactivates the tensor operation (releases execution resources). **/
 {
  if(tens_op == NULL) return TALSH_INVALID_ARGS;
- int errc = TALSH_SUCCESS;
+ int errc = TALSH_SUCCESS; int ier = TALSH_SUCCESS;
  if(tens_op->stage == TALSH_OP_RESOURCED || tens_op->stage == TALSH_OP_STORED){
+  if(tens_op->stage == TALSH_OP_STORED) ier = talshTaskDestruct(&(tens_op->task_handle));
   for(int i = tens_op->num_args - 1; i >= 0; --i){
    errc = talshTensorDestruct(&(tens_op->tens_arg[i])); if(errc != TALSH_SUCCESS) break;
   }
@@ -2629,6 +2639,8 @@ int talshTensorOpDeactivate(talsh_tens_op_t * tens_op)
     tens_op->stage = TALSH_OP_DEFINED;
    }
   }
+  tens_op->time_finished = time_sys_sec();
+  if(errc == TALSH_SUCCESS && ier != TALSH_SUCCESS) errc = NOT_CLEAN;
  }else{
   errc = TALSH_NOT_ALLOWED;
  }
@@ -2693,6 +2705,7 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
         an asynchronous operation if FALSE, otherwise it is considered
         a synchronous operation. **/
 {
+ const bool SHOW_PROGRESS = false;
  int completed;
  double tm;
 
@@ -2705,11 +2718,12 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   errc = talshTensorOpActivate(tens_op);
   tm = time_sys_sec() - tm;
   if(errc == TALSH_SUCCESS){
+   if(SHOW_PROGRESS)
    printf("#DEBUG(talshTensorOpProgress): Activated tensor operation %p in %.4f sec\n",tens_op,tm); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TRY_LATER && VERBOSE)
-   printf("#ERROR(talshTensorOpProgress): DEFINED->RESOURCED error %d\n",errc);
+   printf("#ERROR(talshTensorOpProgress): DEFINED->RESOURCED error %d for tensor operation %p\n",errc,tens_op);
   }
   break;
  case TALSH_OP_RESOURCED:
@@ -2717,31 +2731,33 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   errc = talshTensorOpLoadInput(tens_op);
   tm = time_sys_sec() - tm;
   if(errc == TALSH_SUCCESS){
+   if(SHOW_PROGRESS)
    printf("#DEBUG(talshTensorOpProgress): Loaded tensor operation %p in %.4f sec\n",tens_op,tm); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TRY_LATER && VERBOSE)
-   printf("#ERROR(talshTensorOpProgress): RESOURCED->LOADED error %d\n",errc);
+   printf("#ERROR(talshTensorOpProgress): RESOURCED->LOADED error for tensor operation %p\n",errc,tens_op);
   }
   break;
  case TALSH_OP_LOADED:
   tm = time_sys_sec();
   errc = talshTensorOpExecute(tens_op); //yields
   tm = time_sys_sec() - tm;
-  if(errc == TALSH_SUCCESS)
+  if(errc == TALSH_SUCCESS && SHOW_PROGRESS)
   printf("#DEBUG(talshTensorOpProgress): Scheduled tensor operation %p in %.4f sec\n",tens_op,tm); //debug
   if(errc != TALSH_SUCCESS && errc != TRY_LATER){
-   if(VERBOSE) printf("#ERROR(talshTensorOpProgress): LOADED->SCHEDULED error %d\n",errc);
+   if(VERBOSE) printf("#ERROR(talshTensorOpProgress): LOADED->SCHEDULED error %d for tensor operation %p\n",errc,tens_op);
   }
   break;
  case TALSH_OP_SCHEDULED:
   errc = talshTensorOpTest(tens_op,&completed,NOPE);
   if(errc == TALSH_SUCCESS && completed == YEP){
+   if(SHOW_PROGRESS)
    printf("#DEBUG(talshTensorOpProgress): Completed tensor operation %p\n",tens_op); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TALSH_SUCCESS && errc != TRY_LATER && VERBOSE)
-   printf("#ERROR(talshTensorOpProgress): SCHEDULED->COMPLETED error %d\n",errc);
+   printf("#ERROR(talshTensorOpProgress): SCHEDULED->COMPLETED error %d for tensor operation %p\n",errc,tens_op);
   }
   break;
  case TALSH_OP_COMPLETED:
@@ -2749,11 +2765,12 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   errc = talshTensorOpStoreOutput(tens_op);
   tm = time_sys_sec() - tm;
   if(errc == TALSH_SUCCESS){
+   if(SHOW_PROGRESS)
    printf("#DEBUG(talshTensorOpProgress): Stored tensor operation %p in %.4f sec\n",tens_op,tm); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TRY_LATER && VERBOSE)
-   printf("#ERROR(talshTensorOpProgress): COMPLETED->STORED error %d\n",errc);
+   printf("#ERROR(talshTensorOpProgress): COMPLETED->STORED error %d for tensor operation %p\n",errc,tens_op);
   }
   break;
  case TALSH_OP_STORED:
@@ -2761,22 +2778,25 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
   errc = talshTensorOpDeactivate(tens_op);
   tm = time_sys_sec() - tm;
   if(errc == TALSH_SUCCESS){
+   if(SHOW_PROGRESS)
    printf("#DEBUG(talshTensorOpProgress): Deactivated tensor operation %p in %.4f sec\n",tens_op,tm); //debug
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TRY_LATER && VERBOSE)
-   printf("#ERROR(talshTensorOpProgress): STORED->RETIRED error %d\n",errc);
+   printf("#ERROR(talshTensorOpProgress): STORED->RETIRED error %d for tensor operation %p\n",errc,tens_op);
   }
   break;
  case TALSH_OP_RETIRED:
   *done = YEP;
-  printf("#DEBUG(talshTensorOpProgress): Retired tensor operation %p\n",tens_op); //debug
+  if(SHOW_PROGRESS)
+  printf("#DEBUG(talshTensorOpProgress): Retired tensor operation %p: Times (tot,exec): %.4f %.4f\n",
+         tens_op,tens_op->time_finished-tens_op->time_started,tens_op->time_completed-tens_op->time_scheduled); //debug
   break;
  default:
   if(VERBOSE) printf("#ERROR(talshTensorOpProgress): Invalid tensor operation stage: %d\n",tens_op->stage);
   errc = TALSH_NOT_ALLOWED;
  }
- //fflush(stdout); //debug
+ if(SHOW_PROGRESS) fflush(stdout); //debug
  return errc;
 }
 

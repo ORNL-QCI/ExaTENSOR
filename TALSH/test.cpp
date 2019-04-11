@@ -334,7 +334,8 @@ void test_talsh_xl(int * ierr)
   talsh::Tensor rtens({ODIM,VDIM,ODIM,VDIM},std::complex<float>{0.001,0.0});
   talsh::Tensor ltens({ODIM,VDIM,ODIM,VDIM},std::complex<float>{0.01,0.0});
   talsh::Tensor dtens({ODIM,VDIM,ODIM,VDIM},std::complex<float>{0.0,0.0});
-  std::cout << " Created tensor arguments of size " << dtens.getVolume()*8 << std::endl;
+  std::cout << " Created tensor arguments (" << ODIM << "," << VDIM << "," << ODIM << "," << VDIM << ") of size "
+            << dtens.getVolume()*8 << std::endl;
   dtens.norm1(nullptr,norm1);
   std::cout << " Destination tensor 1-norm = " << norm1 << std::endl;
   *ierr = dtens.contractAccumulateXL(nullptr,
@@ -344,6 +345,7 @@ void test_talsh_xl(int * ierr)
   std::cout << " Tensor contraction completion status = " << done << "; Error " << *ierr << std::endl;
   dtens.norm1(nullptr,norm1);
   std::cout << " Destination tensor 1-norm = " << norm1 << std::endl;
+  std::cout << " Reference 1-norm = " << ((double)(ODIM*VDIM*ODIM*VDIM))*((double)(ODIM*VDIM))*(1e-5) << std::endl;
  }
  //Shutdown TAL-SH:
  talshStats(); //GPU statistics
