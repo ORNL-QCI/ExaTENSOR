@@ -3720,10 +3720,12 @@ int talshTensorSlice(talsh_tens_t * dtens, //inout: destination tensor block (te
     errc=host_task_record(host_task,coh_ctrl,0); //record task success (finalized, no deferred coherence control on Host)
     if(errc){tsk->task_error=118; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
     dtens->avail[0] = YEP;
+    /*
     if(ltens->avail[limg] == NOPE){
      errc=talsh_tensor_image_discard(ltens,limg);
      if(errc){tsk->task_error=119; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
     }
+    */
    }
    //If blocking call, complete it here:
    if(errc == TALSH_SUCCESS && talsh_task == NULL){
@@ -3979,10 +3981,12 @@ int talshTensorInsert(talsh_tens_t * dtens, //inout: destination tensor block
     errc=host_task_record(host_task,coh_ctrl,0); //record task success (finalized, no deferred coherence control on Host)
     if(errc){tsk->task_error=118; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
     dtens->avail[0] = YEP;
+    /*
     if(ltens->avail[limg] == NOPE){
      errc=talsh_tensor_image_discard(ltens,limg);
      if(errc){tsk->task_error=119; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
     }
+    */
    }
    //If blocking call, complete it here:
    if(errc == TALSH_SUCCESS && talsh_task == NULL){
@@ -4244,10 +4248,12 @@ int talshTensorAdd(const char * cptrn,   //in: tensor addition pattern
     errc=host_task_record(host_task,coh_ctrl,0); //record task success (finalized, no deferred coherence control on Host)
     if(errc){tsk->task_error=118; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
     dtens->avail[0] = YEP;
+    /*
     if(ltens->avail[limg] == NOPE){
      errc=talsh_tensor_image_discard(ltens,limg);
      if(errc){tsk->task_error=119; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
     }
+    */
    }
    //If blocking call, complete it here:
    if(errc == TALSH_SUCCESS && talsh_task == NULL){
@@ -4532,6 +4538,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
     errc=host_task_record(host_task,coh_ctrl,0); //record task success (finalized, no deferred coherence control on Host)
     if(errc){tsk->task_error=120; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
     dtens->avail[0] = YEP;
+    /*
     if(ltens->avail[limg] == NOPE){
      errc=talsh_tensor_image_discard(ltens,limg);
      if(errc){tsk->task_error=121; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
@@ -4540,6 +4547,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
      errc=talsh_tensor_image_discard(rtens,rimg);
      if(errc){tsk->task_error=122; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
     }
+    */
    }
    //If blocking call, complete it here:
    if(errc == TALSH_SUCCESS && talsh_task == NULL){
