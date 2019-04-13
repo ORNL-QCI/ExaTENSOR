@@ -1912,7 +1912,7 @@ static int talshTaskFinalize(talsh_task_t * talsh_task, int task_status)
        case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
         cuda_task=(cudaTask_t*)(talsh_task->task_p); //cuda_task has already been finalized in NV-TAL
-        //Append the newly formed destination image if needed:
+        //Append the newly formed destination image if needed (if there is one):
         j=cuda_task_arg_has_resource(cuda_task,(unsigned int)i,'d',&ier);
         if(j == YEP && ier == 0){
          if(cc == COPY_M || cc == COPY_K){
@@ -1964,7 +1964,7 @@ static int talshTaskFinalize(talsh_task_t * talsh_task, int task_status)
      //Discard/unmark the source image if needed:
      if(cc == COPY_D || cc == COPY_M){ //source to be discarded
       if(talsh_tens->avail[image_id] == NOPE){ //discard the source tensor body image only if it is marked for discarding
-       if(coherence_control){
+       if(coherence_control && talsh_tens->ndev > 1){
         j=talsh_tensor_image_discard(talsh_tens,image_id); if(j != 0 && errc == TALSH_SUCCESS) errc=NOT_CLEAN; //discard image
         src_dev_id=DEV_NULL;
        }else{
