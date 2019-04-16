@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/04/14
+REVISION: 2019/04/15
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -627,6 +627,64 @@ int talshShutdown()
 #pragma omp flush
  if(errc) return TALSH_FAILURE;
  return TALSH_SUCCESS;
+}
+
+int talshEnableFastMath(int dev_kind, int dev_id)
+/** Enable fast math on a given device. **/
+{
+ int errc;
+
+#pragma omp flush
+ switch(dev_kind){
+ case DEV_NVIDIA_GPU:
+  if(dev_id >= 0){
+   errc=gpu_enable_fast_math(dev_id);
+  }else{
+   errc=gpu_enable_fast_math();
+  }
+  break;
+ default:
+  errc=TALSH_NOT_AVAILABLE;
+ }
+#pragma omp flush
+ return errc;
+}
+
+int talshDisableFastMath(int dev_kind, int dev_id)
+/** Disable fast math on a given device. **/
+{
+ int errc;
+
+#pragma omp flush
+ switch(dev_kind){
+ case DEV_NVIDIA_GPU:
+  if(dev_id >= 0){
+   errc=gpu_disable_fast_math(dev_id);
+  }else{
+   errc=gpu_disable_fast_math();
+  }
+  break;
+ default:
+  errc=TALSH_NOT_AVAILABLE;
+ }
+#pragma omp flush
+ return errc;
+}
+
+int talshQueryFastMath(int dev_kind, int dev_id)
+/** Query fast math on a given device. **/
+{
+ int ans;
+
+#pragma omp flush
+ switch(dev_kind){
+ case DEV_NVIDIA_GPU:
+  ans=gpu_query_fast_math(dev_id);
+  break;
+ default:
+  ans=NOPE;
+ }
+ return ans;
 }
 
 int talshDeviceCount(int dev_kind, int * dev_count)
