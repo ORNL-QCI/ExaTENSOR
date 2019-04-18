@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/04/12
+REVISION: 2019/04/17
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2166,6 +2166,65 @@ __host__ int gpu_set_shmem_width(int width){
  }
  if(cerr != cudaSuccess) return 2;
  return 0;
+}
+
+__host__ int gpu_enable_fast_math(int gpu_num){
+/** Enables fast math on GPU. **/
+ int gs,gf,i;
+
+ if(gpu_num >= 0){
+  gs=gpu_num; gf=gpu_num;
+ }else{
+  gs=0; gf=MAX_GPUS_PER_NODE-1;
+ }
+#ifndef NO_BLAS
+ for(i=gs;i<=gf;++i){
+  if(gpu_is_mine(i) >= GPU_MINE_CUBLAS){
+   if(cublasSetMathMode(cublas_handle[i],CUBLAS_TENSOR_OP_MATH) != CUBLAS_STATUS_SUCCESS) return 1;
+  }else{
+   if(gpu_num >= 0) return 2;
+  }
+ }
+#else
+ return 3;
+#endif
+ return 0;
+}
+
+__host__ int gpu_disable_fast_math(int gpu_num){
+/** Disables fast math on GPU. **/
+ int gs,gf,i;
+
+ if(gpu_num >= 0){
+  gs=gpu_num; gf=gpu_num;
+ }else{
+  gs=0; gf=MAX_GPUS_PER_NODE-1;
+ }
+#ifndef NO_BLAS
+ for(i=gs;i<=gf;++i){
+  if(gpu_is_mine(i) >= GPU_MINE_CUBLAS){
+   if(cublasSetMathMode(cublas_handle[i],CUBLAS_DEFAULT_MATH) != CUBLAS_STATUS_SUCCESS) return 1;
+  }else{
+   if(gpu_num >= 0) return 2;
+  }
+ }
+#else
+ return 3;
+#endif
+ return 0;
+}
+
+__host__ int gpu_query_fast_math(int gpu_num){
+/** Queries the status of fast math on given GPU. **/
+#ifndef NO_BLAS
+ cublasMath_t math_mode;
+ if(gpu_is_mine(gpu_num) >= GPU_MINE_CUBLAS){
+  if(cublasGetMathMode(cublas_handle[gpu_num],&math_mode) == CUBLAS_STATUS_SUCCESS){
+   if(math_mode == CUBLAS_TENSOR_OP_MATH) return YEP;
+  }
+ }
+#endif
+ return NOPE;
 }
 
 __host__ void gpu_set_transpose_algorithm(int alg){

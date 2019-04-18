@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2019/04/12
+REVISION: 2019/04/17
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -444,6 +444,9 @@ extern "C"{
  size_t gpu_device_memory_size(int gpu_num);
 //  NV-TAL internal control:
  int gpu_set_shmem_width(int width);
+ int gpu_enable_fast_math(int gpu_num = -1);
+ int gpu_disable_fast_math(int gpu_num = -1);
+ int gpu_query_fast_math(int gpu_num);
  void gpu_set_transpose_algorithm(int alg); //{EFF_TRN_OFF,EFF_TRN_ON,EFF_TRN_ON_CUTT}
  void gpu_set_matmult_algorithm(int alg);
  int gpu_print_stats(int gpu_num = -1);

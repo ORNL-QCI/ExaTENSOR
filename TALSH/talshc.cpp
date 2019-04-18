@@ -635,13 +635,16 @@ int talshEnableFastMath(int dev_kind, int dev_id)
  int errc;
 
 #pragma omp flush
+ errc=TALSH_SUCCESS;
  switch(dev_kind){
  case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
   if(dev_id >= 0){
    errc=gpu_enable_fast_math(dev_id);
   }else{
    errc=gpu_enable_fast_math();
   }
+#endif
   break;
  default:
   errc=TALSH_NOT_AVAILABLE;
@@ -656,13 +659,16 @@ int talshDisableFastMath(int dev_kind, int dev_id)
  int errc;
 
 #pragma omp flush
+ errc=TALSH_SUCCESS;
  switch(dev_kind){
  case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
   if(dev_id >= 0){
    errc=gpu_disable_fast_math(dev_id);
   }else{
    errc=gpu_disable_fast_math();
   }
+#endif
   break;
  default:
   errc=TALSH_NOT_AVAILABLE;
@@ -677,12 +683,13 @@ int talshQueryFastMath(int dev_kind, int dev_id)
  int ans;
 
 #pragma omp flush
+ ans=NOPE;
  switch(dev_kind){
  case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
   ans=gpu_query_fast_math(dev_id);
+#endif
   break;
- default:
-  ans=NOPE;
  }
  return ans;
 }
