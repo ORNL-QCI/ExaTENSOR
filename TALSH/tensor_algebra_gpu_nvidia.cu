@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/04/17
+REVISION: 2019/04/18
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -5494,7 +5494,7 @@ NOTES:
 **/
 {
  int i,j,drank,lrank,rrank,tds_d,tds_l,tds_r,gpu_d,gpu_l,gpu_r,perm_d,perm_l,perm_r;
- int ncd,nlu,nru,gpu_num,cur_gpu,targ_dev,bx,by,errc,stat,conj_l,conj_r;
+ int ncd,nlu,nru,gpu_num,cur_gpu,targ_dev,bx,by,errc,stat,conj_l,conj_r,fast_math;
  int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK]; //the 1st element is the sign of the permutation
  size_t vol_d,vol_l,vol_r,dsize,lsize,rsize,lc,ll,lr,pofs;
  unsigned int coh;
@@ -5694,6 +5694,7 @@ NOTES:
  }else{ //custom kernel mapped tensor contraction (complex conjugation does not require modified permutations)
   get_contr_permutations(lrank,rrank,cptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
  }
+// Get permutations:
  if(errc){i=cuda_task_record(cuda_task,coh_ctrl,11); i=gpu_activate(cur_gpu); return 11;}
  for(i=0;i<drank;i++) cuda_task->tens_args[0].prmn_p[i]=dprm[1+i]; //ignore the permutaion sign
  perm_d=non_trivial_prmn(drank,cuda_task->tens_args[0].prmn_p);    //trivial or not
@@ -5701,6 +5702,7 @@ NOTES:
  perm_l=non_trivial_prmn(lrank,cuda_task->tens_args[1].prmn_p);    //trivial or not
  for(i=0;i<rrank;i++) cuda_task->tens_args[2].prmn_p[i]=rprm[1+i]; //ignore the permutaion sign
  perm_r=non_trivial_prmn(rrank,cuda_task->tens_args[2].prmn_p);    //trivial or not
+// Get tensor volumes, sizes and matrix attributes:
  vol_d=tensBlck_volume(dtens); vol_l=tensBlck_volume(ltens); vol_r=tensBlck_volume(rtens); //tensor block volumes
  lc=1; ll=1;
  for(i=0;i<lrank;i++){
@@ -5711,6 +5713,18 @@ NOTES:
   i=cuda_task_record(cuda_task,coh_ctrl,12); i=gpu_activate(cur_gpu); return 12; //invalid matrix dimensions obtained
  }
  dsize=vol_d*tds_d; lsize=vol_l*tds_l; rsize=vol_r*tds_r; //tensor argument sizes in bytes
+// Check fast math requirements:
+ fast_math=NOPE;
+ if(gpu_query_fast_math(gpu_num) == YEP){
+  if(dtens->data_kind == R4 || dtens->data_kind == C4){
+   if(lr%WMMA_ALIGN == 0 && ll%WMMA_ALIGN == 0 && lc%WMMA_ALIGN == 0){
+    if(TRANS_SHMEM == EFF_TRN_ON){
+     perm_d=YEP; perm_l=YEP; perm_r=YEP;
+     fast_math=YEP;
+    }
+   }
+  }
+ }
 //Acquire global memory resources for tensor arguments if needed:
 // Set up destination memory resources in all tensors:
 //  Destination tensor:
@@ -5994,9 +6008,15 @@ NOTES:
        (0,1,drank,cuda_task->tens_args[0].const_mem_entry,(double*)(dtens->dst_rsc->gmem_p),(double*)(dtens->tmp_rsc->gmem_p));
       break;
      case C4:
-      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
-       (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
-        (talshComplex4*)(dtens->dst_rsc->gmem_p),(talshComplex4*)(dtens->tmp_rsc->gmem_p));
+      if(fast_math == YEP){
+       gpu_tensor_block_copy_cmplx_split_out_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+        (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
+         (talshComplex4*)(dtens->dst_rsc->gmem_p),(talshComplex4*)(dtens->tmp_rsc->gmem_p));
+      }else{
+       gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+        (0,1,drank,cuda_task->tens_args[0].const_mem_entry,
+         (talshComplex4*)(dtens->dst_rsc->gmem_p),(talshComplex4*)(dtens->tmp_rsc->gmem_p));
+      }
       break;
      case C8:
       gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
@@ -6080,9 +6100,15 @@ NOTES:
       (0,0,lrank,cuda_task->tens_args[1].const_mem_entry,(double*)(ltens->dst_rsc->gmem_p),(double*)(ltens->tmp_rsc->gmem_p));
      break;
     case C4:
-     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
-      (0,0,lrank,cuda_task->tens_args[1].const_mem_entry,
-       (talshComplex4*)(ltens->dst_rsc->gmem_p),(talshComplex4*)(ltens->tmp_rsc->gmem_p));
+     if(fast_math == YEP){
+      gpu_tensor_block_copy_cmplx_split_out_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+       (0,0,lrank,cuda_task->tens_args[1].const_mem_entry,
+        (talshComplex4*)(ltens->dst_rsc->gmem_p),(talshComplex4*)(ltens->tmp_rsc->gmem_p));
+     }else{
+      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+       (0,0,lrank,cuda_task->tens_args[1].const_mem_entry,
+        (talshComplex4*)(ltens->dst_rsc->gmem_p),(talshComplex4*)(ltens->tmp_rsc->gmem_p));
+     }
      break;
     case C8:
      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
@@ -6150,9 +6176,15 @@ NOTES:
       (0,0,rrank,cuda_task->tens_args[2].const_mem_entry,(double*)(rtens->dst_rsc->gmem_p),(double*)(rtens->tmp_rsc->gmem_p));
      break;
     case C4:
-     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
-      (0,0,rrank,cuda_task->tens_args[2].const_mem_entry,
-       (talshComplex4*)(rtens->dst_rsc->gmem_p),(talshComplex4*)(rtens->tmp_rsc->gmem_p));
+     if(fast_math == YEP){
+      gpu_tensor_block_copy_cmplx_split_out_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+       (0,0,rrank,cuda_task->tens_args[2].const_mem_entry,
+        (talshComplex4*)(rtens->dst_rsc->gmem_p),(talshComplex4*)(rtens->tmp_rsc->gmem_p));
+     }else{
+      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+       (0,0,rrank,cuda_task->tens_args[2].const_mem_entry,
+        (talshComplex4*)(rtens->dst_rsc->gmem_p),(talshComplex4*)(rtens->tmp_rsc->gmem_p));
+     }
      break;
     case C8:
      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
@@ -6504,9 +6536,15 @@ NOTES:
       (1,0,drank,cuda_task->tens_args[0].const_mem_entry,(double*)(dtens->tmp_rsc->gmem_p),(double*)(dtens->dst_rsc->gmem_p));
      break;
     case C4:
-     gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
-      (1,0,drank,cuda_task->tens_args[0].const_mem_entry,
-       (talshComplex4*)(dtens->tmp_rsc->gmem_p),(talshComplex4*)(dtens->dst_rsc->gmem_p));
+     if(fast_math == YEP){
+      gpu_tensor_block_copy_cmplx_split_in_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+       (1,0,drank,cuda_task->tens_args[0].const_mem_entry,
+        (talshComplex4*)(dtens->tmp_rsc->gmem_p),(talshComplex4*)(dtens->dst_rsc->gmem_p));
+     }else{
+      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
+       (1,0,drank,cuda_task->tens_args[0].const_mem_entry,
+        (talshComplex4*)(dtens->tmp_rsc->gmem_p),(talshComplex4*)(dtens->dst_rsc->gmem_p));
+     }
      break;
     case C8:
      gpu_tensor_block_copy_dlf__<<<bx,THRDS_TENSOR_COPY,0,*cuda_stream>>>
