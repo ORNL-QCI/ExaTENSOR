@@ -216,18 +216,22 @@ static int DISABLE_BLAS=0; //non-zero value will disable cuBLAS usage (if it had
 static int DISABLE_BLAS=1; //non-zero value will disable cuBLAS usage (if it had been cuBLAS compiled/linked)
 #endif /*NO_BLAS*/
 static cudaTask_t * LastTask[MAX_GPUS_PER_NODE]; //last CUDA task successfully scheduled on each GPU
-__device__ __constant__ static float sgemm_alpha=1.0f;                    //default alpha constant for SGEMM
-__device__ __constant__ static float sgemm_beta_one=1.0f;                 //default beta constant SGEMM
-__device__ __constant__ static float sgemm_beta_zero=0.0f;                //zero beta constant SGEMM
-__device__ __constant__ static double dgemm_alpha=1.0;                    //default alpha constant for DGEMM
-__device__ __constant__ static double dgemm_beta_one=1.0;                 //default beta constant DGEMM
-__device__ __constant__ static double dgemm_beta_zero=0.0;                //zero beta constant DGEMM
-__device__ __constant__ static cuComplex cgemm_alpha={1.0f,0.0f};         //default alpha constant CGEMM
-__device__ __constant__ static cuComplex cgemm_beta_one={1.0f,0.0f};      //default beta constant CGEMM
-__device__ __constant__ static cuComplex cgemm_beta_zero={0.0f,0.0f};     //zero beta constant CGEMM
-__device__ __constant__ static cuDoubleComplex zgemm_alpha={1.0,0.0};     //default alpha constant ZGEMM
-__device__ __constant__ static cuDoubleComplex zgemm_beta_one={1.0,0.0};  //default beta constant ZGEMM
-__device__ __constant__ static cuDoubleComplex zgemm_beta_zero={0.0,0.0}; //zero beta constant ZGEMM
+__device__ __constant__ static float sgemm_alpha_plus=1.0f;                  //default alpha constant for SGEMM
+__device__ __constant__ static float sgemm_alpha_minus=-1.0f;                //default alpha constant for SGEMM
+__device__ __constant__ static float sgemm_beta_one=1.0f;                    //default beta constant SGEMM
+__device__ __constant__ static float sgemm_beta_zero=0.0f;                   //zero beta constant SGEMM
+__device__ __constant__ static double dgemm_alpha_plus=1.0;                  //default alpha constant for DGEMM
+__device__ __constant__ static double dgemm_alpha_minus=-1.0;                //default alpha constant for DGEMM
+__device__ __constant__ static double dgemm_beta_one=1.0;                    //default beta constant DGEMM
+__device__ __constant__ static double dgemm_beta_zero=0.0;                   //zero beta constant DGEMM
+__device__ __constant__ static cuComplex cgemm_alpha_plus={1.0f,0.0f};       //default alpha constant CGEMM
+__device__ __constant__ static cuComplex cgemm_alpha_minus={-1.0f,0.0f};     //default alpha constant CGEMM
+__device__ __constant__ static cuComplex cgemm_beta_one={1.0f,0.0f};         //default beta constant CGEMM
+__device__ __constant__ static cuComplex cgemm_beta_zero={0.0f,0.0f};        //zero beta constant CGEMM
+__device__ __constant__ static cuDoubleComplex zgemm_alpha_plus={1.0,0.0};   //default alpha constant ZGEMM
+__device__ __constant__ static cuDoubleComplex zgemm_alpha_minus={-1.0,0.0}; //default alpha constant ZGEMM
+__device__ __constant__ static cuDoubleComplex zgemm_beta_one={1.0,0.0};     //default beta constant ZGEMM
+__device__ __constant__ static cuDoubleComplex zgemm_beta_zero={0.0,0.0};    //zero beta constant ZGEMM
 // Infrastructure for kernels <gpu_array_norm2__>:
 __device__ static int norm2_wr_lock=0; //write lock shared by all <gpu_array_norm2__> running on GPU
 // Infrastructure for kernels <gpu_array_dot_product__>:
@@ -5499,7 +5503,7 @@ NOTES:
  size_t vol_d,vol_l,vol_r,dsize,lsize,rsize,lc,ll,lr,pofs;
  unsigned int coh;
  const unsigned int TWO_BITS_SET = 3; //two right bits are set
- void *darg,*larg,*rarg,*alpha_p,*beta_p;
+ void *darg,*larg,*rarg,*alpha_plus_p,*alpha_minus_p,*beta_p,*beta_one_p;
  talshComplex4 scale_cmplx4;
  talshComplex8 scale_cmplx8;
  cudaStream_t *cuda_stream;
@@ -6247,60 +6251,68 @@ NOTES:
     errc=cuda_task_set_prefactor(cuda_task,talshComplex4Set((float)scale_real,(float)scale_imag));
     if(errc){j=cuda_task_record(cuda_task,coh_ctrl,60); j=gpu_activate(cur_gpu); return 60;}
     j=slab_get_entry_offset(&prefactors,cuda_task->pref_ptr,&pofs); if(j != 0) errc++;
-    alpha_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
+    alpha_plus_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
    }else{
-    err=cudaGetSymbolAddress(&alpha_p,sgemm_alpha); if(err != cudaSuccess) errc++;
+    err=cudaGetSymbolAddress(&alpha_plus_p,sgemm_alpha_plus); if(err != cudaSuccess) errc++;
+    err=cudaGetSymbolAddress(&alpha_minus_p,sgemm_alpha_minus); if(err != cudaSuccess) errc++;
    }
    if(accumulative == NOPE){
     err=cudaGetSymbolAddress(&beta_p,sgemm_beta_zero); if(err != cudaSuccess) errc++;
    }else{
     err=cudaGetSymbolAddress(&beta_p,sgemm_beta_one); if(err != cudaSuccess) errc++;
    }
+   err=cudaGetSymbolAddress(&beta_one_p,sgemm_beta_one); if(err != cudaSuccess) errc++;
    break;
   case R8:
    if(scale_real != 1.0 || scale_imag != 0.0){
     errc=cuda_task_set_prefactor(cuda_task,talshComplex8Set(scale_real,scale_imag));
     if(errc){j=cuda_task_record(cuda_task,coh_ctrl,61); j=gpu_activate(cur_gpu); return 61;}
     j=slab_get_entry_offset(&prefactors,cuda_task->pref_ptr,&pofs); if(j != 0) errc++;
-    alpha_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
+    alpha_plus_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
    }else{
-    err=cudaGetSymbolAddress(&alpha_p,dgemm_alpha); if(err != cudaSuccess) errc++;
+    err=cudaGetSymbolAddress(&alpha_plus_p,dgemm_alpha_plus); if(err != cudaSuccess) errc++;
+    err=cudaGetSymbolAddress(&alpha_minus_p,dgemm_alpha_minus); if(err != cudaSuccess) errc++;
    }
    if(accumulative == NOPE){
     err=cudaGetSymbolAddress(&beta_p,dgemm_beta_zero); if(err != cudaSuccess) errc++;
    }else{
     err=cudaGetSymbolAddress(&beta_p,dgemm_beta_one); if(err != cudaSuccess) errc++;
    }
+   err=cudaGetSymbolAddress(&beta_one_p,dgemm_beta_one); if(err != cudaSuccess) errc++;
    break;
   case C4:
    if(scale_real != 1.0 || scale_imag != 0.0){
     errc=cuda_task_set_prefactor(cuda_task,talshComplex4Set((float)scale_real,(float)scale_imag));
     if(errc){j=cuda_task_record(cuda_task,coh_ctrl,62); j=gpu_activate(cur_gpu); return 62;}
     j=slab_get_entry_offset(&prefactors,cuda_task->pref_ptr,&pofs); if(j != 0) errc++;
-    alpha_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
+    alpha_plus_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
    }else{
-    err=cudaGetSymbolAddress(&alpha_p,cgemm_alpha); if(err != cudaSuccess) errc++;
+    err=cudaGetSymbolAddress(&alpha_plus_p,cgemm_alpha_plus); if(err != cudaSuccess) errc++;
+    err=cudaGetSymbolAddress(&alpha_minus_p,cgemm_alpha_minus); if(err != cudaSuccess) errc++;
    }
    if(accumulative == NOPE){
     err=cudaGetSymbolAddress(&beta_p,cgemm_beta_zero); if(err != cudaSuccess) errc++;
    }else{
     err=cudaGetSymbolAddress(&beta_p,cgemm_beta_one); if(err != cudaSuccess) errc++;
    }
+   err=cudaGetSymbolAddress(&beta_one_p,cgemm_beta_one); if(err != cudaSuccess) errc++;
    break;
   case C8:
    if(scale_real != 1.0 || scale_imag != 0.0){
     errc=cuda_task_set_prefactor(cuda_task,talshComplex8Set(scale_real,scale_imag));
     if(errc){j=cuda_task_record(cuda_task,coh_ctrl,63); j=gpu_activate(cur_gpu); return 63;}
     j=slab_get_entry_offset(&prefactors,cuda_task->pref_ptr,&pofs); if(j != 0) errc++;
-    alpha_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
+    alpha_plus_p=(void*)&(((char*)(gpu_prefs_base_ptr))[pofs]);
    }else{
-    err=cudaGetSymbolAddress(&alpha_p,zgemm_alpha); if(err != cudaSuccess) errc++;
+    err=cudaGetSymbolAddress(&alpha_plus_p,zgemm_alpha_plus); if(err != cudaSuccess) errc++;
+    err=cudaGetSymbolAddress(&alpha_minus_p,zgemm_alpha_minus); if(err != cudaSuccess) errc++;
    }
    if(accumulative == NOPE){
     err=cudaGetSymbolAddress(&beta_p,zgemm_beta_zero); if(err != cudaSuccess) errc++;
    }else{
     err=cudaGetSymbolAddress(&beta_p,zgemm_beta_one); if(err != cudaSuccess) errc++;
    }
+   err=cudaGetSymbolAddress(&beta_one_p,zgemm_beta_one); if(err != cudaSuccess) errc++;
    break;
   default:
    errc++;
@@ -6448,31 +6460,61 @@ NOTES:
    switch(dtens->data_kind){
     case R4:
      err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
-                (float*)alpha_p,(float*)larg,(int)lc,(float*)rarg,(int)lc,(float*)beta_p,(float*)darg,(int)ll);
+                (float*)alpha_plus_p,(float*)larg,(int)lc,(float*)rarg,(int)lc,(float*)beta_p,(float*)darg,(int)ll);
      break;
     case R8:
      err_cublas=cublasDgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
-                (double*)alpha_p,(double*)larg,(int)lc,(double*)rarg,(int)lc,(double*)beta_p,(double*)darg,(int)ll);
+                (double*)alpha_plus_p,(double*)larg,(int)lc,(double*)rarg,(int)lc,(double*)beta_p,(double*)darg,(int)ll);
      break;
     case C4:
-     if(conj_r){
-      err_cublas=cublasCgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
-                 (talshComplex4*)alpha_p,(talshComplex4*)larg,(int)lc,(talshComplex4*)rarg,(int)lr,(talshComplex4*)beta_p,
-                 (talshComplex4*)darg,(int)ll);
+     if(fast_math == YEP){
+      if(conj_r){
+       err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                  (float*)alpha_plus_p,&(((float*)larg)[0]),(int)lc,&(((float*)rarg)[0]),(int)lr,(float*)beta_p,
+                  &(((float*)darg)[0]),(int)ll);
+       err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                  (float*)alpha_minus_p,&(((float*)larg)[vol_l]),(int)lc,&(((float*)rarg)[vol_r]),(int)lr,(float*)beta_one_p,
+                  &(((float*)darg)[0]),(int)ll);
+       err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                  (float*)alpha_plus_p,&(((float*)larg)[vol_l]),(int)lc,&(((float*)rarg)[0]),(int)lr,(float*)beta_p,
+                  &(((float*)darg)[vol_d]),(int)ll);
+       err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                  (float*)alpha_plus_p,&(((float*)larg)[0]),(int)lc,&(((float*)rarg)[vol_r]),(int)lr,(float*)beta_one_p,
+                  &(((float*)darg)[vol_d]),(int)ll);
+      }else{
+       err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                  (float*)alpha_plus_p,&(((float*)larg)[0]),(int)lc,&(((float*)rarg)[0]),(int)lc,(float*)beta_p,
+                  &(((float*)darg)[0]),(int)ll);
+       err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                  (float*)alpha_minus_p,&(((float*)larg)[vol_l]),(int)lc,&(((float*)rarg)[vol_r]),(int)lc,(float*)beta_one_p,
+                  &(((float*)darg)[0]),(int)ll);
+       err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                  (float*)alpha_plus_p,&(((float*)larg)[vol_l]),(int)lc,&(((float*)rarg)[0]),(int)lc,(float*)beta_p,
+                  &(((float*)darg)[vol_d]),(int)ll);
+       err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                  (float*)alpha_plus_p,&(((float*)larg)[0]),(int)lc,&(((float*)rarg)[vol_r]),(int)lc,(float*)beta_one_p,
+                  &(((float*)darg)[vol_d]),(int)ll);
+      }
      }else{
-      err_cublas=cublasCgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
-                 (talshComplex4*)alpha_p,(talshComplex4*)larg,(int)lc,(talshComplex4*)rarg,(int)lc,(talshComplex4*)beta_p,
-                 (talshComplex4*)darg,(int)ll);
+      if(conj_r){
+       err_cublas=cublasCgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                  (talshComplex4*)alpha_plus_p,(talshComplex4*)larg,(int)lc,(talshComplex4*)rarg,(int)lr,(talshComplex4*)beta_p,
+                  (talshComplex4*)darg,(int)ll);
+      }else{
+       err_cublas=cublasCgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
+                  (talshComplex4*)alpha_plus_p,(talshComplex4*)larg,(int)lc,(talshComplex4*)rarg,(int)lc,(talshComplex4*)beta_p,
+                  (talshComplex4*)darg,(int)ll);
+      }
      }
      break;
     case C8:
      if(conj_r){
       err_cublas=cublasZgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
-                 (talshComplex8*)alpha_p,(talshComplex8*)larg,(int)lc,(talshComplex8*)rarg,(int)lr,(talshComplex8*)beta_p,
+                 (talshComplex8*)alpha_plus_p,(talshComplex8*)larg,(int)lc,(talshComplex8*)rarg,(int)lr,(talshComplex8*)beta_p,
                  (talshComplex8*)darg,(int)ll);
      }else{
       err_cublas=cublasZgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
-                 (talshComplex8*)alpha_p,(talshComplex8*)larg,(int)lc,(talshComplex8*)rarg,(int)lc,(talshComplex8*)beta_p,
+                 (talshComplex8*)alpha_plus_p,(talshComplex8*)larg,(int)lc,(talshComplex8*)rarg,(int)lc,(talshComplex8*)beta_p,
                  (talshComplex8*)darg,(int)ll);
      }
      break;
