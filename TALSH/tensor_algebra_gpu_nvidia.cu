@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/04/22
+REVISION: 2019/04/24
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -3019,7 +3019,7 @@ no GPU will be initialized. **/
 #endif
 #ifdef USE_CUTENSOR
 //cuTensor context:
-     err_cutensor=cutensorCreate(&(cutensor_handle[i]),NULL,0);
+     err_cutensor=cutensorCreate(&(cutensor_handle[i]));
      if(err_cutensor != CUTENSOR_STATUS_SUCCESS) return -7;
 #endif
     }
@@ -4452,19 +4452,19 @@ __host__ static int cuda_task_set_arg(cudaTask_t *cuda_task, unsigned int arg_nu
   n=tens_p->shape.num_dim; for(i=0;i<n;++i) exts[i]=(tens_p->shape.dims)[i];
   switch(tens_p->data_kind){
    case R4:
-    err_cutensor=cutensorCreateTensorDescriptor(&((cuda_task->tens_cudesc)[arg_num]),n,exts,NULL,CUDA_R_32F);
+    err_cutensor=cutensorCreateTensorDescriptor(&((cuda_task->tens_cudesc)[arg_num]),(uint32_t)n,exts,NULL,CUDA_R_32F,CUTENSOR_OP_IDENTITY,1,0);
     if(err_cutensor != CUTENSOR_STATUS_SUCCESS) return 5;
     break;
    case R8:
-    err_cutensor=cutensorCreateTensorDescriptor(&((cuda_task->tens_cudesc)[arg_num]),n,exts,NULL,CUDA_R_64F);
+    err_cutensor=cutensorCreateTensorDescriptor(&((cuda_task->tens_cudesc)[arg_num]),(uint32_t)n,exts,NULL,CUDA_R_64F,CUTENSOR_OP_IDENTITY,1,0);
     if(err_cutensor != CUTENSOR_STATUS_SUCCESS) return 4;
     break;
    case C4:
-    err_cutensor=cutensorCreateTensorDescriptor(&((cuda_task->tens_cudesc)[arg_num]),n,exts,NULL,CUDA_C_32F);
+    err_cutensor=cutensorCreateTensorDescriptor(&((cuda_task->tens_cudesc)[arg_num]),(uint32_t)n,exts,NULL,CUDA_C_32F,CUTENSOR_OP_IDENTITY,1,0);
     if(err_cutensor != CUTENSOR_STATUS_SUCCESS) return 3;
     break;
    case C8:
-    err_cutensor=cutensorCreateTensorDescriptor(&((cuda_task->tens_cudesc)[arg_num]),n,exts,NULL,CUDA_C_64F);
+    err_cutensor=cutensorCreateTensorDescriptor(&((cuda_task->tens_cudesc)[arg_num]),(uint32_t)n,exts,NULL,CUDA_C_64F,CUTENSOR_OP_IDENTITY,1,0);
     if(err_cutensor != CUTENSOR_STATUS_SUCCESS) return 2;
     break;
    default:
@@ -6669,11 +6669,6 @@ NOTES:
   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): Unable to record the mmbeg event: %s\n",err_msg);
   errc=cuda_task_record(cuda_task,coh_ctrl,65); errc=gpu_activate(cur_gpu); return 65;
  }
-#endif
-#ifdef USE_CUTENSOR
-// Set cuTensor CUDA stream:
- err_cutensor=cutensorSetStream(cutensor_handle[gpu_num],*cuda_stream);
- if(err_cutensor != CUTENSOR_STATUS_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,66); errc=gpu_activate(cur_gpu); return 66;}
 #endif
 // Scalar multiplication:
  if(drank == 0 && lrank == 0 && rrank == 0){

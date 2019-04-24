@@ -5,7 +5,6 @@ FEATURES NEEDED:
  2018/09/28: Tensor addition with permutation and conjugation needs to be implemented in TAL-SH:
              CP-TAL: tensor addition with permutation is missing;
              NV-TAL: tensor addition with conjugation is missing.
- 2018/09/28: Tensor slicing/insertion needs to be implemented in TAL-SH and ExaTENSOR.
  2018/10/26: exatns_tensor_create() must be able to create tensor slices.
  2018/10/26: TAL-SH should introduce additional layers on top of eager API inferace:
              Lazy layer: Placing tasks into the global queue, decomposing too large tasks
@@ -23,11 +22,12 @@ FEATURES NEEDED:
  2019/02/14: Add control field to TENS_CREATE:
              - List of tensor dimensions that may be split;
              - List of tensor dimensions that may be distributed if split.
- 2019/03/06: talshTensorContractXL() function: All tensors are initially placed on Host. Blocking.
  2019/03/06: TAL-SH: cuTensor integration: Add pattern converter and finish integration in NV-TAL.
 
 
 UNRESOLVED ISSUES:
+ 2019/04/23: Lazy locking has a bug: When detaching/deallocating data that participated in
+             one-sided communications, the corresponding windows need to be unlocked.
  2018/03/07: Implement tensor R/W status update (in the tensor cache) at the TAVP-MNG level:
              Dependency check and status update on instruction issue should be done during location cycle;
              Status update on instruction retirement will probably require another rotation cycle,
@@ -65,6 +65,10 @@ UNRESOLVED ISSUES:
                need to initialize temporary tensors in Dispatcher prior to the operation.
              - Perform local accumulations (temporary into accumulator) in Dispatcher with multi-threading.
  2019/03/06: TAL-SH multithreaded first touch in arg_buf_allocate on CPU.
+
+
+RESOLVED:
+ 2019/03/06: talshTensorContractXL() function: All tensors are initially placed on Host. Blocking.
  2019/03/06: TAL-SH coherence control issue: Logic for output tensors is wrong in some cases, should be:
              - Mark all tensor images unavailable in operation scheduling.
              - Then by case:
@@ -80,9 +84,6 @@ UNRESOLVED ISSUES:
                     Transfer DST to SRC (in operation);
                     Mark SRC available after completion;
                     Append DST image after completion (available).
-
-
-RESOLVED:
  2019/03/06: TAL-SH: Add beta=0 (overwrite) option in talshTensorContract() and Tensor.contractAccumulate().
  2019/03/06: TAL-SH: Tensor C++ ctor with initialization data as a vector.
  2019/03/06: TAL-SH: Tensor C++: getDataAccessHost().
