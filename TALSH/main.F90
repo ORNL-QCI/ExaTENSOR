@@ -25,11 +25,11 @@
         logical, parameter:: TEST_C_TALSH=.TRUE.
         logical, parameter:: TEST_CXX_TALSH=.TRUE.
         logical, parameter:: TEST_XL_TALSH=.TRUE.
-        logical, parameter:: TEST_F_TALSH=.FALSE.
+        logical, parameter:: TEST_F_TALSH=.TRUE.
         logical, parameter:: TEST_XLF_TALSH=.TRUE.
-        logical, parameter:: TEST_QC_TALSH=.FALSE.
-        logical, parameter:: TEST_NWCHEM=.FALSE.
-        logical, parameter:: TEST_COMPLEX=.FALSE.
+        logical, parameter:: TEST_QC_TALSH=.TRUE.
+        logical, parameter:: TEST_NWCHEM=.TRUE.
+        logical, parameter:: TEST_COMPLEX=.TRUE.
         logical, parameter:: BENCH_TALSH_RND=.FALSE.
         logical, parameter:: BENCH_TALSH_CUSTOM=.FALSE.
 
@@ -353,45 +353,47 @@
         ierr=talsh_tensor_construct(rtens,R8,(/420,93,93/),init_val=(1d-2,0d0))
         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=5; return; endif
 !Contract tensors:
-        write(*,'(1x,"Executing XL tensor contraction ... ")',ADVANCE='NO')
 #ifndef NO_GPU
+        write(*,'(1x,"Executing XL tensor contraction on GPU ... ")',ADVANCE='NO')
         ierr=talsh_tensor_contract_xl('D(a,b,c,d)+=L(p,c,a)*R(p,b,d)',dtens,ltens,rtens,scale=(5d-1,0d0),&
                                      &dev_id=0,dev_kind=DEV_NVIDIA_GPU)
 #else
+        write(*,'(1x,"Executing XL tensor contraction on CPU ... ")',ADVANCE='NO')
         ierr=talsh_tensor_contract_xl('D(a,b,c,d)+=L(p,c,a)*R(p,b,d)',dtens,ltens,rtens,scale=(5d-1,0d0),&
                                      &dev_id=0,dev_kind=DEV_HOST)
 #endif
         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=6; return; endif
 !Check result:
         write(*,'(1x,"Getting access to the tensor-result ... ")',ADVANCE='NO')
-        ierr=talsh_tensor_get_body_access(dtens,body_p,dtk,0,DEV_HOST)
-        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=7; return; endif
+        ierr=talsh_tensor_place(dtens,0,DEV_HOST); if(ierr.ne.TALSH_SUCCESS) then; ierr=7; return; endif
+        ierr=talsh_tensor_get_body_access(dtens,body_p,R8,0,DEV_HOST)
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=8; return; endif
         vol=talsh_tensor_volume(dtens)
         call c_f_pointer(body_p,body,(/vol/))
-        val=420d0*(1d-3)*(1d-2)*(5d-1) + (1d-4)
+        val=420d0*(1d-3)*(1d-2)*(5d-1)+(1d-4) !value of each tensor element
         diff=0d0
         do i=1,vol
          diff=max(diff,abs(body(i)-val))
         enddo
-        write(*,'(1x,"Max difference = ",D25.14)') diff
+        write(*,'(1x,"Max absolute difference = ",D25.14)') diff
 !Destruct tensors:
         write(*,'(1x,"Destructing tensor rtens ... ")',ADVANCE='NO')
         ierr=talsh_tensor_destruct(rtens)
-        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=8; return; endif
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=9; return; endif
         write(*,'(1x,"Destructing tensor ltens ... ")',ADVANCE='NO')
         ierr=talsh_tensor_destruct(ltens)
-        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=9; return; endif
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=10; return; endif
         write(*,'(1x,"Destructing tensor dtens ... ")',ADVANCE='NO')
         ierr=talsh_tensor_destruct(dtens)
-        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=10; return; endif
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
 !Print run-time statistics:
         ierr=talsh_stats()
-        if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=12; return; endif
 !Shutdown TALSH:
         write(*,'(1x,"Shutting down TALSH ... ")',ADVANCE='NO')
         ierr=talsh_shutdown()
         write(*,'("Status ",i11)') ierr
-        if(ierr.ne.TALSH_SUCCESS) then; ierr=12; return; endif
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
         return
         end subroutine test_talsh_xlf
 !------------------------------------------
