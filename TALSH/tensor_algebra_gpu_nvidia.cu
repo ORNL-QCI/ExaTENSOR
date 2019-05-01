@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/04/24
+REVISION: 2019/05/01
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -219,6 +219,14 @@ static int DISABLE_BLAS=0; //non-zero value will disable cuBLAS usage (if it had
 static int DISABLE_BLAS=1; //non-zero value will disable cuBLAS usage (if it had been cuBLAS compiled/linked)
 #endif /*NO_BLAS*/
 static cudaTask_t * LastTask[MAX_GPUS_PER_NODE]; //last CUDA task successfully scheduled on each GPU
+static float h_sgemm_beta_one=1.0f;
+static float h_sgemm_beta_zero=0.0f;
+static double h_dgemm_beta_one=1.0;
+static double h_dgemm_beta_zero=0.0;
+static cuComplex h_cgemm_beta_one={1.0f,0.0f};
+static cuComplex h_cgemm_beta_zero={0.0f,0.0f};
+static cuDoubleComplex h_zgemm_beta_one={1.0,0.0};
+static cuDoubleComplex h_zgemm_beta_zero={0.0,0.0};
 __device__ __constant__ static float sgemm_alpha_plus=1.0f;                  //default alpha constant for SGEMM
 __device__ __constant__ static float sgemm_alpha_minus=-1.0f;                //default alpha constant for SGEMM
 __device__ __constant__ static float sgemm_beta_one=1.0f;                    //default beta constant SGEMM
@@ -2341,6 +2349,53 @@ int tens_valid_data_kind(int datk, int * datk_size)
 int tens_valid_data_kind_(int datk, int * datk_size) //Fortran binding
 {
  return tens_valid_data_kind(datk,datk_size);
+}
+
+int get_contr_pattern_cutensor(const int * dig_ptrn, int drank, int * ptrn_d, int lrank, int * ptrn_l, int rrank, int * ptrn_r)
+/** Converts a digital tensor contraction pattern used by TAL-SH into the cuTensor digital format. **/
+{
+ int errc = 0;
+ if(drank >= 0 && lrank >= 0 && rrank >= 0){
+  if(lrank + rrank > 0){
+   if(dig_ptrn != NULL){
+    int ci = drank; //contracted indices will have ids: drank+1,drank+2,drank+3,...
+    for(int i = 0; i < drank; ++i) ptrn_d[i] = (i+1); //dtens[1,2,3,4,...]
+    for(int i = 0; i < lrank; ++i){
+     int j = dig_ptrn[i];
+     if(j > 0){ //uncontracted index
+      ptrn_l[i] = j;
+     }else if(j < 0){ //contracted index
+      ptrn_l[i] = ++ci;
+      ptrn_r[-j-1] = ci;
+     }else{
+      errc = -5;
+      break;
+     }
+    }
+    if(errc == 0){
+     for(int i = 0; i < rrank; ++i){
+      int j = dig_ptrn[lrank+i];
+      if(j > 0){ //uncontracted index
+       ptrn_r[i] = j;
+      }else if(j < 0){ //contracted index
+       if(ptrn_r[i] != ptrn_l[-j-1]){ //already set
+        errc = -4;
+        break;
+       }
+      }else{
+       errc = -3;
+       break;
+      }
+     }
+    }
+   }else{
+    errc = -2;
+   }
+  }
+ }else{
+  errc = -1;
+ }
+ return errc;
 }
 
 size_t tens_elem_offset_f(unsigned int num_dim, const unsigned int * dims, const unsigned int * mlndx)
@@ -5860,13 +5915,13 @@ NOTES:
  cublasStatus_t err_cublas;
  cublasOperation_t left_conj,right_conj;
 #endif
-#ifdef USE_CUTENSOR
- cutensorStatus_t err_cutensor;
- int cumod_d[MAX_TENSOR_RANK],cumod_l[MAX_TENSOR_RANK],cumod_r[MAX_TENSOR_RANK];
-#endif
 #ifdef USE_CUTT
  cuttHandle cutt_d,cutt_l,cutt_r;
  cuttResult cutt_err;
+#endif
+#ifdef USE_CUTENSOR
+ cutensorStatus_t err_cutensor;
+ int cumod_d[MAX_TENSOR_RANK],cumod_l[MAX_TENSOR_RANK],cumod_r[MAX_TENSOR_RANK];
 #endif
 
  //if(DEBUG) printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): GPU Tensor Contraction:\n"); //debug
@@ -5923,6 +5978,9 @@ NOTES:
   }
  }
  for(i=0;i<drank;i++) if(dprm[i] != 1) return -27;
+#ifdef USE_CUTENSOR
+ if(get_contr_pattern_cutensor(cptrn,drank,cumod_d,lrank,cumod_l,rrank,cumod_r) != 0) return -27;
+#endif
 //Check argument complex conjugation bits:
 #ifndef NO_BLAS
  left_conj=CUBLAS_OP_T; right_conj=CUBLAS_OP_N; //default is TN GEMM
@@ -6062,6 +6120,13 @@ NOTES:
  dsize=vol_d*tds_d; lsize=vol_l*tds_l; rsize=vol_r*tds_r; //tensor argument sizes in bytes
 // Check fast math requirements:
  fast_math=NOPE;
+#ifdef USE_CUTENSOR
+ if(DISABLE_BLAS == 0 && gpu_is_mine(gpu_num) >= GPU_MINE_CUBLAS){
+  if(drank > 0 && lrank > 0 && rrank > 0){ //`Remove this restriction
+   perm_d=NOPE; perm_l=NOPE; perm_r=NOPE; //cuTensor does not require permutations
+  }
+ }
+#else
  if(gpu_query_fast_math(gpu_num) == YEP){
   if(dtens->data_kind == R4 || dtens->data_kind == C4){
    if(lr%WMMA_ALIGN == 0 && ll%WMMA_ALIGN == 0 && lc%WMMA_ALIGN == 0){
@@ -6072,6 +6137,7 @@ NOTES:
    }
   }
  }
+#endif
 //Acquire global memory resources for tensor arguments if needed:
 // Set up destination memory resources in all tensors:
 //  Destination tensor:
@@ -6797,12 +6863,34 @@ NOTES:
    if(err_cublas != CUBLAS_STATUS_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,72); errc=gpu_activate(cur_gpu); return 72;}
    switch(dtens->data_kind){
     case R4:
+#ifdef USE_CUTENSOR
+     err_cutensor=cutensorContraction(cutensor_handle[gpu_num],
+                                      cuda_task->pref_ptr,
+                                      larg,cuda_task->tens_cudesc[1],cumod_l,
+                                      rarg,cuda_task->tens_cudesc[2],cumod_r,
+                                      (const void*)&h_sgemm_beta_one,
+                                      darg,cuda_task->tens_cudesc[0],cumod_d,
+                                      darg,cuda_task->tens_cudesc[0],cumod_d,
+                                      CUTENSOR_OP_IDENTITY,CUDA_R_32F,CUTENSOR_ALGO_DEFAULT,NULL,(uint64_t)0,*cuda_stream);
+#else
      err_cublas=cublasSgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
                 (float*)alpha_plus_p,(float*)larg,(int)lc,(float*)rarg,(int)lc,(float*)beta_p,(float*)darg,(int)ll);
+#endif
      break;
     case R8:
+#ifdef USE_CUTENSOR
+     err_cutensor=cutensorContraction(cutensor_handle[gpu_num],
+                                      cuda_task->pref_ptr,
+                                      larg,cuda_task->tens_cudesc[1],cumod_l,
+                                      rarg,cuda_task->tens_cudesc[2],cumod_r,
+                                      (const void*)&h_dgemm_beta_one,
+                                      darg,cuda_task->tens_cudesc[0],cumod_d,
+                                      darg,cuda_task->tens_cudesc[0],cumod_d,
+                                      CUTENSOR_OP_IDENTITY,CUDA_R_64F,CUTENSOR_ALGO_DEFAULT,NULL,(uint64_t)0,*cuda_stream);
+#else
      err_cublas=cublasDgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
                 (double*)alpha_plus_p,(double*)larg,(int)lc,(double*)rarg,(int)lc,(double*)beta_p,(double*)darg,(int)ll);
+#endif
      break;
     case C4:
      if(fast_math == YEP){
@@ -6834,6 +6922,16 @@ NOTES:
                   &(((float*)darg)[vol_d]),(int)ll);
       }
      }else{
+#ifdef USE_CUTENSOR
+      err_cutensor=cutensorContraction(cutensor_handle[gpu_num], //`Missing argument conjugation
+                                       cuda_task->pref_ptr,
+                                       larg,cuda_task->tens_cudesc[1],cumod_l,
+                                       rarg,cuda_task->tens_cudesc[2],cumod_r,
+                                       (const void*)&h_cgemm_beta_one,
+                                       darg,cuda_task->tens_cudesc[0],cumod_d,
+                                       darg,cuda_task->tens_cudesc[0],cumod_d,
+                                       CUTENSOR_OP_IDENTITY,CUDA_C_32F,CUTENSOR_ALGO_DEFAULT,NULL,(uint64_t)0,*cuda_stream);
+#else
       if(conj_r){
        err_cublas=cublasCgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
                   (talshComplex4*)alpha_plus_p,(talshComplex4*)larg,(int)lc,(talshComplex4*)rarg,(int)lr,(talshComplex4*)beta_p,
@@ -6843,9 +6941,20 @@ NOTES:
                   (talshComplex4*)alpha_plus_p,(talshComplex4*)larg,(int)lc,(talshComplex4*)rarg,(int)lc,(talshComplex4*)beta_p,
                   (talshComplex4*)darg,(int)ll);
       }
+#endif
      }
      break;
     case C8:
+#ifdef USE_CUTENSOR
+     err_cutensor=cutensorContraction(cutensor_handle[gpu_num], //`Missing argument conjugation
+                                      cuda_task->pref_ptr,
+                                      larg,cuda_task->tens_cudesc[1],cumod_l,
+                                      rarg,cuda_task->tens_cudesc[2],cumod_r,
+                                      (const void*)&h_zgemm_beta_one,
+                                      darg,cuda_task->tens_cudesc[0],cumod_d,
+                                      darg,cuda_task->tens_cudesc[0],cumod_d,
+                                      CUTENSOR_OP_IDENTITY,CUDA_C_64F,CUTENSOR_ALGO_DEFAULT,NULL,(uint64_t)0,*cuda_stream);
+#else
      if(conj_r){
       err_cublas=cublasZgemm(cublas_handle[gpu_num],left_conj,right_conj,(int)ll,(int)lr,(int)lc,
                  (talshComplex8*)alpha_plus_p,(talshComplex8*)larg,(int)lc,(talshComplex8*)rarg,(int)lr,(talshComplex8*)beta_p,
@@ -6855,11 +6964,22 @@ NOTES:
                  (talshComplex8*)alpha_plus_p,(talshComplex8*)larg,(int)lc,(talshComplex8*)rarg,(int)lc,(talshComplex8*)beta_p,
                  (talshComplex8*)darg,(int)ll);
      }
+#endif
      break;
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,73); errc=gpu_activate(cur_gpu); return 73;
    }
+#ifdef USE_CUTENSOR
+   if(err_cutensor != CUTENSOR_STATUS_SUCCESS){
+    if(VERBOSE){
+     err_msg=cutensorGetErrorString(err_cutensor);
+     if(err_msg != NULL) printf("#ERROR(gpu_tensor_block_contract_dlf): cuTensor error: %s\n",err_msg);
+    }
+    errc=cuda_task_record(cuda_task,coh_ctrl,74); errc=gpu_activate(cur_gpu); return 74;
+   }
+#else
    if(err_cublas != CUBLAS_STATUS_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,74); errc=gpu_activate(cur_gpu); return 74;}
+#endif
   }else{ //BLAS is disabled
 #endif /*NO_BLAS*/
    bx=1+(vol_l-1)/MAT_MULT_TILE_DIMX; by=1+(vol_r-1)/MAT_MULT_TILE_DIMY; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
