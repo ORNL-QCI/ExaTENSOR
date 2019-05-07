@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/05/05
+REVISION: 2019/05/06
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2749,6 +2749,7 @@ int talshTensorOpDestruct(talsh_tens_op_t * tens_op)
     tens_op->num_args = 0;
    }
   }else{
+   if(VERBOSE) printf("#ERROR(talshTensorOpDestruct): Attempt to destruct an active tensor operation: Status = %d\n",stat);
    errc = TALSH_IN_PROGRESS;
   }
  }
@@ -4923,9 +4924,15 @@ int talshTensorContractXL(const char * cptrn,   //in: C-string: symbolic contrac
         tm = time_sys_sec();
         for(int opn = inlen - 1; opn >= 0; --opn){
          ier = talshTensorOpDestruct(inq[opn]);
-         if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc = TALSH_FAILURE;
+         if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS){
+          if(VERBOSE) printf("#ERROR(talshTensorContractXL): talshTensorOpDestruct error %d for operation #%d\n",ier,opn);
+          errc = TALSH_FAILURE;
+         }
          ier = slab_entry_release(op_stack,(void*)(inq[opn])); inq[opn] = NULL;
-         if(ier != 0 && errc == TALSH_SUCCESS) errc = TALSH_FAILURE;
+         if(ier != 0 && errc == TALSH_SUCCESS){
+          if(VERBOSE) printf("#ERROR(talshTensorContractXL): slab_entry_release error %d for operation #%d\n",ier,opn);
+          errc = TALSH_FAILURE;
+         }
         }
         tm = time_sys_sec() - tm;
         //printf(" #DEBUG(talshTensorContractXL)[%.4f]: Destructed %d tensor operations\n",tm,inlen); //debug
@@ -4944,7 +4951,11 @@ int talshTensorContractXL(const char * cptrn,   //in: C-string: symbolic contrac
    }
    // Destroy temporary storage for tensor operations:
    tm = time_sys_sec();
-   ier = slab_destroy(op_stack); if(ier != 0 && errc == TALSH_SUCCESS) errc = TALSH_FAILURE;
+   ier = slab_destroy(op_stack);
+   if(ier != 0 && errc == TALSH_SUCCESS){
+    if(VERBOSE) printf("#ERROR(talshTensorContractXL): slab_destroy error %d\n",ier);
+    errc = TALSH_FAILURE;
+   }
    tm = time_sys_sec() - tm;
    //printf(" #DEBUG(talshTensorContractXL)[%.4f]: Destroyed tensor operation storage\n",tm); //debug
   }
