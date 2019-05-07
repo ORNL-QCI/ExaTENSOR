@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/02/22
+!REVISION: 2019/05/07
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -123,7 +123,8 @@
         integer(INT_MPI), parameter, public:: TAVP_COLLECT_TAG=2  !MPI message containing instructions being collected after execution
         integer(INT_MPI), parameter, public:: TAVP_LOCATE_TAG=3   !MPI message containing instructions undergoing meta-data location
         integer(INT_MPI), parameter, public:: TAVP_REPLICA_TAG=4  !MPI message containing instructions for data replication
-        integer(INT_MPI), parameter, public:: TAVP_SCALAR_TAG=5   !MPI message containing a scalar value
+        integer(INT_MPI), parameter, public:: TAVP_SCALAR_TAG=5   !MPI message containing a scalar
+        integer(INT_MPI), parameter, public:: TAVP_TENSOR_TAG=6   !MPI message containing tensor data
  !TAVP instruction error codes [-1:-100]:
         integer(INTD), parameter, public:: TAVP_ERR_GEN_FAILURE=-1     !unspecified generic failure
         integer(INTD), parameter, public:: TAVP_ERR_BTC_BAD=-2         !bad instruction bytecode
@@ -310,12 +311,20 @@
         end type tens_cache_t
  !Scalar retrieval functor:
         type, extends(tens_method_uni_t), public:: tens_scalar_get_t
-         integer(INTD), private:: receive_comm=MPI_COMM_NULL           !MPI communicator of the scalar value receiver
-         integer(INTD), private:: receive_rank=-1                      !MPI rank of the scalar value receiver
+         integer(INTD), private:: receive_comm=MPI_COMM_NULL           !MPI communicator of the scalar receiver
+         integer(INTD), private:: receive_rank=-1                      !MPI rank of the scalar receiver
          contains
           procedure, public:: tens_scalar_get_ctor=>TensScalarGetCtor  !ctor
-          procedure, public:: apply=>TensScalarGetApply                !passes the scalar value to the receiver MPI process
+          procedure, public:: apply=>TensScalarGetApply                !passes the scalar to the receiver MPI process
         end type tens_scalar_get_t
+ !Tensor retrieval functor:
+        type, extends(tens_method_uni_t), public:: tens_tensor_get_t
+         integer(INTD), private:: receive_comm=MPI_COMM_NULL           !MPI communicator of the tensor receiver
+         integer(INTD), private:: receive_rank=-1                      !MPI rank of the tensor receiver
+         contains
+          procedure, public:: tens_tensor_get_ctor=>TensTensorGetCtor  !ctor
+          procedure, public:: apply=>TensTensorGetApply                !passes the tensor to the receiver MPI process
+        end type tens_tensor_get_t
  !External data register:
         type, public:: data_register_t
          type(dictionary_t), private:: ext_data                           !string --> tens_data_t{talsh_tens_data_t}
@@ -475,6 +484,9 @@
  !tens_scalar_get_t:
         private TensScalarGetCtor
         private TensScalarGetApply
+ !tens_tensor_get_t:
+        private TensTensorGetCtor
+        private TensTensorGetApply
  !data_register_t:
         private DataRegisterRegisterData
         private DataRegisterUnregisterData
@@ -2222,6 +2234,128 @@
          endif
          return
         end function TensScalarGetApply
+![tens_tensor_get_t]=====================================
+        subroutine TensTensorGetCtor(this,comm,rank,ierr)
+         implicit none
+         class(tens_tensor_get_t), intent(out):: this !out: tensor getting functor
+         integer(INTD), intent(in):: comm             !MPI communicator of the receiving MPI process
+         integer(INTD), intent(in):: rank             !MPI rank of the receiving MPI process
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(comm.ne.MPI_COMM_NULL.and.rank.ge.0) then
+          this%receive_comm=comm
+          this%receive_rank=rank
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensTensorGetCtor
+!-------------------------------------------------------------------
+        function TensTensorGetApply(this,tensor,scalar) result(ierr)
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(tens_tensor_get_t), intent(in):: this  !in: tensor getting functor
+         class(tens_rcrsv_t), intent(inout):: tensor  !in: tensor
+         complex(8), intent(inout), optional:: scalar !in: scalar (not used here)
+         integer(INTD):: data_kind,n
+         integer(INTL):: vol
+         logical:: laid,locd
+         type(C_PTR):: body_p
+         real(4), pointer:: r4p(:)
+         real(8), pointer:: r8p(:)
+         complex(4), pointer:: c4p(:)
+         complex(8), pointer:: c8p(:)
+         class(tens_layout_t), pointer:: layout
+         type(obj_pack_t):: packet
+         type(pack_env_t):: envelope
+         type(comm_handle_t):: comm_handle
+
+         ierr=0
+         if(this%receive_comm.ne.MPI_COMM_NULL) then
+          if(tensor%is_set(ierr,num_dims=n,layed=laid,located=locd)) then
+           if(ierr.eq.TEREC_SUCCESS) then
+            if(n.ge.0) then
+             if(laid.and.locd) then
+              data_kind=tensor%get_data_type(ierr)
+              if(ierr.eq.TEREC_SUCCESS) then
+               layout=>tensor%get_layout(ierr)
+               if(ierr.eq.TEREC_SUCCESS.and.associated(layout)) then
+                vol=layout%get_volume()
+                if(ierr.eq.TEREC_SUCCESS) then
+                 body_p=tensor%get_body_ptr(ierr)
+                 if(ierr.eq.TEREC_SUCCESS) then
+                  call envelope%acquire_packet(packet,ierr,preclean=.TRUE.)
+                  if(ierr.eq.PACK_SUCCESS) then
+                   call tensor%pack(packet,ierr)
+                   if(ierr.eq.TEREC_SUCCESS) then
+                    call envelope%seal_packet(ierr)
+                    if(ierr.eq.PACK_SUCCESS) then
+                     call comm_handle%clean(ierr)
+                     if(ierr.eq.PACK_SUCCESS) then
+                      call envelope%send(this%receive_rank,comm_handle,ierr,tag=TAVP_TENSOR_TAG,comm=this%receive_comm)
+                      if(ierr.eq.PACK_SUCCESS) then
+                       call comm_handle%wait(ierr)
+                       if(ierr.eq.PACK_SUCCESS) call send_tensor_data(ierr)
+                       call comm_handle%clean()
+                       call envelope%destroy()
+                      endif
+                     endif
+                    endif
+                   endif
+                  endif
+                 endif
+                endif
+               else
+                if(ierr.eq.TEREC_SUCCESS) ierr=-5
+               endif
+              endif
+             else
+              ierr=-4
+             endif
+            else
+             ierr=-3
+            endif
+           endif
+          else
+           if(ierr.eq.TEREC_SUCCESS) ierr=-2
+          endif
+         else
+          ierr=-1
+         endif
+         return
+
+         contains
+
+          subroutine send_tensor_data(jerr)
+           integer(INTD), intent(out):: jerr
+           jerr=0
+           select case(data_kind)
+           case(R4)
+            call c_f_pointer(body_p,r4p,(/vol/))
+            call MPI_Send(r4p,int(vol,INT_MPI),MPI_REAL4,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
+            if(jerr.ne.MPI_SUCCESS) jerr=-5
+           case(R8)
+            call c_f_pointer(body_p,r8p,(/vol/))
+            call MPI_Send(r8p,int(vol,INT_MPI),MPI_REAL8,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
+            if(jerr.ne.MPI_SUCCESS) jerr=-4
+           case(C4)
+            call c_f_pointer(body_p,c4p,(/vol/))
+            call MPI_Send(c4p,int(vol,INT_MPI),MPI_COMPLEX8,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
+            if(jerr.ne.MPI_SUCCESS) jerr=-3
+           case(C8)
+            call c_f_pointer(body_p,c8p,(/vol/))
+            call MPI_Send(c8p,int(vol,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
+            if(jerr.ne.MPI_SUCCESS) jerr=-2
+           case default
+            jerr=-1
+           end select
+           return
+          end subroutine send_tensor_data
+
+        end function TensTensorGetApply
 ![data_register_t]=========================================================
         subroutine DataRegisterRegisterData(this,data_name,extrn_data,ierr)
          implicit none
