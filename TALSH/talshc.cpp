@@ -4898,8 +4898,8 @@ int talshTensorContractXL(const char * cptrn,   //in: C-string: symbolic contrac
              ier = talshTensorOpProgress(inq[opn],&done);
              if(ier == TALSH_SUCCESS){
               if(done == YEP){
-               --num_dec;
                if(opn == beg){
+                --num_dec;
                 ++beg; fin = MIN(beg+wid,inlen); opn = fin - 2;
                }
               }
