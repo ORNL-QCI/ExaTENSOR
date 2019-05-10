@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/05/07
+!REVISION: 2019/05/10
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2284,9 +2284,10 @@
                layout=>tensor%get_layout(ierr)
                if(ierr.eq.TEREC_SUCCESS.and.associated(layout)) then
                 vol=layout%get_volume()
+                body_p=tensor%get_body_ptr(ierr)
                 if(ierr.eq.TEREC_SUCCESS) then
-                 body_p=tensor%get_body_ptr(ierr)
-                 if(ierr.eq.TEREC_SUCCESS) then
+                 call envelope%reserve_mem(ierr)
+                 if(ierr.eq.PACK_SUCCESS) then
                   call envelope%acquire_packet(packet,ierr,preclean=.TRUE.)
                   if(ierr.eq.PACK_SUCCESS) then
                    call tensor%pack(packet,ierr)
@@ -2298,13 +2299,14 @@
                       call envelope%send(this%receive_rank,comm_handle,ierr,tag=TAVP_TENSOR_TAG,comm=this%receive_comm)
                       if(ierr.eq.PACK_SUCCESS) then
                        call comm_handle%wait(ierr)
-                       if(ierr.eq.PACK_SUCCESS) call send_tensor_data(ierr)
                        call comm_handle%clean()
+                       if(ierr.eq.PACK_SUCCESS) call send_tensor_data(ierr)
                        call envelope%destroy()
                       endif
                      endif
                     endif
                    endif
+                   call packet%clean()
                   endif
                  endif
                 endif
@@ -2331,6 +2333,7 @@
 
           subroutine send_tensor_data(jerr)
            integer(INTD), intent(out):: jerr
+
            jerr=0
            select case(data_kind)
            case(R4)

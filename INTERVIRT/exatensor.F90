@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/05/07
+!REVISION: 2019/05/10
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -154,6 +154,7 @@
        public exatns_start                !starts the ExaTENSOR DSVP (called by All)
        public exatns_stop                 !stops the ExaTENSOR DSVP (Driver only)
        public exatns_sync                 !synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions will be completed (Driver only)
+       public exatns_synced               !returns TRUE if all previously issues tensor instructions have completed
        public exatns_process_role         !returns the role of the current MPI process (called by Any)
        public exatns_virtual_depth        !returns the depth of the TAVP-MNG hierarchy (does not include TAVP-WRK level)
        public exatns_status               !returns the status of the ExaTENSOR runtime plus statistics, if needed (Driver only)
@@ -757,66 +758,87 @@
         if(ierr.ne.0) write(jo,'(" Failed!")')
         return
        end function exatns_stop
-!-----------------------------------------
-       function exatns_sync() result(ierr) !Driver only
+!---------------------------------------------------
+       function exatns_sync(time_limit) result(ierr) !Driver only
 !Synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions will be completed.
         implicit none
-        integer(INTD):: ierr !out: error code
+        integer(INTD):: ierr                       !out: error code
+        real(8), intent(in), optional:: time_limit !in: time limit (sec) for trying to sync (default = infinity)
+        real(8), parameter:: DEFAULT_TIME_LIMIT=1d99
         type(comm_handle_t):: comm_hl
         type(obj_pack_t):: instr_packet
+        integer:: timer
         integer(INTD):: n,i,sts,err_code
         integer(INTL):: iid
         class(*), pointer:: instr
-        logical:: new
+        logical:: new,expired
+        real(8):: tml
 
-        ierr=EXA_SUCCESS
-        call comm_hl%clean(ierr)
-        if(ierr.eq.0) then
-         wloop: do while(num_tens_instr_synced.lt.num_tens_instr_issued)
-          new=bytecode_in%receive(comm_hl,ierr,0,TAVP_COLLECT_TAG,drv_mng_comm) !receive bytecode from the root TAVP-MNG
-          if(new) then
-           call comm_hl%wait(ierr); if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
-           n=bytecode_in%get_num_packets()
-           num_tens_instr_synced=num_tens_instr_synced+n
-           do i=1,n
-            call bytecode_in%extract_packet(i,instr_packet,ierr,preclean=.TRUE.)
-            if(ierr.eq.PACK_SUCCESS) then
-             call unpack_builtin(instr_packet,iid,ierr)
+        ierr=EXA_SUCCESS; expired=.FALSE.
+        tml=DEFAULT_TIME_LIMIT; if(present(time_limit)) tml=time_limit
+        ierr=timer_start(timer,tml)
+        if(ierr.eq.TIMERS_SUCCESS) then
+         call comm_hl%clean(ierr)
+         if(ierr.eq.PACK_SUCCESS) then
+          wloop: do while(num_tens_instr_synced.lt.num_tens_instr_issued.and.(.not.expired))
+           new=bytecode_in%receive(comm_hl,ierr,0,TAVP_COLLECT_TAG,drv_mng_comm) !receive bytecode from the root TAVP-MNG
+           if(new) then
+            call comm_hl%wait(ierr); if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
+            n=bytecode_in%get_num_packets()
+            num_tens_instr_synced=num_tens_instr_synced+n
+            do i=1,n
+             call bytecode_in%extract_packet(i,instr_packet,ierr,preclean=.TRUE.)
              if(ierr.eq.PACK_SUCCESS) then
-              instr=>instr_log%element_value(iid,ierr)
-              if(ierr.eq.GFC_SUCCESS.and.associated(instr)) then
-               select type(instr)
-               class is(tens_instr_mng_t)
-                sts=instr%get_status(ierr,err_code)
-                if(ierr.eq.DSVP_SUCCESS) then
-                 call instr%set_status(DS_INSTR_RETIRED,ierr,err_code)
-                 if(ierr.ne.DSVP_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
-                else
+              call unpack_builtin(instr_packet,iid,ierr)
+              if(ierr.eq.PACK_SUCCESS) then
+               instr=>instr_log%element_value(iid,ierr)
+               if(ierr.eq.GFC_SUCCESS.and.associated(instr)) then
+                select type(instr)
+                class is(tens_instr_mng_t)
+                 sts=instr%get_status(ierr,err_code)
+                 if(ierr.eq.DSVP_SUCCESS) then
+                  call instr%set_status(DS_INSTR_RETIRED,ierr,err_code)
+                  if(ierr.ne.DSVP_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
+                 else
+                  ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
+                 endif
+                class default
                  ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
-                endif
-               class default
+                end select
+               else
                 ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
-               end select
+               endif
               else
                ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
               endif
              else
               ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
              endif
-            else
-             ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
-            endif
-           enddo
-          endif
-          call comm_hl%clean(ierr); if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
-         enddo wloop
-         call bytecode_in%clean(ierr); if(ierr.ne.0) ierr=EXA_ERR_MEM_FREE_FAIL
+            enddo
+           endif
+           call comm_hl%clean(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
+           expired=(timer_expired(timer,ierr).and.present(time_limit))
+           if(ierr.ne.TIMERS_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
+          enddo wloop
+          call bytecode_in%clean(ierr); if(ierr.ne.0) ierr=EXA_ERR_MEM_FREE_FAIL
+         else
+          ierr=EXA_ERR_UNABLE_COMPLETE
+         endif
+         err_code=timer_destroy(timer); if(err_code.ne.TIMERS_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=EXA_ERROR
         else
          ierr=EXA_ERR_UNABLE_COMPLETE
         endif
         write(jo,'("[",F11.4,"]#MSG(exatensor): Instruction execution synced")') time_sys_sec()-start_time_stamp; flush(jo)
         return
        end function exatns_sync
+!---------------------------------------------
+       function exatns_synced() result(synced)
+!Returns TRUE if all previously issued tensor instructions have completed.
+        logical:: synced
+
+        synced=(num_tens_instr_synced.eq.num_tens_instr_issued)
+        return
+       end function exatns_synced
 !----------------------------------------------------------------
        function exatns_process_role(role,role_total) result(ierr)
 !Returns the role of the current MPI process.
@@ -1225,16 +1247,16 @@
         endif
         return
        end function exatns_tensor_destroy
-!---------------------------------------------------------------------------------
-       function exatns_tensor_get(tensor,subspace_mlndx,tensor_slice) result(ierr)
+!------------------------------------------------------------------
+       function exatns_tensor_get(tensor,tensor_slice) result(ierr)
 !Returns a locally storable slice of a tensor.
         implicit none
         integer(INTD):: ierr                             !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor       !in: (distributed) tensor
-        integer(INTL), intent(in):: subspace_mlndx(1:)   !in: subspace multi-index identifying the requested tensor slice
         type(tens_rcrsv_t), intent(inout):: tensor_slice !out: requested tensor slice stored locally (allocated locally)
-        integer(INT_MPI):: stat(MPI_STATUS_SIZE),req
-        integer(INTD):: tens_rank,slice_rank,n
+        real(8), parameter:: SYNC_INTERVAL=1d-3          !synchronization interval
+        integer(INTL):: slice_bases(MAX_TENSOR_RANK),slice_dims(MAX_TENSOR_RANK)
+        integer(INTD):: tens_rank,slice_rank,n,errc
         type(pack_env_t):: envelope
         type(comm_handle_t):: comm_handle
         logical:: over,new
@@ -1244,28 +1266,35 @@
         if(ierr.eq.TEREC_SUCCESS) then
          slice_rank=tensor_slice%get_rank(ierr)
          if(ierr.eq.TEREC_SUCCESS) then
-          if(slice_rank.eq.tens_rank.and.size(subspace_mlndx).eq.tens_rank) then
-           ierr=exatns_tensor_traverse(tensor,'_RetrieveTensor_',sync=.FALSE.)
-           if(ierr.eq.EXA_SUCCESS) then
-            call envelope%reserve_mem(ierr); if(ierr.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
-            over=(ierr.ne.EXA_SUCCESS)
-            do while(.not.over)
-             call comm_handle%clean(ierr)
-             if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-             new=envelope%receive(comm_handle,ierr,tag=TAVP_TENSOR_TAG,comm=GLOBAL_MPI_COMM)
-             if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-             if(new) then
-              call comm_handle%wait(ierr)
-              if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-              call get_new_tensor_slice(ierr)
-              if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-              call envelope%clean(ierr)
-              if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+          if(slice_rank.eq.tens_rank) then
+           call tensor_slice%get_bases(slice_bases,n,ierr)
+           if(ierr.eq.TEREC_SUCCESS) then
+            call tensor_slice%get_dims(slice_dims,n,ierr)
+            if(ierr.eq.TEREC_SUCCESS) then
+             ierr=exatns_tensor_traverse(tensor,'_RetrieveTensor_',sync=.FALSE.)
+             if(ierr.eq.EXA_SUCCESS) then
+              call envelope%reserve_mem(ierr); if(ierr.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+              over=(ierr.ne.EXA_SUCCESS)
+              do while(.not.over)
+               call comm_handle%clean(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+               new=envelope%receive(comm_handle,ierr,tag=TAVP_TENSOR_TAG,comm=GLOBAL_MPI_COMM)
+               if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+               if(new) then
+                call comm_handle%wait(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+                call get_new_tensor_slice(ierr); if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+                call envelope%clean(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+               endif
+               ierr=exatns_sync(SYNC_INTERVAL); if(ierr.ne.EXA_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+               over=exatns_synced()
+              enddo
+              call comm_handle%clean(errc); if(ierr.eq.EXA_SUCCESS.and.errc.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+              call envelope%destroy(errc); if(ierr.eq.EXA_SUCCESS.and.errc.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
              endif
-            enddo
-            call comm_handle%clean(n); if(ierr.eq.EXA_SUCCESS.and.n.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
-            call envelope%destroy(n); if(ierr.eq.EXA_SUCCESS.and.n.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
-            n=exatns_sync(); if(ierr.eq.EXA_SUCCESS.and.n.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+            else
+             ierr=EXA_ERR_UNABLE_COMPLETE
+            endif
+           else
+            ierr=EXA_ERR_UNABLE_COMPLETE
            endif
           else
            ierr=EXA_ERR_INVALID_ARGS
@@ -1282,9 +1311,11 @@
 
          subroutine get_new_tensor_slice(jerr)
           integer(INTD), intent(out):: jerr
-          integer(INTD):: jnp
+          integer(INTD):: jnp,jn
+          integer(INT_MPI):: stat(MPI_STATUS_SIZE),req
+          integer(INTL):: block_bases(MAX_TENSOR_RANK),block_dims(MAX_TENSOR_RANK)
           type(obj_pack_t):: packet
-          type(tens_rcrsv_t):: tens
+          type(tens_rcrsv_t):: tens_block
 
           jerr=0
           jnp=envelope%get_num_packets(jerr)
@@ -1292,9 +1323,29 @@
            if(jnp.eq.1) then !expects one packet per envelope
             call envelope%extract_packet(1,packet,jerr)
             if(jerr.eq.PACK_SUCCESS) then
-             call tens%tens_rcrsv_ctor(packet,jerr)
+             call tens_block%tens_rcrsv_ctor(packet,jerr)
              if(jerr.eq.TEREC_SUCCESS) then
-              !`Finish
+              call tens_block%get_bases(block_bases,jn,jerr)
+              if(jerr.eq.TEREC_SUCCESS) then
+               call tens_block%get_dims(block_dims,jn,jerr)
+               if(jerr.eq.TEREC_SUCCESS) then
+                
+                !`Finish: Get tensor slice elements:
+                !(a) Read envelope tag = process rank in GLOBAL_MPI_COMM
+                !(b) Get tensor block volume
+                !(c) Allocate/resize local buffer
+                !(d) Receive tensor block elements
+                !(e) Create a TAL-SH tensors for tensor slice and tensor block
+                !(f) Perform non-accumulative insertion
+                !(g) Destroy TAL-SH tensors
+               else
+                jerr=-6
+               endif
+              else
+               jerr=-5
+              endif
+             else
+              jerr=-4
              endif
              call packet%clean()
             else
