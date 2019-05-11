@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/05/10
+!REVISION: 2019/05/11
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2264,10 +2264,10 @@
          integer(INTL):: vol
          logical:: laid,locd
          type(C_PTR):: body_p
-         real(4), pointer:: r4p(:)
-         real(8), pointer:: r8p(:)
-         complex(4), pointer:: c4p(:)
-         complex(8), pointer:: c8p(:)
+         real(4), pointer, contiguous:: r4p(:)
+         real(8), pointer, contiguous:: r8p(:)
+         complex(4), pointer, contiguous:: c4p(:)
+         complex(8), pointer, contiguous:: c8p(:)
          class(tens_layout_t), pointer:: layout
          type(obj_pack_t):: packet
          type(pack_env_t):: envelope
@@ -2296,18 +2296,21 @@
                     if(ierr.eq.PACK_SUCCESS) then
                      call comm_handle%clean(ierr)
                      if(ierr.eq.PACK_SUCCESS) then
-                      call envelope%send(this%receive_rank,comm_handle,ierr,tag=TAVP_TENSOR_TAG,comm=this%receive_comm)
+                      call envelope%set_tag(impir,ierr) !envelope tagged with the global MPI rank of the sender
                       if(ierr.eq.PACK_SUCCESS) then
-                       call comm_handle%wait(ierr)
-                       call comm_handle%clean()
-                       if(ierr.eq.PACK_SUCCESS) call send_tensor_data(ierr)
-                       call envelope%destroy()
+                       call envelope%send(this%receive_rank,comm_handle,ierr,tag=TAVP_TENSOR_TAG,comm=this%receive_comm)
+                       if(ierr.eq.PACK_SUCCESS) then
+                        call comm_handle%wait(ierr)
+                        if(ierr.eq.PACK_SUCCESS) call send_tensor_data(ierr)
+                        call comm_handle%clean()
+                       endif
                       endif
                      endif
                     endif
                    endif
                    call packet%clean()
                   endif
+                  call envelope%destroy()
                  endif
                 endif
                else
