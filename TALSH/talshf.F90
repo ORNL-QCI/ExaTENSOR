@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2019/04/17
+!REVISION: 2019/05/11
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -1508,7 +1508,7 @@
          endif
          return
         end function talsh_tensor_add
-!------------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------------
         function talsh_tensor_contract(cptrn,dtens,ltens,rtens,scale,dev_id,dev_kind,&
                                       &copy_ctrl,accumulative,talsh_task) result(ierr)
          implicit none
@@ -1536,18 +1536,22 @@
           if(present(scale)) then; scale_real=dble(scale); scale_imag=dimag(scale); else; scale_real=1d0; scale_imag=0d0; endif
           if(present(dev_id)) then; devn=dev_id; else; devn=DEV_DEFAULT; endif
           if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_DEFAULT; endif
-          if(devk.eq.DEV_DEFAULT.and.devn.eq.DEV_DEFAULT) devn=EXECUTION_DEVICE !default execution device
           call string2array(cptrn(1:l),contr_ptrn,l,ierr); l=l+1; contr_ptrn(l:l)=achar(0) !C-string
           if(ierr.eq.0) then
-           if(present(talsh_task)) then
-            ierr=talshTensorContract_(contr_ptrn,dtens,ltens,rtens,scale_real,scale_imag,devn,devk,coh_ctrl,accum,talsh_task)
+           if(devk.eq.DEV_DEFAULT.and.devn.eq.DEV_DEFAULT.and.EXECUTION_DEVICE.ge.0) then
+            devn=talsh_kind_dev_id(EXECUTION_DEVICE,devk); devn=DEV_DEFAULT
+            ierr=talshTensorContractXL_(contr_ptrn,dtens,ltens,rtens,scale_real,scale_imag,devn,devk,accum)
            else
-            ierr=talsh_task_clean(tsk)
-            ierr=talshTensorContract_(contr_ptrn,dtens,ltens,rtens,scale_real,scale_imag,devn,devk,coh_ctrl,accum,tsk)
-            if(ierr.eq.TALSH_SUCCESS) then
-             ierr=talsh_task_wait(tsk,sts); if(sts.ne.TALSH_TASK_COMPLETED) ierr=TALSH_TASK_ERROR
+            if(present(talsh_task)) then
+             ierr=talshTensorContract_(contr_ptrn,dtens,ltens,rtens,scale_real,scale_imag,devn,devk,coh_ctrl,accum,talsh_task)
+            else
+             ierr=talsh_task_clean(tsk)
+             ierr=talshTensorContract_(contr_ptrn,dtens,ltens,rtens,scale_real,scale_imag,devn,devk,coh_ctrl,accum,tsk)
+             if(ierr.eq.TALSH_SUCCESS) then
+              ierr=talsh_task_wait(tsk,sts); if(sts.ne.TALSH_TASK_COMPLETED) ierr=TALSH_TASK_ERROR
+             endif
+             sts=talsh_task_destruct(tsk)
             endif
-            sts=talsh_task_destruct(tsk)
            endif
           else
            ierr=TALSH_INVALID_ARGS
@@ -1580,9 +1584,11 @@
           if(present(scale)) then; scale_real=dble(scale); scale_imag=dimag(scale); else; scale_real=1d0; scale_imag=0d0; endif
           if(present(dev_id)) then; devn=dev_id; else; devn=DEV_DEFAULT; endif
           if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_DEFAULT; endif
-          if(devk.eq.DEV_DEFAULT.and.devn.eq.DEV_DEFAULT) devn=EXECUTION_DEVICE !default execution device (flat id)
           call string2array(cptrn(1:l),contr_ptrn,l,ierr); l=l+1; contr_ptrn(l:l)=achar(0) !C-string
           if(ierr.eq.0) then
+           if(devk.eq.DEV_DEFAULT.and.devn.eq.DEV_DEFAULT.and.EXECUTION_DEVICE.ge.0) then
+            devn=talsh_kind_dev_id(EXECUTION_DEVICE,devk); devn=DEV_DEFAULT
+           endif
            ierr=talshTensorContractXL_(contr_ptrn,dtens,ltens,rtens,scale_real,scale_imag,devn,devk,accum)
           else
            ierr=TALSH_INVALID_ARGS
