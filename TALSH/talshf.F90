@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2019/05/11
+!REVISION: 2019/05/23
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -70,7 +70,8 @@
         integer(C_INT), private:: ALLOCATE_VIA_HAB=0 !if negative, regular Host memory will be used for tensors instead of HAB
         integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=16777216 !default size of the Host argument buffer in bytes (none)
  !Execution device:
-        integer(C_INT), private:: EXECUTION_DEVICE=DEV_DEFAULT !if >=0, the specified device will be used for tensor operation execution by default
+        integer(C_INT), private:: EXECUTION_DEVICE_KIND=DEV_DEFAULT !if set, the specified device kind will be used for tensor operation execution by default
+        integer(C_INT), private:: EXECUTION_DEVICE_ID=DEV_DEFAULT   !if set, the specified device id within its kind will be used for tensor operation execution by default
  !CP-TAL:
         integer(C_INT), parameter, private:: CPTAL_MAX_TMP_FTENS=192 !max number of simultaneously existing temporary Fortran tensors for CP-TAL
 !DERIVED TYPES:
@@ -977,15 +978,10 @@
          integer(C_INT):: ierr                 !out: error code
          integer(C_INT), intent(in):: dev_kind !in: device kind
          integer(C_INT), intent(in):: dev_num  !in: device Id within its kind (0..MAX)
-         integer(C_INT):: devid
 
          ierr=TALSH_SUCCESS
-         devid=talsh_flat_dev_id(dev_kind,dev_num)
-         if(devid.lt.DEV_MAX) then
-          EXECUTION_DEVICE=devid
-         else
-          ierr=TALSH_INVALID_ARGS
-         endif
+         EXECUTION_DEVICE_KIND=dev_kind
+         EXECUTION_DEVICE_ID=dev_num
          return
         end function talsh_enforce_execution_device
 !---------------------------------------------------------
@@ -1538,8 +1534,8 @@
           if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_DEFAULT; endif
           call string2array(cptrn(1:l),contr_ptrn,l,ierr); l=l+1; contr_ptrn(l:l)=achar(0) !C-string
           if(ierr.eq.0) then
-           if(devk.eq.DEV_DEFAULT.and.devn.eq.DEV_DEFAULT.and.EXECUTION_DEVICE.ge.0) then
-            devn=talsh_kind_dev_id(EXECUTION_DEVICE,devk); devn=DEV_DEFAULT
+           if(devk.eq.DEV_DEFAULT.and.devn.eq.DEV_DEFAULT.and.EXECUTION_DEVICE_KIND.ge.0.and.(.not.present(talsh_task))) then
+            devk=EXECUTION_DEVICE_KIND; devn=EXECUTION_DEVICE_ID
             ierr=talshTensorContractXL_(contr_ptrn,dtens,ltens,rtens,scale_real,scale_imag,devn,devk,accum)
            else
             if(present(talsh_task)) then
@@ -1586,8 +1582,8 @@
           if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_DEFAULT; endif
           call string2array(cptrn(1:l),contr_ptrn,l,ierr); l=l+1; contr_ptrn(l:l)=achar(0) !C-string
           if(ierr.eq.0) then
-           if(devk.eq.DEV_DEFAULT.and.devn.eq.DEV_DEFAULT.and.EXECUTION_DEVICE.ge.0) then
-            devn=talsh_kind_dev_id(EXECUTION_DEVICE,devk); devn=DEV_DEFAULT
+           if(devk.eq.DEV_DEFAULT.and.devn.eq.DEV_DEFAULT.and.EXECUTION_DEVICE_KIND.ge.0) then
+            devk=EXECUTION_DEVICE_KIND; devn=EXECUTION_DEVICE_ID
            endif
            ierr=talshTensorContractXL_(contr_ptrn,dtens,ltens,rtens,scale_real,scale_imag,devn,devk,accum)
           else
