@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/05/28
+!REVISION: 2019/05/29
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -67,7 +67,7 @@
              &tens_body_t,tens_rcrsv_t,permutation_t,contr_ptrn_ext_t,&
              &tens_status_t,tens_method_uni_t,tens_printer_t,tens_dense_t
        public tens_dense_volume,tens_rcrsv_destruct
-       public talsh_tens_signature_t,talsh_tens_shape_t,talsh_tens_data_t
+       public talsh_tens_signature_t,talsh_tens_shape_t,talsh_tens_data_t,talsh_tens_t
 !TYPES:
  !ExaTENSOR runtime status:
        type, public:: exatns_rt_status_t
@@ -174,7 +174,7 @@
  !Tensor (Driver only):
        public exatns_tensor_create        !creates an empty tensor with an optional deferred initialization method
        public exatns_tensor_destroy       !destroys a tensor
-       public exatns_tensor_get_slice     !fills in and returns a locally storable selected slice of a tensor (or the full tensor)
+       public exatns_tensor_get_slice     !returns a locally stored copy of a selected slice of a tensor (or the full tensor)
        public exatns_tensor_get_scalar    !retrieves the value of a scalar tensor
        public exatns_tensor_load          !loads a tensor from persistent storage (create + populate)
        public exatns_tensor_save          !saves a tensor to persistent storage
@@ -1250,18 +1250,19 @@
        end function exatns_tensor_destroy
 !------------------------------------------------------------------------
        function exatns_tensor_get_slice(tensor,tensor_slice) result(ierr)
-!Returns a locally storable slice of a tensor.
+!Returns a locally stored copy of a slice of a tensor (or the full tensor).
         implicit none
         integer(INTD):: ierr                             !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor       !in: distributed tensor or tensor slice
-        type(tens_dense_t), intent(inout):: tensor_slice !out: same tensor slice stored locally (allocated locally)
-        real(8), parameter:: SYNC_INTERVAL=1d-3 !synchronization interval
+        type(talsh_tens_t), intent(inout):: tensor_slice !out: same tensor (or slice) stored locally (allocated locally)
+        real(8), parameter:: SYNC_INTERVAL=1d-3 !ExaTENSOR runtime synchronization interval (sec)
         integer(INTL):: slice_bases(MAX_TENSOR_RANK),slice_dims(MAX_TENSOR_RANK),slice_vol
         integer(INTL):: block_bases(MAX_TENSOR_RANK),block_dims(MAX_TENSOR_RANK),block_vol
         integer(INTD):: slice_rank,sdtk,bdtk,n,i,errc
         integer(INTD):: slc_dims(MAX_TENSOR_RANK),blk_dims(MAX_TENSOR_RANK),ext_beg(MAX_TENSOR_RANK)
         integer(INT_MPI):: send_rank
         real(4), allocatable, target:: tens_elems(:)
+        type(C_PTR):: slice_body
         type(pack_env_t):: envelope
         type(comm_handle_t):: comm_handle
         logical:: over,new,symd
@@ -1272,58 +1273,70 @@
 
         ierr=EXA_SUCCESS
         if(tensor%is_set(ierr,num_dims=slice_rank,symmetric=symd)) then
-         if(ierr.eq.TEREC_SUCCESS) then
+         if(ierr.eq.TEREC_SUCCESS.and.(.not.symd)) then !`symmetric tensors are not supported
           sdtk=tensor%get_data_type(ierr)
           if(ierr.eq.TEREC_SUCCESS.and.sdtk.ne.NO_TYPE) then
            call tensor%get_bases(slice_bases,n,ierr)
-           if(ierr.eq.TEREC_SUCCESS) then
+           if(ierr.eq.TEREC_SUCCESS.and.n.eq.slice_rank) then
             call tensor%get_dims(slice_dims,n,ierr)
-            if(ierr.eq.TEREC_SUCCESS) then
-             slice_vol=1_INTL; do i=1,n; slice_vol=slice_vol*slice_dims(i); enddo
-             slc_dims(1:n)=slice_dims(1:n) !`integer overflow possible
-             !`Allocate tensor body
-             select case(sdtk)
-             case(R4)
-              call c_f_pointer(tensor_slice%body_ptr,sr4p,(/slice_vol/))
-             case(R8)
-              call c_f_pointer(tensor_slice%body_ptr,sr8p,(/slice_vol/))
-             case(C4)
-              call c_f_pointer(tensor_slice%body_ptr,sc4p,(/slice_vol/))
-             case(C8)
-              call c_f_pointer(tensor_slice%body_ptr,sc8p,(/slice_vol/))
-             case default
-              ierr=EXA_ERR_UNABLE_COMPLETE
-             end select
+            if(ierr.eq.TEREC_SUCCESS.and.n.eq.slice_rank) then
+             slice_vol=1_INTL; do i=1,slice_rank; slice_vol=slice_vol*slice_dims(i); enddo !tensor volume
+             slc_dims(1:slice_rank)=slice_dims(1:slice_rank) !`integer overflow possible
+             if(.not.talsh_tensor_is_empty(tensor_slice)) then
+              ierr=talsh_tensor_destruct(tensor_slice)
+             endif
              if(ierr.eq.EXA_SUCCESS) then
-              ierr=exatns_tensor_traverse(tensor,'_RetrieveTensor_',sync=.FALSE.)
-              if(ierr.eq.EXA_SUCCESS) then
-               call envelope%reserve_mem(ierr); if(ierr.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
-               over=(ierr.ne.EXA_SUCCESS)
-               do while(.not.over)
-                call comm_handle%clean(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-                new=envelope%receive(comm_handle,ierr,tag=TAVP_TENSOR_TAG,comm=GLOBAL_MPI_COMM)
-                if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-                if(new) then
-                 call comm_handle%wait(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-                 send_rank=envelope%get_tag(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-                 call get_new_tensor_slice(ierr); if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-                 call envelope%clean(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-                endif
-                ierr=exatns_sync(SYNC_INTERVAL); if(ierr.ne.EXA_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
-                over=exatns_synced()
-               enddo
-               call comm_handle%clean(errc); if(ierr.eq.EXA_SUCCESS.and.errc.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
-               call envelope%destroy(errc); if(ierr.eq.EXA_SUCCESS.and.errc.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+              ierr=talsh_tensor_construct(tensor_slice,sdtk,slc_dims(1:slice_rank),in_hab=-1) !construct tensor in regular memory
+              if(ierr.eq.TALSH_SUCCESS) then
+               ierr=talsh_tensor_get_body_access(tensor_slice,slice_body,sdtk,0,DEV_HOST)
               endif
              endif
+             if(ierr.eq.EXA_SUCCESS.and.slice_vol.gt.0) then
+              select case(sdtk)
+              case(R4)
+               call c_f_pointer(slice_body,sr4p,(/slice_vol/))
+              case(R8)
+               call c_f_pointer(slice_body,sr8p,(/slice_vol/))
+              case(C4)
+               call c_f_pointer(slice_body,sc4p,(/slice_vol/))
+              case(C8)
+               call c_f_pointer(slice_body,sc8p,(/slice_vol/))
+              case default
+               ierr=EXA_ERR_UNABLE_COMPLETE
+              end select
+              if(ierr.eq.EXA_SUCCESS) then
+               ierr=exatns_tensor_traverse(tensor,'_RetrieveTensor_',sync=.FALSE.)
+               if(ierr.eq.EXA_SUCCESS) then
+                call envelope%reserve_mem(ierr); if(ierr.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+                over=(ierr.ne.EXA_SUCCESS)
+                do while(.not.over)
+                 call comm_handle%clean(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+                 new=envelope%receive(comm_handle,ierr,tag=TAVP_TENSOR_TAG,comm=GLOBAL_MPI_COMM)
+                 if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+                 if(new) then
+                  call comm_handle%wait(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+                  send_rank=envelope%get_tag(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+                  call get_new_tensor_slice(ierr); if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+                  call envelope%clean(ierr); if(ierr.ne.PACK_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+                 endif
+                 ierr=exatns_sync(SYNC_INTERVAL); if(ierr.ne.EXA_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit; endif
+                 over=exatns_synced()
+                enddo
+                call comm_handle%clean(errc); if(ierr.eq.EXA_SUCCESS.and.errc.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+                call envelope%destroy(errc); if(ierr.eq.EXA_SUCCESS.and.errc.ne.PACK_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+               endif
+              endif
+             else
+              if(ierr.ne.TRY_LATER.and.ierr.ne.DEVICE_UNABLE) ierr=EXA_ERR_UNABLE_COMPLETE
+             endif
             else
-             ierr=EXA_ERR_UNABLE_COMPLETE
+             ierr=EXA_ERR_INVALID_ARGS
             endif
            else
-            ierr=EXA_ERR_UNABLE_COMPLETE
+            ierr=EXA_ERR_INVALID_ARGS
            endif
           else
-           if(ierr.eq.EXA_SUCCESS) ierr=EXA_ERR_INVALID_ARGS
+           ierr=EXA_ERR_INVALID_ARGS
           endif
          else
           ierr=EXA_ERR_INVALID_ARGS
@@ -1377,56 +1390,72 @@
                     if(bdtk.eq.sdtk) then
                      select case(bdtk)
                      case(R4)
-                      call resize_local_buffer(block_vol,1)
-                      block_body=c_loc(tens_elems)
-                      call c_f_pointer(block_body,br4p,(/block_vol/))
-                      call MPI_Recv(br4p,jv,MPI_REAL4,send_rank,TAVP_TENSOR_TAG,GLOBAL_MPI_COMM,stats,jerr)
-                      if(jerr.eq.MPI_SUCCESS) then
-                       if(belongs) then
-                        call tensor_block_insert_dlf(slice_rank,sr4p,slc_dims,br4p,blk_dims,ext_beg,jerr,beta=0.0)
-                        if(jerr.ne.0) jerr=-20
+                      jerr=resize_local_buffer(block_vol,1)
+                      if(jerr.eq.0) then
+                       block_body=c_loc(tens_elems)
+                       call c_f_pointer(block_body,br4p,(/block_vol/))
+                       call MPI_Recv(br4p,jv,MPI_REAL4,send_rank,TAVP_TENSOR_TAG,GLOBAL_MPI_COMM,stats,jerr)
+                       if(jerr.eq.MPI_SUCCESS) then
+                        if(belongs) then
+                         call tensor_block_insert_dlf(slice_rank,sr4p,slc_dims,br4p,blk_dims,ext_beg,jerr,beta=0.0)
+                         if(jerr.ne.0) jerr=-20
+                        endif
+                       else
+                        jerr=-19
                        endif
                       else
-                       jerr=-19
+                       jerr=TRY_LATER
                       endif
                      case(R8)
-                      call resize_local_buffer(block_vol,2)
-                      block_body=c_loc(tens_elems)
-                      call c_f_pointer(block_body,br8p,(/block_vol/))
-                      call MPI_Recv(br8p,jv,MPI_REAL8,send_rank,TAVP_TENSOR_TAG,GLOBAL_MPI_COMM,stats,jerr)
-                      if(jerr.eq.MPI_SUCCESS) then
-                       if(belongs) then
-                        call tensor_block_insert_dlf(slice_rank,sr8p,slc_dims,br8p,blk_dims,ext_beg,jerr,beta=0d0)
-                        if(jerr.ne.0) jerr=-18
+                      jerr=resize_local_buffer(block_vol,2)
+                      if(jerr.eq.0) then
+                       block_body=c_loc(tens_elems)
+                       call c_f_pointer(block_body,br8p,(/block_vol/))
+                       call MPI_Recv(br8p,jv,MPI_REAL8,send_rank,TAVP_TENSOR_TAG,GLOBAL_MPI_COMM,stats,jerr)
+                       if(jerr.eq.MPI_SUCCESS) then
+                        if(belongs) then
+                         call tensor_block_insert_dlf(slice_rank,sr8p,slc_dims,br8p,blk_dims,ext_beg,jerr,beta=0d0)
+                         if(jerr.ne.0) jerr=-18
+                        endif
+                       else
+                        jerr=-17
                        endif
                       else
-                       jerr=-17
+                       jerr=TRY_LATER
                       endif
                      case(C4)
-                      call resize_local_buffer(block_vol,2)
-                      block_body=c_loc(tens_elems)
-                      call c_f_pointer(block_body,bc4p,(/block_vol/))
-                      call MPI_Recv(bc4p,jv,MPI_COMPLEX8,send_rank,TAVP_TENSOR_TAG,GLOBAL_MPI_COMM,stats,jerr)
-                      if(jerr.eq.MPI_SUCCESS) then
-                       if(belongs) then
-                        call tensor_block_insert_dlf(slice_rank,sc4p,slc_dims,bc4p,blk_dims,ext_beg,jerr,beta=(0.0,0.0))
-                        if(jerr.ne.0) jerr=-16
+                      jerr=resize_local_buffer(block_vol,2)
+                      if(jerr.eq.0) then
+                       block_body=c_loc(tens_elems)
+                       call c_f_pointer(block_body,bc4p,(/block_vol/))
+                       call MPI_Recv(bc4p,jv,MPI_COMPLEX8,send_rank,TAVP_TENSOR_TAG,GLOBAL_MPI_COMM,stats,jerr)
+                       if(jerr.eq.MPI_SUCCESS) then
+                        if(belongs) then
+                         call tensor_block_insert_dlf(slice_rank,sc4p,slc_dims,bc4p,blk_dims,ext_beg,jerr,beta=(0.0,0.0))
+                         if(jerr.ne.0) jerr=-16
+                        endif
+                       else
+                        jerr=-15
                        endif
                       else
-                       jerr=-15
+                       jerr=TRY_LATER
                       endif
                      case(C8)
-                      call resize_local_buffer(block_vol,4)
-                      block_body=c_loc(tens_elems)
-                      call c_f_pointer(block_body,bc8p,(/block_vol/))
-                      call MPI_Recv(bc8p,jv,MPI_COMPLEX16,send_rank,TAVP_TENSOR_TAG,GLOBAL_MPI_COMM,stats,jerr)
-                      if(jerr.eq.MPI_SUCCESS) then
-                       if(belongs) then
-                        call tensor_block_insert_dlf(slice_rank,sc8p,slc_dims,bc8p,blk_dims,ext_beg,jerr,beta=(0d0,0d0))
-                        if(jerr.ne.0) jerr=-14
+                      jerr=resize_local_buffer(block_vol,4)
+                      if(jerr.eq.0) then
+                       block_body=c_loc(tens_elems)
+                       call c_f_pointer(block_body,bc8p,(/block_vol/))
+                       call MPI_Recv(bc8p,jv,MPI_COMPLEX16,send_rank,TAVP_TENSOR_TAG,GLOBAL_MPI_COMM,stats,jerr)
+                       if(jerr.eq.MPI_SUCCESS) then
+                        if(belongs) then
+                         call tensor_block_insert_dlf(slice_rank,sc8p,slc_dims,bc8p,blk_dims,ext_beg,jerr,beta=(0d0,0d0))
+                         if(jerr.ne.0) jerr=-14
+                        endif
+                       else
+                        jerr=-13
                        endif
                       else
-                       jerr=-13
+                       jerr=TRY_LATER
                       endif
                      case default
                       jerr=-12
@@ -1468,22 +1497,23 @@
           return
          end subroutine get_new_tensor_slice
 
-         subroutine resize_local_buffer(volume,scaling)
+         integer function resize_local_buffer(volume,scaling)
           integer(INTL), intent(in):: volume
           integer(INTD), intent(in):: scaling
           integer(INTL):: tesz
 
+          resize_local_buffer=0
           tesz=volume*scaling !size in real4 elements
           if(allocated(tens_elems)) then
            if(size(tens_elems).lt.tesz) then
             deallocate(tens_elems)
-            allocate(tens_elems(tesz))
+            allocate(tens_elems(tesz),STAT=resize_local_buffer)
            endif
           else
-           allocate(tens_elems(tesz))
+           allocate(tens_elems(tesz),STAT=resize_local_buffer)
           endif
           return
-         end subroutine resize_local_buffer
+         end function resize_local_buffer
 
          logical function block_belongs_to_slice(jerr)
           integer(INTD), intent(out):: jerr

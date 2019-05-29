@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/02/15
+!REVISION: 2019/05/29
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -47,6 +47,7 @@
 
        module qforce_test
         use exatensor
+        use talsh
         use service_mpi
         use stsubs, only: wait_delay
         use, intrinsic:: ISO_C_BINDING
@@ -177,10 +178,11 @@
          type(tens_init_test_t):: init1369
          type(tens_trans_test_t):: div761
          type(tens_printer_t):: tens_printer
+         type(talsh_tens_t):: local_tensor
          integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role,hsp(1:MAX_TENSOR_RANK)
-         integer(INTL):: l,ao_space_root,ssp(1:MAX_TENSOR_RANK)
+         integer(INTL):: l,ao_space_root,ssp(1:MAX_TENSOR_RANK),dvol
          complex(8):: etens_value
-         real(8):: tms,tmf
+         real(8):: tms,tmf,dnorm
 
          call MPI_Comm_size(MPI_COMM_WORLD,comm_size,ierr)
          call MPI_Comm_rank(MPI_COMM_WORLD,my_rank,ierr)
@@ -240,6 +242,8 @@
           ierr=exatns_process_role(my_role)
           if(my_role.eq.EXA_DRIVER) then
 !Driver drives tensor workload:
+           ierr=talsh_init()
+           if(ierr.ne.TALSH_SUCCESS) call quit(ierr,'talsh_init() failed!')
  !Create tensors:
            ao_space_root=ao_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
   !etens (scalar):
@@ -375,6 +379,17 @@
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_get_scalar() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: Value = (",D21.14,1x,D21.14,"):",F16.4," sec")') etens_value,tmf-tms; flush(6)
+ !Retrieve tensor dtens directly:
+           write(6,'("Retrieving directly tensor dtens ... ")'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_get_slice(dtens,local_tensor)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_get_slice() failed!')
+           tmf=MPI_Wtime()
+           dvol=talsh_tensor_volume(local_tensor)
+           dnorm=talshTensorImageNorm1_cpu(local_tensor)
+           write(6,'("Ok: Norm1 = ",D21.14,": ", F16.4," sec")') (dnorm**2/dble(dvol)),tmf-tms; flush(6)
+           ierr=talsh_tensor_destruct(local_tensor)
+           if(ierr.ne.TALSH_SUCCESS) call quit(ierr,'talsh_tensor_destuct() failed!')
  !Destroy tensors:
   !rtens:
            write(6,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)
@@ -438,6 +453,9 @@
            !ierr=exatns_dump_cache()
            !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
            !write(6,'("Tensor cache dumped")')
+ !Stop TAL-SH (driver):
+           ierr=talsh_shutdown()
+           if(ierr.ne.TALSH_SUCCESS) call quit(ierr,'talsh_shutdown() failed!')
  !Stop ExaTENSOR runtime:
            ierr=exatns_stop()
           endif

@@ -1,0 +1,23 @@
+ExaTENSOR library: MPI Communication Information:
+
+MPI communication:
+ (a) All but one MPI processes perform all MPI communications from inside a multithreaded region.
+     MPI_Init_thread() call is used for MPI initialization in MPI_THREAD_MULTIPLE mode.
+ (b) All MPI processes are performing small (~10KB) frequent two-sided Isend/Improbe/Imrecv calls
+     to communicate metadata. MPI_Improbe mostly discovers nothing, that is, actual Isend/Imrecv
+     are less frequent. These MPI calls are used to deliver/retire computational tasks.
+     Multiple threads per MPI process may issue these small two-sided non-blocking MPI calls.
+ (c) In addition, the majority of MPI processes also perform large (up to ~1GB) irregular one-sided
+     MPI communications among themselves. These MPI processes have a dedicated thread to perform large
+     one-sided communications, and another two dedicated threads to perform small two-sided communications
+     mentioned above. The two-sided communications are performed over an inter-communicator whereas
+     the one-sided communications are performed over an intra-communicator. These one-sided communications
+     are the passive-target request-based MPI-3 one-sided communications over dynamic MPI windows, that is,
+     a single dedicated thread in each of these multithreaded MPI processes posts a number of MPI_Rget() calls
+     and then later periodically checks for their completion via MPI_Test(), and repeats the whole cycle again.
+     The shared MPI lock for each MPI rank is obtained only once, and released at the very end via MPI_Win_Unlock.
+     This optimization is absolutely necessary as I observe very slow MPI_Win_lock/MPI_Win_unlock/MPI_Win_flush.
+     No data is attached/detached to/from dynamic MPI windows during the communication epoch, only in between them.
+
+Dmitry Liakh: liakhdi@ornl.gov
+Oak Ridge Leadership Computing Facility

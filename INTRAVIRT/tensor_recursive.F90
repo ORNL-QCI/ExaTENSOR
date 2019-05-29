@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/03/05
+!REVISION: 2019/05/29
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -153,6 +153,7 @@
           procedure, public:: get_spec=>TensSignatureGetSpec        !returns the tensor subspace multi-index (specification)
           procedure, public:: get_space_ids=>TensSignatureGetSpaceIds !returns space/subspace id for all tensor dimensions
           procedure, public:: get_bases=>TensSignatureGetBases      !returns the base offset for each tensor dimension
+          procedure, public:: get_dims=>TensSignatureGetDims        !returns full extents of all tensor dimensions
           procedure, public:: relate=>TensSignatureRelate           !relates the tensor signature to another tensor signature: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
           procedure, public:: compare=>TensSignatureCompare         !compares the tensor signature with another tensor signature: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: compare_spec=>TensSignatureCompareSpec!compares the space/subspace multi-indices only: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
@@ -655,6 +656,7 @@
         private TensSignatureGetSpec
         private TensSignatureGetSpaceIds
         private TensSignatureGetBases
+        private TensSignatureGetDims
         private TensSignatureRelate
         private TensSignatureCompare
         private TensSignatureCompareSpec
@@ -1882,6 +1884,35 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignatureGetBases
+!---------------------------------------------------------------
+        subroutine TensSignatureGetDims(this,dims,num_dims,ierr)
+!Returns extents of all tensor dimensions.
+         implicit none
+         class(tens_signature_t), intent(in):: this  !in: tensor signature
+         integer(INTL), intent(inout):: dims(1:)     !out: tensor dimension extents
+         integer(INTD), intent(out):: num_dims       !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         integer(INTL):: sid
+         class(subspace_t), pointer:: subspace
+         type(seg_int_t):: range
+
+         errc=TEREC_SUCCESS; num_dims=this%num_dims
+         do i=1,this%num_dims
+          sid=this%space_idx(i)
+          if(associated(this%hspace(i)%hspace_p)) then
+           subspace=>this%hspace(i)%hspace_p%get_subspace(sid,errc)
+           if(errc.ne.0) then; errc=TEREC_ERROR; exit; endif
+           range=subspace%get_basis_subrange(errc)
+           if(errc.ne.0) then; errc=TEREC_ERROR; exit; endif
+           dims(i)=range%length()
+          else
+           errc=TEREC_UNABLE_COMPLETE; exit
+          endif
+         enddo
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensSignatureGetDims
 !------------------------------------------------------------------
         function TensSignatureRelate(this,another) result(relation)
 !Relates the tensor signature to another tensor signature.
@@ -3103,6 +3134,7 @@
          integer(INTD):: errc
 
          call this%shape%get_dims(dims,num_dims,errc)
+         if(errc.eq.TEREC_INVALID_REQUEST) call this%signature%get_dims(dims,num_dims,errc) !if shape is not defined yet explicitly
          if(present(ierr)) ierr=errc
          return
         end subroutine TensHeaderGetDims
