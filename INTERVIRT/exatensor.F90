@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/05/29
+!REVISION: 2019/05/30
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -1375,8 +1375,8 @@
               if(jerr.eq.TEREC_SUCCESS) then
                call tens_block%get_dims(block_dims,jn,jerr)
                if(jerr.eq.TEREC_SUCCESS) then
-                write(CONS_OUT,'("#DEBUG(exatns_tensor_get_slice): Receiving tensor block from process ",i6,":")') send_rank !debug
-                write(CONS_OUT,'(" Tensor block:",32(1x,i9,":",i9,","))') (/((/block_bases(jj),block_dims(jj)/),jj=1,jn)/) !debug
+                !write(CONS_OUT,'("#DEBUG(exatns_tensor_get_slice): Receiving tensor block from process ",i6,":")') send_rank !debug
+                !write(CONS_OUT,'(" Tensor block:",32(1x,i9,":",i9,","))') (/((/block_bases(jj),block_dims(jj)/),jj=1,jn)/) !debug
                 blk_dims(1:jn)=block_dims(1:jn) !`integer overlflow possible
                 belongs=block_belongs_to_slice(jerr)
                 if(jerr.eq.0) then

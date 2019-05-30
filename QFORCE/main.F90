@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/05/29
+!REVISION: 2019/05/30
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -373,21 +373,21 @@
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Retrieve scalar etens directly:
-           write(6,'("Retrieving directly scalar etens ... ")'); flush(6)
+           write(6,'("Retrieving directly scalar etens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_get_scalar(etens,etens_value)
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_get_scalar() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: Value = (",D21.14,1x,D21.14,"):",F16.4," sec")') etens_value,tmf-tms; flush(6)
  !Retrieve tensor dtens directly:
-           write(6,'("Retrieving directly tensor dtens ... ")'); flush(6)
+           write(6,'("Retrieving directly tensor dtens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_get_slice(dtens,local_tensor)
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_get_slice() failed!')
            tmf=MPI_Wtime()
            dvol=talsh_tensor_volume(local_tensor)
            dnorm=talshTensorImageNorm1_cpu(local_tensor)
-           write(6,'("Ok: Norm1 = ",D21.14,": ", F16.4," sec")') (dnorm**2/dble(dvol)),tmf-tms; flush(6)
+           write(6,'("Ok: Norm = ",D21.14,": ", F16.4," sec")') (dnorm**2/dble(dvol)),tmf-tms; flush(6)
            ierr=talsh_tensor_destruct(local_tensor)
            if(ierr.ne.TALSH_SUCCESS) call quit(ierr,'talsh_tensor_destuct() failed!')
  !Destroy tensors:
