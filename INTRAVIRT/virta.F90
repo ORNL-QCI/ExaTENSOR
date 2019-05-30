@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/05/11
+!REVISION: 2019/05/30
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2338,22 +2338,26 @@
            integer(INTD), intent(out):: jerr
 
            jerr=0
+!!!$OMP CRITICAL (IO)
+!           write(jo,'("#DEBUG(tens_tensor_get_t.apply): Sending tensor block to Driver: Volume = ",i13)') vol !debug
+!!!$OMP END CRITICAL (IO)
+!           flush(jo)
            select case(data_kind)
            case(R4)
             call c_f_pointer(body_p,r4p,(/vol/))
-            call MPI_Send(r4p,int(vol,INT_MPI),MPI_REAL4,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
+            call MPI_Ssend(r4p,int(vol,INT_MPI),MPI_REAL4,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
             if(jerr.ne.MPI_SUCCESS) jerr=-5
            case(R8)
             call c_f_pointer(body_p,r8p,(/vol/))
-            call MPI_Send(r8p,int(vol,INT_MPI),MPI_REAL8,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
+            call MPI_Ssend(r8p,int(vol,INT_MPI),MPI_REAL8,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
             if(jerr.ne.MPI_SUCCESS) jerr=-4
            case(C4)
             call c_f_pointer(body_p,c4p,(/vol/))
-            call MPI_Send(c4p,int(vol,INT_MPI),MPI_COMPLEX8,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
+            call MPI_Ssend(c4p,int(vol,INT_MPI),MPI_COMPLEX8,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
             if(jerr.ne.MPI_SUCCESS) jerr=-3
            case(C8)
             call c_f_pointer(body_p,c8p,(/vol/))
-            call MPI_Send(c8p,int(vol,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
+            call MPI_Ssend(c8p,int(vol,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_TENSOR_TAG,this%receive_comm,jerr)
             if(jerr.ne.MPI_SUCCESS) jerr=-2
            case default
             jerr=-1

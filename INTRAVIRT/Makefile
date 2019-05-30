@@ -151,10 +151,14 @@ LIB_CRAY = -L.
 LIB_IBM = -L.
 LIB_NOWRAP = $(LIB_$(TOOLKIT))
 LIB_WRAP = -L.
-ifeq ($(TOOLKIT),PGI)
+ifeq ($(EXA_OS),LINUX)
  LIB = $(LIB_$(WRAP)) -lstdc++
 else
+ifeq ($(TOOLKIT),INTEL)
+ LIB = $(LIB_$(WRAP)) -lc++
+else
  LIB = $(LIB_$(WRAP)) -lstdc++
+endif
 endif
 
 #MPI INCLUDES:
