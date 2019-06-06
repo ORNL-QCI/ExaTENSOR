@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2019/05/23
+!REVISION: 2019/06/06
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -255,6 +255,14 @@
           integer(C_INT), intent(out):: num_images
           integer(C_INT), intent(inout):: data_kinds(*)
          end function talshTensorDataKind
+  !Reshape the tensor to a compatible shape (same volume):
+         integer(C_INT) function talshTensorReshape(tens_block,tens_rank,tens_dims) bind(c,name='talshTensorReshape')
+          import
+          implicit none
+          type(talsh_tens_t), intent(inout):: tens_block
+          integer(C_INT), intent(in), value:: tens_rank
+          integer(C_INT), intent(in):: tens_dims(*)
+         end function talshTensorReshape
   !Query the presence of the tensor block on device(s):
          integer(C_INT) function talshTensorPresence_(tens_block,ncopies,copies,data_kinds,dev_kind,dev_id)&
                                  &bind(c,name='talshTensorPresence_')
@@ -556,6 +564,7 @@
         public talsh_tensor_dimensions
         public talsh_tensor_shape
         public talsh_tensor_data_kind
+        public talsh_tensor_reshape
         public talsh_tensor_presence
         public talsh_tensor_get_body_access
         public talsh_tensor_get_scalar
@@ -1187,6 +1196,18 @@
          ierr=talshTensorDataKind(tens_block,num_images,data_kinds)
          return
         end function talsh_tensor_data_kind
+!-----------------------------------------------------------------------
+        function talsh_tensor_reshape(tens_block,tens_dims) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                          !out: error code (0:success)
+         type(talsh_tens_t), intent(inout):: tens_block !inout: tensor block
+         integer(INTD), intent(in):: tens_dims(1:)      !in: new tensor dimension extents (compatible by volume)
+         integer(C_INT):: tens_rank,dims(1:MAX_TENSOR_RANK)
+         tens_rank=size(tens_dims)
+         if(tens_rank.gt.0) dims(1:tens_rank)=tens_dims(1:tens_rank)
+         ierr=talshTensorReshape(tens_block,tens_rank,dims)
+         return
+        end function talsh_tensor_reshape
 !--------------------------------------------------------------------------------------------------------
         function talsh_tensor_presence(tens_block,ncopies,copies,data_kinds,dev_kind,dev_id) result(ierr)
          implicit none
