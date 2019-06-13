@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/05/12
+!REVISION: 2019/06/13
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -1248,8 +1248,8 @@
          integer(INTD):: errc
          integer(INTL):: bytes,ext
          type(C_PTR):: addr
-         integer(1), pointer:: i1(:)
-         integer(4), pointer:: i4(:)
+         integer(1), pointer, contiguous:: i1(:)
+         integer(4), pointer, contiguous:: i4(:)
 
          call prof_push('ZeroBuffer'//CHAR_NULL,9)
          if(.not.this%is_empty(errc)) then
