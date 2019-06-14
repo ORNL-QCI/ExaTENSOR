@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/06/13
+!REVISION: 2019/06/14
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -90,7 +90,7 @@
  !Elementary tensor instruction granularity classification:
         real(8), protected:: TAVP_WRK_FLOPS_HEAVY=1d11  !minimal number of Flops to consider the operation as heavy-cost
         real(8), protected:: TAVP_WRK_FLOPS_MEDIUM=1d9  !minimal number of Flops to consider the operation as medium-cost
-        real(8), protected:: TAVP_WRK_COST_TO_SIZE=1d2  !minimal cost (Flops) to size (Words) ratio to consider the operation arithmetically intensive
+        real(8), protected:: TAVP_WRK_COST_TO_SIZE=1d1  !minimal cost (Flops) to size (Words) ratio to consider the operation arithmetically intensive
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=64_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=16384                        !max number of tensor instructions in a bytecode envelope
@@ -2873,20 +2873,32 @@
                          flush(CONS_OUT)
                         endif
                        else
-                        if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
-                        call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-15 !local buffer has been accumulated, thus must be reset to zero
+                        if(associated(this%cache_entry)) then
+                         call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                         call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
+                         call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
+                        endif
+                       !call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-15 !local buffer has been accumulated, thus must be reset to zero
                        endif
                       else !regular one-sided communication
                        if(COMMUNICATOR_BLOCKING) then
                         if(.not.COMMUNICATOR_NO_UPLOAD) call descr%acc_data(cptr,errc,MPI_ASYNC_NOT)
-                        if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
-                        call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-14 !local buffer has been accumulated, thus must be reset to zero
+                        if(associated(this%cache_entry)) then
+                         call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                         call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
+                         call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
+                        endif
+                       !call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-14 !local buffer has been accumulated, thus must be reset to zero
                        else
                         if(.not.COMMUNICATOR_NO_UPLOAD) then
                          call descr%acc_data(cptr,errc,MPI_ASYNC_NRM)
                         else
-                         if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
-                         call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-13 !local buffer has been accumulated, thus must be reset to zero
+                         if(associated(this%cache_entry)) then
+                          call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                          call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
+                          call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
+                         endif
+                        !call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-13 !local buffer has been accumulated, thus must be reset to zero
                         endif
                        endif
                        if(errc.eq.0.and.DEBUG.gt.1.and.(.not.COMMUNICATOR_NO_UPLOAD)) then
@@ -3022,8 +3034,12 @@
                  if(sts.eq.DS_OPRND_FETCHING) then
                   if(associated(this%cache_entry)) call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
                  elseif(sts.eq.DS_OPRND_UPLOADING) then
-                  if(associated(this%cache_entry)) call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
-                  call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-8 !local buffer has been accumulated, thus must be reset to zero
+                  if(associated(this%cache_entry)) then
+                   call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                   call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
+                   call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
+                  endif
+                 !call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-8 !local buffer has been accumulated, thus must be reset to zero
                  else
                   errc=-7 !trap
                  endif
@@ -7558,7 +7574,8 @@
             class is(tens_oprnd_t)
              temp=oprnd%is_temporary(ier)
              if(ier.eq.0) then
-              call oprnd%acquire_rsc(ier,init_rsc=(op_output.and.temp)) !initialization to zero is only done for temporary output operands
+             !call oprnd%acquire_rsc(ier,init_rsc=(op_output.and.temp)) !initialization to zero is only done for temporary output operands
+              call oprnd%acquire_rsc(ier,init_rsc=.FALSE.) !tensor initialization is delegated to Dispatcher
               if(ier.eq.0) then
                if(DEBUG.gt.0) then
                 pres=oprnd%is_present()
@@ -8871,10 +8888,10 @@
          class(tens_entry_wrk_t), pointer:: cache_entry
          type(DataDescr_t):: descr
          type(C_PTR):: mem_p
-         real(4), pointer:: arr_r4(:)
-         real(8), pointer:: arr_r8(:)
-         complex(4), pointer:: arr_c4(:)
-         complex(8), pointer:: arr_c8(:)
+         real(4), pointer, contiguous:: arr_r4(:)
+         real(8), pointer, contiguous:: arr_r8(:)
+         complex(4), pointer, contiguous:: arr_c4(:)
+         complex(8), pointer, contiguous:: arr_c8(:)
 !$OMP FLUSH
          oprnd=>tens_instr%get_operand(0,errc)
          if(errc.eq.DSVP_SUCCESS) then
@@ -8913,21 +8930,37 @@
                       errc=-14
                      endif
                      if(errc.eq.0) then
-!Init the just created persistent tensor to zero: `Initialization to zero should be multithreaded because of NUMA
+!Init the just created persistent tensor to zero:
                       if(TAVP_WRK_ZERO_ON_CREATE) then
                        select case(dtk)
                        case(R4)
                         call c_f_pointer(mem_p,arr_r4,(/vol/))
-                        do i=1,vol; arr_r4(i)=0.0; enddo
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i) SCHEDULE(GUIDED)
+                        do i=1,vol
+                         arr_r4(i)=0.0
+                        enddo
+!$OMP END PARALLEL DO
                        case(R8)
                         call c_f_pointer(mem_p,arr_r8,(/vol/))
-                        do i=1,vol; arr_r8(i)=0d0; enddo
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i) SCHEDULE(GUIDED)
+                        do i=1,vol
+                         arr_r8(i)=0d0
+                        enddo
+!$OMP END PARALLEL DO
                        case(C4)
                         call c_f_pointer(mem_p,arr_c4,(/vol/))
-                        do i=1,vol; arr_c4(i)=(0.0,0.0); enddo
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i) SCHEDULE(GUIDED)
+                        do i=1,vol
+                         arr_c4(i)=(0.0,0.0)
+                        enddo
+!$OMP END PARALLEL DO
                        case(C8)
                         call c_f_pointer(mem_p,arr_c8,(/vol/))
-                        do i=1,vol; arr_c8(i)=(0d0,0d0); enddo
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i) SCHEDULE(GUIDED)
+                        do i=1,vol
+                         arr_c8(i)=(0d0,0d0)
+                        enddo
+!$OMP END PARALLEL DO
                        case default
                         errc=-13
                        end select
@@ -9058,7 +9091,7 @@
         end subroutine TAVPWRKExecTensorDestroy
 !--------------------------------------------------------------------
         subroutine TAVPWRKExecTensorInit(this,tens_instr,ierr,dev_id)
-!Executes tensor initialization.
+!Executes tensor initialization/transformation.
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK Dispatcher
          class(tens_instr_t), intent(inout):: tens_instr    !inout: active tensor instruction
@@ -9109,7 +9142,7 @@
                 errc=-8
                endif
               else
- !Initialization to a scalar:
+ !Initialization to a scalar value:
                errc=talsh_tensor_init(tens0,val=alpha,dev_id=dev,copy_ctrl=COPY_T,talsh_task=tens_instr%talsh_task)
                if(errc.ne.TALSH_SUCCESS) then
                 if(errc.eq.TRY_LATER) then
@@ -9195,7 +9228,7 @@
                   if(errc.eq.0.and.cpl.gt.0) then
                    do i=1,cpl; str_ptrn(i:i)=char_ptrn(i); enddo
                    errc=talsh_tensor_contract(str_ptrn(1:cpl),tens0,tens1,tens2,prefactor,dev_id=dev,copy_ctrl=COPY_TTT,&
-                   &accumulative=.TRUE.,talsh_task=tens_instr%talsh_task)
+                   &accumulative=.FALSE.,talsh_task=tens_instr%talsh_task)
                    if(errc.ne.TALSH_SUCCESS) then
                     if(errc.eq.TRY_LATER) then
                      ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-12
@@ -9299,23 +9332,31 @@
                  i=index(str_ptrn(1:cpl),'*R()'); if(i.gt.0) cpl=i-1
                  if(cpl.gt.0) then
                   if(.not.COMMUNICATOR_NO_UPLOAD) then !ignore local Accumulates if tensor uploading is disabled
-                   errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,copy_ctrl=COPY_TT,&
-                   &talsh_task=tens_instr%talsh_task)
-                   if(errc.ne.TALSH_SUCCESS) then
-                    if(errc.eq.TRY_LATER) then
-                     ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-10
-                    else
-                     if(VERBOSE) then
+                   if(.not.op0%cache_entry%is_persistent()) then !initialize Accumulator to zero upon first encounter
+                    errc=talsh_tensor_init(tens0,(0d0,0d0),dev_id=0,dev_kind=DEV_HOST,copy_ctrl=COPY_M)
+                    if(errc.eq.TALSH_SUCCESS) call op0%cache_entry%set_persistency(.TRUE.)
+                   endif
+                   if(errc.eq.0) then
+                    errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,copy_ctrl=COPY_TT,&
+                    &talsh_task=tens_instr%talsh_task)
+                    if(errc.ne.TALSH_SUCCESS) then
+                     if(errc.eq.TRY_LATER) then
+                      ier=talsh_task_destruct(tens_instr%talsh_task); if(ier.ne.TALSH_SUCCESS) errc=-11
+                     else
+                      if(VERBOSE) then
 !$OMP CRITICAL (IO)
-                      call talsh_task_print_info(tens_instr%talsh_task)
-                      write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)')&
-                      &errc
+                       call talsh_task_print_info(tens_instr%talsh_task)
+                       write(CONS_OUT,'("#ERROR(TAVP-WRK:Microcode:TensorAccumulate): talsh_tensor_add failed with error ",i11)')&
+                       &errc
 !$OMP END CRITICAL (IO)
-                      flush(CONS_OUT)
-                      !write(6,*) dev,str_ptrn(1:cpl); call talsh_tensor_print_info(tens0); call talsh_tensor_print_info(tens1) !debug
+                       flush(CONS_OUT)
+                       !write(6,*) dev,str_ptrn(1:cpl); call talsh_tensor_print_info(tens0); call talsh_tensor_print_info(tens1) !debug
+                      endif
+                      errc=-10
                      endif
-                     errc=-9
                     endif
+                   else
+                    errc=-9
                    endif
                   endif
                  else
