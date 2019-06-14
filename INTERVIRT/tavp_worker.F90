@@ -2629,7 +2629,7 @@
          class(tens_layout_t), pointer:: layout
          logical:: init_zero
 
-         call prof_push('Acquire'//CHAR_NULL,0)
+         call prof_push('Acquire'//CHAR_NULL,10)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock()
@@ -2709,7 +2709,7 @@
          type(C_PTR):: cptr
          logical:: remot
 
-         call prof_push('Prefetch'//CHAR_NULL,1)
+         call prof_push('Prefetch'//CHAR_NULL,11)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock() !`This lock includes blocking communication time
@@ -2837,7 +2837,7 @@
          type(C_PTR):: cptr
          logical:: temporary,accumulator,located,remote,skip_acc
 
-         call prof_push('Upload'//CHAR_NULL,2)
+         call prof_push('Upload'//CHAR_NULL,12)
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock() !`This lock includes blocking communication time
@@ -2983,7 +2983,7 @@
          class(DataDescr_t), pointer:: descr
          logical:: tw
 
-         call prof_push('SyncComm'//CHAR_NULL,3)
+        !call prof_push('SyncComm'//CHAR_NULL,13)
          res=.FALSE.; tw=.TRUE.; if(present(wait)) tw=wait
          if(this%is_active(errc)) then
           if(errc.eq.0) then
@@ -3073,7 +3073,7 @@
           flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
-         call prof_pop()
+        !call prof_pop()
          return
         end function TensOprndSync
 !------------------------------------------------
@@ -8651,7 +8651,7 @@
          procedure(tavp_wrk_dispatch_proc_i), pointer:: iproc
          real(8):: flops,words,arint
 
-         call prof_push('Issue'//CHAR_NULL,4)
+         call prof_push('Issue'//CHAR_NULL,14)
          errc=0; ier=0
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -8794,7 +8794,7 @@
          logical:: wt
          real(8):: flops
 
-         call prof_push('SyncIssue'//CHAR_NULL,5)
+        !call prof_push('SyncIssue'//CHAR_NULL,15)
          errc=0; res=.FALSE.
          if(talsh_task_status(tens_instr%talsh_task).eq.TALSH_TASK_EMPTY) then
           res=.TRUE.; sts=TALSH_TASK_COMPLETED
@@ -8863,7 +8863,7 @@
           if(ier.ne.0.and.errc.eq.0) errc=-1
          endif
          if(present(ierr)) ierr=errc
-         call prof_pop()
+        !call prof_pop()
          return
         end function TAVPWRKDispatcherSyncInstr
 !----------------------------------------------------------------------
@@ -9109,7 +9109,7 @@
          complex(8):: alpha
          logical:: defined
 
-         call prof_push('TensorInit'//CHAR_NULL,10)
+         call prof_push('TensorInit'//CHAR_NULL,16)
 !$OMP FLUSH
          errc=0
          dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
@@ -9198,7 +9198,7 @@
          class(ctrl_tens_contr_t), pointer:: ctrl_contract
          type(contr_ptrn_ext_t), pointer:: contr_ptrn_ext
 
-         call prof_push('TensorContract'//CHAR_NULL,11)
+         call prof_push('TensorContract'//CHAR_NULL,17)
 !$OMP FLUSH
          errc=0
          dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
@@ -9300,7 +9300,7 @@
          class(tens_cache_entry_t), pointer:: cache_entry
          type(permutation_t), pointer:: permut
 
-         call prof_push('TensorAccumulate'//CHAR_NULL,12)
+         call prof_push('TensorAccumulate'//CHAR_NULL,18)
 !$OMP FLUSH
          errc=0
          dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
