@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/06/14
+!REVISION: 2019/06/16
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -116,6 +116,7 @@
  !Dispatcher:
         logical, private:: DISPATCHER_CPU_PARALLEL=.TRUE.       !parallel vs serial execution of numerical operations on CPU
         logical, private:: DISPATCHER_SYNC_WAIT=.FALSE.         !wait versus test semantics for insruction execution synchronization
+        logical, private:: DISPATCHER_ACC_RAND=.TRUE.           !randomized dispatch of TENS_ACCUMULATE intsructions on accelerators
         integer(INTD), private:: MAX_DISPATCHER_INTAKE=64       !max number of instructions taken from the port at a time
         real(8), private:: DISPATCHER_DEFERRED_PAUSE=1d-4       !enforced pause to a Dispatcher before issuing the next instruction after the previous one has been deferred
         logical, private:: ACCELERATOR_ONLY=.TRUE.              !DEBUG: if TRUE, all tensor contractions will be executed on accelerators
@@ -8721,7 +8722,7 @@
            integer(INTD), pointer:: dev_list(:)
            real(8), pointer:: curr_load(:)
            integer(INTD):: jj
-           real(8):: min_load
+           real(8):: min_load,rnd
 
            devk=DEV_HOST; devn=0 !defaults to (multicore) HOST
            if(opcode.eq.TAVP_INSTR_TENS_CONTRACT.or.(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE.and.ACCELERATOR_ONLY)) then
@@ -8735,12 +8736,17 @@
               devk=DEV_AMD_GPU; dev_list=>this%amd_list; curr_load(0:)=>this%amd_flops
              endif
              if(associated(dev_list)) then
-              jj=lbound(dev_list,1); devn=dev_list(jj); min_load=curr_load(devn)
-              do jj=lbound(dev_list,1)+1,ubound(dev_list,1)
-               if(curr_load(dev_list(jj)).lt.min_load) then
-                devn=dev_list(jj); min_load=curr_load(devn)
-               endif
-              enddo
+              if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE.and.DISPATCHER_ACC_RAND) then
+               call random_number(rnd)
+               devn=dev_list(min(lbound(dev_list,1)+int(real(size(dev_list),8)*rnd),ubound(dev_list,1)))
+              else
+               jj=lbound(dev_list,1); devn=dev_list(jj); min_load=curr_load(devn)
+               do jj=lbound(dev_list,1)+1,ubound(dev_list,1)
+                if(curr_load(dev_list(jj)).lt.min_load) then
+                 devn=dev_list(jj); min_load=curr_load(devn)
+                endif
+               enddo
+              endif
              else
               devk=DEV_HOST
              endif
