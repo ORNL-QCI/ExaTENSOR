@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/06/16
+!REVISION: 2019/06/21
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -78,7 +78,7 @@
         integer(INTD), private:: CONS_OUT=6 !default console output
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
-        integer(INTD), private:: LOGGING=0  !logging mode
+        integer(INTD), private:: LOGGING=0  !logging mode: 1 - instruction info, 2 - instruction progress, 3 - details
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WRK_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !Memory:
@@ -1125,7 +1125,7 @@
             errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr)
             if(errc.eq.TRY_LATER.and.in_buf.eq.YEP.and.retry) then
              in_buf=NOPE; errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr) !fall back to system allocator
-             if(LOGGING.gt.0) then
+             if(LOGGING.gt.2) then
               write(CONS_OUT,'("#MSG(TAVP-WRK:tens_resrc_t.allocate_buffer): Fallback detected of size (bytes) ",i13,'//&
               &'": Error ",i11)') bytes,errc
               flush(CONS_OUT)
@@ -5457,7 +5457,7 @@
               sts=tens_instr%get_status(ier,j); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
               call tavp%incr_recv_instr_counter()
-              if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[DECODER:IN]')
+              if(LOGGING.gt.1) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[DECODER:IN]')
               if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Decoder): Decoded a new tensor instruction:")')
@@ -6465,8 +6465,8 @@
               call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-76; exit wloop; endif
               instr%timings%time_resourced=time_sys_sec()
-              if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:OD]')
-              if(LOGGING.gt.1) then
+              if(LOGGING.gt.1) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:OD]')
+              if(LOGGING.gt.2) then
 !$OMP CRITICAL (IO)
                write(CONS_OUT,'("Memory usage (Bytes): Total = ",i13,": Buffer = ",i13)') host_ram_used,host_buf_used
 !$OMP END CRITICAL (IO)
@@ -6604,7 +6604,7 @@
                 if(ier.ne.GFC_SUCCESS.and.ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-48; exit wloop; endif
                else !no blocking data dependencies: issue into the deferred instruction list
                 call instr%mark_deferred(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-47; exit wloop; endif
-                if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:DEP]')
+                if(LOGGING.gt.1) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:DEP]')
                 if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction deferred due to data dependency:")')
@@ -6628,8 +6628,8 @@
                 call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
                 if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-45; exit wloop; endif
                 instr%timings%time_resourced=time_sys_sec()
-                if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:OK]')
-                if(LOGGING.gt.1) then
+                if(LOGGING.gt.1) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:OK]')
+                if(LOGGING.gt.2) then
 !$OMP CRITICAL (IO)
                  write(CONS_OUT,'("Memory usage (Bytes): Total = ",i13,": Buffer = ",i13)') host_ram_used,host_buf_used
 !$OMP END CRITICAL (IO)
@@ -6655,7 +6655,7 @@
                 num_staged=num_staged+1
                elseif(ier.eq.TRY_LATER) then !required resources are not currently available: issue into the deferred list
                 call instr%mark_deferred(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-42; exit wloop; endif
-                if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:LIM]')
+                if(LOGGING.gt.1) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:LIM]')
                 if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction deferred due to lack of resources:")')
@@ -6787,7 +6787,7 @@
              call instr%set_status(DS_INSTR_RELEASED,ier)
             endif
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
-            if(LOGGING.gt.1) then
+            if(LOGGING.gt.2) then
 !$OMP CRITICAL (IO)
              write(CONS_OUT,'("Memory usage (Bytes): Total = ",i13,": Buffer = ",i13)') host_ram_used,host_buf_used
 !$OMP END CRITICAL (IO)
@@ -7285,7 +7285,7 @@
                            call instr%set_parent_instr(tens_instr,jerr) !associate the TENS_ACCUMULATE instruction with its substituted parent instruction
                            if(jerr.eq.0) then
                             instr%timings%time_decoded=time_sys_sec()
-                            if(LOGGING.gt.0) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:IN]')
+                            if(LOGGING.gt.1) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:IN]')
                             jerr=this%iqueue%previous(); if(jerr.ne.GFC_SUCCESS) jerr=-16 !move back to the current tensor instruction
                            else
                             jerr=-15
@@ -7792,10 +7792,10 @@
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-49; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
             if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.opcode.ne.TAVP_INSTR_TENS_DESTROY.and.opcode.ne.TAVP_INSTR_TENS_ACCUMULATE) then
+             tens_instr%timings%time_fetch_started=time_sys_sec()
              call this%prefetch_input(tens_instr,ier)
              if(ier.eq.0) then
-              tens_instr%timings%time_fetch_started=time_sys_sec()
-              if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[COMMUNICATOR:FET]')
+              if(LOGGING.gt.1) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[COMMUNICATOR:FET]')
               if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Initiated input prefetch for tensor instruction:")')
@@ -7862,10 +7862,10 @@
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
             if(tens_instr%get_num_out_operands().gt.0.and.opcode.ne.TAVP_INSTR_TENS_CREATE) then !TENS_CREATE does not require remote upload
+             tens_instr%timings%time_upload_started=time_sys_sec()
              call this%upload_output(tens_instr,ier)
              if(ier.eq.0) then
-              tens_instr%timings%time_upload_started=time_sys_sec()
-              if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[COMMUNICATOR:UPL]')
+              if(LOGGING.gt.1) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[COMMUNICATOR:UPL]')
               if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Initiated output upload for tensor instruction:")')
@@ -7945,7 +7945,7 @@
              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,errcode)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
              tens_instr%timings%time_fetch_synced=time_sys_sec()
-             if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[COMMUNICATOR:FSNC]')
+             if(LOGGING.gt.1) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[COMMUNICATOR:FSNC]')
              ier=this%iqueue%move_elem(this%dsp_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
             else
              ier=this%iqueue%next()
@@ -7974,7 +7974,7 @@
              call tens_instr%set_status(DS_INSTR_UPLOADED,ier,errcode)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
              tens_instr%timings%time_upload_synced=time_sys_sec()
-             if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[COMMUNICATOR:USNC]')
+             if(LOGGING.gt.1) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[COMMUNICATOR:USNC]')
              ier=this%iqueue%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
             else
              ier=this%iqueue%next()
@@ -8423,7 +8423,7 @@
             call tens_instr%set_status(DS_INSTR_ISSUED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
             tens_instr%timings%time_dispatched=time_sys_sec()
-            if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[DISPATCHER:ISS]')
+            if(LOGGING.gt.1) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[DISPATCHER:ISS]')
             call this%issue_instr(tens_instr,ier)
             if(ier.eq.0) then
              num_outstanding=num_outstanding+1
@@ -8505,7 +8505,7 @@
             endif
 !$OMP ATOMIC WRITE
             tens_instr%timings%time_completed=tm
-            if(LOGGING.gt.0) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[DISPATCHER:CML]')
+            if(LOGGING.gt.1) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[DISPATCHER:CML]')
  !Increment the number of completed accumulates for substitutable (parent) tensor instructions:
             if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then
              oprnd=>tens_instr%get_operand(0,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif

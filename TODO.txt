@@ -23,8 +23,6 @@ FEATURES NEEDED:
 
 
 UNRESOLVED ISSUES:
- 2019/04/23: Lazy locking has a bug: When detaching/deallocating data that participated in
-             one-sided communications, the corresponding windows need to be unlocked.
  2018/03/07: Implement tensor R/W status update (in the tensor cache) at the TAVP-MNG level:
              Dependency check and status update on instruction issue should be done during location cycle;
              Status update on instruction retirement will probably require another rotation cycle,
@@ -55,6 +53,15 @@ UNRESOLVED ISSUES:
  2019/02/18: ExaTENSOR Resourcer: Give priority to instructions which do not require communication.
  2019/02/18: ExaTENSOR Communicator: Do not send multiple messages to the same MPI rank at a time.
  2019/03/06: TAL-SH multithreaded first touch in arg_buf_allocate on CPU.
+ 2019/04/23: Lazy locking has a bug: When detaching/deallocating data that participated in
+             one-sided communications, the corresponding windows need to be unlocked.
+ 2019/06/21: TENSOR CREATE may hit the memory limit block, in which case TAVP-WRK should either
+             report an error and quit or pass the TRY_LATER code up-level to its TAVP-MNG manager.
+ 2019/06/21: When running CPU-only, Dispatcher will run through the entire queue to the end,
+             executing blocking issue calls, but without passing completed instructions further
+             to Communicator until the end of the queue is reached. In general, DSVU should pass
+             processed instructions to the next DSVU instantaneously, without waiting until all
+             current instructions have been processed and end of queue is reached.
 
 
 RESOLVED:
