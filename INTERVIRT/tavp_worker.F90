@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/06/21
+!REVISION: 2019/06/25
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -78,7 +78,7 @@
         integer(INTD), private:: CONS_OUT=6 !default console output
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
-        integer(INTD), private:: LOGGING=0  !logging mode: 1 - instruction info, 2 - instruction progress, 3 - details
+        integer(INTD), private:: LOGGING=0  !logging mode: 0 - none, 1 - instruction info, 2 - instruction progress, 3 - details
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WRK_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !Memory:

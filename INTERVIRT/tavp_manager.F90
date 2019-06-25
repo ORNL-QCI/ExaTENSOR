@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/02/21
+!REVISION: 2019/06/25
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -114,6 +114,7 @@
         integer(INTD), private:: CONS_OUT=6 !default output device
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
+        integer(INTD), private:: LOGGING=0  !logging mode: 0 - none, 1 - instruction dispatch
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=64_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTL), parameter, private:: MIN_BYTECODE_SPACE=1_INTL*(1024_INTL*1024_INTL) !min required free space (bytes) in the bytecode buffer (to check for potential overflow)
@@ -5521,7 +5522,7 @@
           if(num_packs.eq.max_packs.or.(capacity-length).lt.MIN_BYTECODE_SPACE) then
            if(VERBOSE) then
 !$OMP CRITICAL (IO)
-            write(CONS_OUT,'("#WARNING(TAVP-MNG:Dispatcher.dispatch)[",i6,"]: Channel ",i3,'//&
+            write(CONS_OUT,'("#WARNING(TAVP-MNG:Dispatcher.dispatch)[",i6,"]: Channel ",i4,'//&
             &'" is running out of bytecode buffer capacity: ",i11,1x,i11,3x,i7,1x,i7)')&
             &impir,channel,capacity,length,max_packs,num_packs
 !$OMP END CRITICAL (IO)
@@ -5559,7 +5560,7 @@
          endif
          if(VERBOSE.and.errc.ne.0) then
 !$OMP CRITICAL (IO)
-          write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.dispatch)[",i6,"]: Dispatch to channel ",i2," failed: Error ",i11)')&
+          write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.dispatch)[",i6,"]: Dispatch to channel ",i4," failed: Error ",i11)')&
           &impir,channel,errc
 !$OMP END CRITICAL (IO)
           flush(CONS_OUT)
@@ -5576,6 +5577,7 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc
          integer(INTL):: npck
+         real(8):: tm
 
          errc=0
          if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
@@ -5602,9 +5604,18 @@
           npck=this%bytecode(channel)%get_num_packets()
           call this%update_dispatch_count(channel,-npck)
           call this%update_issue_count(channel,npck)
+          if(LOGGING.gt.0) then
+           tm=time_sys_sec()
+!$OMP CRITICAL (IO)
+           write(CONS_OUT,'("[",F20.6,"]: Issued ",i6," instructions to channel ",i4,": Rank = ",i6,'//&
+           &'": Updated dispatched/issued = ",i6,"/",i5)')&
+           &tm,npck,channel,this%dispatch_rank(channel),this%dispatch_count(channel),this%issue_count(channel)
+!$OMP END CRITICAL (IO)
+           flush(CONS_OUT)
+          endif
           if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
-           write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.issue)[",i6,"]: Issued ",i6," instructions to channel ",i2,": Rank = ",i4)')&
+           write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.issue)[",i6,"]: Issued ",i6," instructions to channel ",i4,": Rank = ",i6)')&
            &impir,npck,channel,this%dispatch_rank(channel)
 !$OMP END CRITICAL (IO)
            flush(CONS_OUT)
@@ -5612,7 +5623,7 @@
          else
           if(VERBOSE) then
 !$OMP CRITICAL (IO)
-           write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.issue)[",i6,"]: Unable to issue bytecode to channel ",i2,": Error ",i11)')&
+           write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.issue)[",i6,"]: Unable to issue bytecode to channel ",i4,": Error ",i11)')&
            &impir,channel,errc
            write(CONS_OUT,'("#INFO(TAVP-MNG:Dispatcher.issue)[",i6,"]: Target rank = ",i6,", Target comm = ",i11)')&
            &impir,this%dispatch_rank(channel),this%dispatch_comm
@@ -5634,13 +5645,24 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: channel      !in: specific dispatch channel to synchronize
          integer(INTD):: errc,i
+         logical:: truly_synced
+         real(8):: tm
 
-         errc=0; synced=.FALSE.
+         errc=0; synced=.FALSE.; truly_synced=.FALSE.
          if(present(channel)) then !sync a specific channel
           if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
-           call this%comm_hl(channel)%wait(errc); if(errc.ne.0) errc=-9
-           if(errc.eq.0) then; call this%comm_hl(channel)%clean(errc); if(errc.ne.0) errc=-8; endif
-           if(errc.eq.0) then; call this%bytecode(channel)%clean(errc); if(errc.ne.0) errc=-7; endif
+           if(this%comm_hl(channel)%is_active(errc)) then
+            if(errc.eq.PACK_SUCCESS) then
+             call this%comm_hl(channel)%wait(errc); if(errc.ne.0) errc=-11
+             truly_synced=(errc.eq.0)
+             if(errc.eq.0) then; call this%comm_hl(channel)%clean(errc); if(errc.ne.0) errc=-10; endif
+             if(errc.eq.0) then; call this%bytecode(channel)%clean(errc); if(errc.ne.0) errc=-9; endif
+            else
+             errc=-8
+            endif
+           else
+            if(errc.ne.PACK_SUCCESS) errc=-7
+           endif
           else
            errc=-6
           endif
@@ -5649,6 +5671,7 @@
            if(this%comm_hl(i)%is_active(errc)) then
             if(errc.eq.PACK_SUCCESS) then
              call this%comm_hl(i)%wait(errc); if(errc.ne.0) errc=-5
+             truly_synced=(errc.eq.0)
              if(errc.eq.0) then; call this%comm_hl(i)%clean(errc); if(errc.ne.0) errc=-4; endif
              if(errc.eq.0) then; call this%bytecode(i)%clean(errc); if(errc.ne.0) errc=-3; endif
             else
@@ -5660,12 +5683,25 @@
            if(errc.ne.0) exit
           enddo
          endif
-         if(errc.eq.0) synced=.TRUE.
+         synced=(errc.eq.0) !will be set to TRUE even if no bytecode was currently pending issue
+         if(truly_synced.and.(LOGGING.gt.0)) then
+          tm=time_sys_sec()
+          if(present(channel)) then
+!$OMP CRITICAL (IO)
+           write(CONS_OUT,'("[",F20.6,"]: Synced issue on channel ",i4,": Rank = ",i6)') tm,channel,this%dispatch_rank(channel)
+!$OMP END CRITICAL (IO)
+          else
+!$OMP CRITICAL (IO)
+           write(CONS_OUT,'("[",F20.6,"]: Synced issue on all channels")') tm
+!$OMP END CRITICAL (IO)
+          endif
+          flush(CONS_OUT)
+         endif
          if(DEBUG.gt.0) then
           if(errc.eq.0) then
            if(present(channel)) then
 !$OMP CRITICAL (IO)
-            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Synced channel ",i2,": Rank = ",i4)')&
+            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Synced channel ",i4,": Rank = ",i6)')&
             &impir,channel,this%dispatch_rank(channel)
 !$OMP END CRITICAL (IO)
            else
