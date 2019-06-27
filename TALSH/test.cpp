@@ -395,6 +395,7 @@ void test_talsh_qc_xl(int * ierr)
  const int device = DEV_HOST;
 #endif
  const int device_id = DEV_DEFAULT; //[0...max] or DEV_DEFAULT (all devices)
+ const bool FAST_MATH = false;
 
  *ierr = 0;
  //Initialize TAL-SH:
@@ -407,12 +408,22 @@ void test_talsh_qc_xl(int * ierr)
  }
  std::cout << " Max buffer size on execution device = " << talsh::getDeviceMaxBufferSize(device,0) << std::endl;
  std::cout << " Max tensor size on execution device = " << talsh::getDeviceMaxTensorSize(device,0) << std::endl;
+ //Enable fast math:
+ if(FAST_MATH){
+  if(!talsh::enableFastMath(device)) std::cout << "#WARNING: Fast math activation failure on device kind " << device << std::endl;
+ }
  //Test body (scoped):
  {
-  talsh::Tensor ltens({1,2,128,64,128,64,32},std::complex<float>{0.001f,0.0f});
-  talsh::Tensor rtens({32,128,64,256},std::complex<float>{0.0001f,0.0f});
-  talsh::Tensor dtens({1,2,128,64,32,256,32},std::complex<float>{0.0f,0.0f});
   double tm = time_sys_sec();
+  //talsh::Tensor ltens({1,2,128,64,128,64,32},std::complex<float>{0.001f,0.0f});
+  //talsh::Tensor rtens({32,128,64,256},std::complex<float>{0.0001f,0.0f});
+  //talsh::Tensor dtens({1,2,128,64,32,256,32},std::complex<float>{0.0f,0.0f});
+  talsh::Tensor ltens({64,128,2,1,128,64,32},std::complex<float>{0.001f,0.0f});
+  talsh::Tensor rtens({32,128,64,256},std::complex<float>{0.0001f,0.0f});
+  talsh::Tensor dtens({64,128,2,1,32,256,32},std::complex<float>{0.0f,0.0f});
+  tm = time_sys_sec() - tm;
+  std::cout << " Tensor construction time (s) = " << tm << std::endl;
+  tm = time_sys_sec();
   *ierr = dtens.contractAccumulateXL(nullptr,std::string("D(a,b,c,d,h,i,g)+=L(a,b,c,d,e,f,g)*R(h,e,f,i)"),
                                      ltens,rtens,device,device_id);
   bool done = dtens.sync();
