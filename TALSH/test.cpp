@@ -388,14 +388,14 @@ void test_talsh_xl(int * ierr)
 
 void test_talsh_qc_xl(int * ierr)
 {
- const std::size_t HOST_MEM_LIM = 128; //GB
+ const std::size_t HOST_MEM_LIM = 180; //GB
 #ifndef NO_GPU
  const int device = DEV_NVIDIA_GPU;
 #else
  const int device = DEV_HOST;
 #endif
  const int device_id = DEV_DEFAULT; //[0...max] or DEV_DEFAULT (all devices)
- const bool FAST_MATH = false;
+ const bool FAST_MATH = false; //activates tensor cores on GPU
 
  *ierr = 0;
  //Initialize TAL-SH:
@@ -412,7 +412,7 @@ void test_talsh_qc_xl(int * ierr)
  if(FAST_MATH){
   if(!talsh::enableFastMath(device)) std::cout << "#WARNING: Fast math activation failure on device kind " << device << std::endl;
  }
- //Test body (scoped):
+ //Test body 1 (scoped):
  {
   double tm = time_sys_sec();
   //talsh::Tensor ltens({1,2,128,64,128,64,32},std::complex<float>{0.001f,0.0f});
@@ -431,6 +431,33 @@ void test_talsh_qc_xl(int * ierr)
   std::cout << " Tensor contraction completion status = " << done << "; Time (s) = " << tm << "; Error " << *ierr << std::endl;
   double flops = std::pow(2.0,19.0+13.0+13.0)*8.0;
   if(tm > 0.0) std::cout << " Performance (GFlop/s) = " << flops/tm/(1e9) << std::endl;
+ }
+ //Test body 2 (scoped):
+ {
+  const std::complex<float> lval{0.00123f,-0.000456f};
+  const std::complex<float> rval{-0.000875,0.000496f};
+  double tm = time_sys_sec();
+  talsh::Tensor ltens({16384,128,64,32},lval);
+  talsh::Tensor rtens({32,128,64,256},rval);
+  talsh::Tensor dtens({16384,32,256,32},std::complex<float>{0.0f,0.0f});
+  tm = time_sys_sec() - tm;
+  std::cout << " Tensor construction time (s) = " << tm << std::endl;
+  tm = time_sys_sec();
+  *ierr = dtens.contractAccumulateXL(nullptr,std::string("D(a,h,i,g)+=L(a,e,f,g)*R(h,e,f,i)"),
+                                     ltens,rtens,device,device_id);
+  bool done = dtens.sync();
+  tm = time_sys_sec() - tm;
+  std::cout << " Tensor contraction completion status = " << done << "; Time (s) = " << tm << "; Error " << *ierr << std::endl;
+  double flops = std::pow(2.0,19.0+13.0+13.0)*8.0;
+  if(tm > 0.0) std::cout << " Performance (GFlop/s) = " << flops/tm/(1e9) << std::endl;
+  double dnorm1;
+  double dnrm1 = std::abs(lval*rval) * std::pow(2.0,19.0+13.0+13.0);
+  tm = time_sys_sec();
+  dtens.norm1(nullptr,&dnorm1);
+  tm = time_sys_sec() - tm;
+  std::cout << " Tensor norm-1 time (s) = " << tm << std::endl;
+  std::cout << " Tensor norm-1    = " << dnorm1 << std::endl;
+  std::cout << " Reference norm-1 = " << dnrm1 << std::endl;
  }
  //Shutdown TAL-SH:
  talshStats(); //GPU statistics
