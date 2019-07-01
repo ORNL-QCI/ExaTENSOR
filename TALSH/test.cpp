@@ -439,7 +439,7 @@ void test_talsh_qc_xl(int * ierr)
   double tm = time_sys_sec();
   talsh::Tensor ltens({16384,128,64,32},lval);
   talsh::Tensor rtens({32,128,64,256},rval);
-  talsh::Tensor dtens({16384,32,256,32},std::complex<float>{0.0f,0.0f});
+  talsh::Tensor dtens({16384,32,256,32},std::complex<float>{1.0f,3.0f});
   tm = time_sys_sec() - tm;
   std::cout << " Tensor construction time (s) = " << tm << std::endl;
   tm = time_sys_sec();
