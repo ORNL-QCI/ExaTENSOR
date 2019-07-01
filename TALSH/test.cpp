@@ -444,7 +444,7 @@ void test_talsh_qc_xl(int * ierr)
   std::cout << " Tensor construction time (s) = " << tm << std::endl;
   tm = time_sys_sec();
   *ierr = dtens.contractAccumulateXL(nullptr,std::string("D(a,h,i,g)+=L(a,e,f,g)*R(h,e,f,i)"),
-                                     ltens,rtens,device,device_id);
+                                     ltens,rtens,device,device_id,std::complex<float>{1.0f,0.0f},false);
   bool done = dtens.sync();
   tm = time_sys_sec() - tm;
   std::cout << " Tensor contraction completion status = " << done << "; Time (s) = " << tm << "; Error " << *ierr << std::endl;
