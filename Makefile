@@ -30,8 +30,10 @@ export WITH_CUTT ?= NO
 #In-place GPU tensor contractions (cuTensor library): [YES|NO]:
 export WITH_CUTENSOR ?= NO
 
-#Disable actual build (debug): [YES|NO]:
+#Disable actual build completely (debug): [YES|NO]:
 export EXA_NO_BUILD ?= NO
+#Only enable TAL-SH build ($EXA_NO_BUILD must be NO): [YES|NO]:
+export EXA_TALSH_ONLY ?= NO
 
 
 #SET YOUR LOCAL PATHS (for unwrapped non-Cray builds):
@@ -86,10 +88,13 @@ export PATH_CUTENSOR ?= /home/dima/src/cutensor
 
 $(NAME):
 ifeq ($(EXA_NO_BUILD),NO)
+ifeq ($(EXA_TALSH_ONLY),NO)
 	$(MAKE) -C ./UTILITY
 	$(MAKE) -C ./GFC
 	$(MAKE) -C ./DDSS
+endif
 	$(MAKE) -C ./TALSH
+ifeq ($(EXA_TALSH_ONLY),NO)
 	$(MAKE) -C ./DSVP
 	$(MAKE) -C ./INTRAVIRT
 	$(MAKE) -C ./INTERVIRT
@@ -97,6 +102,7 @@ ifeq ($(EXA_OS),LINUX)
 	$(MAKE) -C ./TN
 endif
 	$(MAKE) -C ./QFORCE
+endif
 #Gather headers, modules and libraries:
 	rm -f ./include/*
 	rm -f ./lib/*
@@ -120,6 +126,7 @@ endif
 endif
 	cp ./[A-Z]*/*.a ./lib/
 	cp ./[A-Z]*/*.x ./bin/
+ifeq ($(EXA_TALSH_ONLY),NO)
 	cp ./QFORCE/Qforce.x ./
 #Create static and shared libraries:
 	ar x ./lib/libintervirt.a
@@ -141,14 +148,23 @@ else
 	$(PATH_$(MPILIB)_BIN)/mpicxx -shared -o libexatensor.so ./lib/*.o
 endif
 endif
-	cp -u ./TALSH/libtalsh.so ./
-	cp -u ./TALSH/libtalsh.so ./lib/
 	cp -u ./libexatensor.so ./lib/
 	cp -u ./libexatensor.a ./lib/
+	cp -u ./TALSH/libtalsh.so ./
+	cp -u ./TALSH/libtalsh.so ./lib/
 else
 	cp ./libexatensor.a ./lib/
 endif
 	rm -f ./lib/*.o
+else
+ifeq ($(EXA_OS),LINUX)
+	cp -u ./TALSH/libtalsh.so ./
+	cp -u ./TALSH/libtalsh.so ./lib/
+else
+	cp ./TALSH/libtalsh.so ./
+	cp ./TALSH/libtalsh.so ./lib/
+endif
+endif
 endif
 	echo "Finished successfully!"
 
