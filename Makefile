@@ -165,9 +165,6 @@ else
 ifeq ($(EXA_OS),LINUX)
 	cp -u ./TALSH/libtalsh.so ./
 	cp -u ./TALSH/libtalsh.so ./lib/
-else
-	cp ./TALSH/libtalsh.so ./
-	cp ./TALSH/libtalsh.so ./lib/
 endif
 endif
 endif
