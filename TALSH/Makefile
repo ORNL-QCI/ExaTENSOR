@@ -33,6 +33,9 @@ export WITH_CUTENSOR ?= NO
 #GPU fine timing [YES|NO]:
 export GPU_FINE_TIMING ?= YES
 
+#The build is part of ExaTN [YES|NO]:
+export EXATN_SERVICE ?= NO
+
 
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 
@@ -339,6 +342,9 @@ CFLAGS = $(CFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_B
 else
 CFLAGS = $(CFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) $(PIC_FLAG)
 endif
+endif
+ifeq ($(EXATN_SERVICE),YES)
+CFLAGS += -DEXATN_SERVICE
 endif
 
 #CPP FLAGS:

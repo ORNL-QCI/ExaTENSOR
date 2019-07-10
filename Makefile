@@ -30,10 +30,15 @@ export WITH_CUTT ?= NO
 #In-place GPU tensor contractions (cuTensor library): [YES|NO]:
 export WITH_CUTENSOR ?= NO
 
+
+#ADJUST PARTIAL BUILD OPTIONS:
+
 #Disable actual build completely (debug): [YES|NO]:
 export EXA_NO_BUILD ?= NO
 #Only enable TAL-SH build ($EXA_NO_BUILD must be NO): [YES|NO]:
 export EXA_TALSH_ONLY ?= NO
+#The build is part of ExaTN: [YES|NO]:
+export EXATN_SERVICE ?= NO
 
 
 #SET YOUR LOCAL PATHS (for unwrapped non-Cray builds):
