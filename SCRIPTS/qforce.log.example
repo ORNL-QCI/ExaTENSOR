@@ -1,0 +1,714 @@
+512
+[   939.4003]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         349
+foo(1:146,1:146)[]
+[   939.7901]#MSG(exatensor): Instruction execution synced
+[   939.7901]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         350
+fov(1:146,2:814)[]
+[   940.1975]#MSG(exatensor): Instruction execution synced
+[   940.1975]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         351
+fvv(2:814,2:814)[]
+[   941.0107]#MSG(exatensor): Instruction execution synced
+[   941.0107]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         352
+foo(1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   941.4158]#MSG(exatensor): Instruction execution synced
+[   941.4158]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         353
+fov(1:146,2:814)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   941.8273]#MSG(exatensor): Instruction execution synced
+[   941.8273]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         354
+fvv(2:814,2:814)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   942.6369]#MSG(exatensor): Instruction execution synced
+[   942.6370]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         355
+t1(2:814,1:146)[]
+[   943.0455]#MSG(exatensor): Instruction execution synced
+[   943.0455]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         356
+t2(2:814,2:814,1:146,1:146)[]
+[   943.8640]#MSG(exatensor): Instruction execution synced
+[   943.8640]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         357
+T(a,b,i,j)+=V+(i,j,a,b)*K(): t2(2:814,2:814,1:146,1:146)[] += oovv(1:146,1:146,2:814,2:814)[] * another_one_tensor()[]
+[   944.8488]#MSG(exatensor): Instruction execution synced
+[   944.8488]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =         358
+t2(2:814,2:814,1:146,1:146)[] += Denominate
+[   945.2496]#MSG(exatensor): Instruction execution synced
+[   945.2496]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         359
+result_tensor()[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   945.2507]#MSG(exatensor): Instruction execution synced
+[   945.2507]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         360
+E()+=T(a,b,i,j)*V(i,j,a,b): result_tensor()[] += t2(2:814,2:814,1:146,1:146)[] * oovv(1:146,1:146,2:814,2:814)[] * (  0.25000000000000D+00   0.00000000000000D+00)
+[   948.2255]#MSG(exatensor): Instruction execution synced
+[   948.2256]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =         361
+result_tensor()[] += _RetrieveScalar_
+[   948.2268]#MSG(exatensor): Instruction execution synced
+[   948.2268]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         362
+goo(1:146,1:146)[]
+[   948.6103]#MSG(exatensor): Instruction execution synced
+[   948.6103]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         363
+gvv(2:814,2:814)[]
+[   949.4177]#MSG(exatensor): Instruction execution synced
+[   949.4177]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         364
+hoo(1:146,1:146)[]
+[   949.8265]#MSG(exatensor): Instruction execution synced
+[   949.8265]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         365
+hvv(2:814,2:814)[]
+[   950.2353]#MSG(exatensor): Instruction execution synced
+[   950.2353]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         366
+hov(1:146,2:814)[]
+[   950.6422]#MSG(exatensor): Instruction execution synced
+[   950.6422]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         367
+aint(1:146,1:146,1:146,1:146)[]
+[   951.0561]#MSG(exatensor): Instruction execution synced
+[   951.0561]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         368
+hint(2:814,1:146,2:814,1:146)[]
+[   951.8646]#MSG(exatensor): Instruction execution synced
+[   951.8646]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         369
+tau(2:814,2:814,1:146,1:146)[]
+[   952.6850]#MSG(exatensor): Instruction execution synced
+[   952.6850]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         370
+t1_inp_tensor(2:814,1:146)[]
+[   953.0925]#MSG(exatensor): Instruction execution synced
+[   953.0926]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         371
+t2_inp_tensor(2:814,2:814,1:146,1:146)[]
+[   953.9099]#MSG(exatensor): Instruction execution synced
+[   953.9099]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         372
+t1_res_tensor_1(2:814,1:146)[]
+[   954.3165]#MSG(exatensor): Instruction execution synced
+[   954.3165]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         373
+t1_err_tensor_1(2:814,1:146)[]
+[   954.7282]#MSG(exatensor): Instruction execution synced
+[   954.7282]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         374
+t2_res_tensor_1(2:814,2:814,1:146,1:146)[]
+[   955.5488]#MSG(exatensor): Instruction execution synced
+[   955.5488]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         375
+t2_err_tensor_1(2:814,2:814,1:146,1:146)[]
+[   956.3730]#MSG(exatensor): Instruction execution synced
+[   956.3730]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         376
+t1_res_tensor_2(2:814,1:146)[]
+[   957.1856]#MSG(exatensor): Instruction execution synced
+[   957.1856]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         377
+t1_err_tensor_2(2:814,1:146)[]
+[   957.5889]#MSG(exatensor): Instruction execution synced
+[   957.5889]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         378
+t2_res_tensor_2(2:814,2:814,1:146,1:146)[]
+[   958.4078]#MSG(exatensor): Instruction execution synced
+[   958.4078]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         379
+t2_err_tensor_2(2:814,2:814,1:146,1:146)[]
+[   959.2302]#MSG(exatensor): Instruction execution synced
+[   959.2302]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         380
+t1_res_tensor_3(2:814,1:146)[]
+[   959.6343]#MSG(exatensor): Instruction execution synced
+[   959.6344]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         381
+t1_err_tensor_3(2:814,1:146)[]
+[   960.0423]#MSG(exatensor): Instruction execution synced
+[   960.0423]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         382
+t2_res_tensor_3(2:814,2:814,1:146,1:146)[]
+[   960.8676]#MSG(exatensor): Instruction execution synced
+[   960.8676]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         383
+t2_err_tensor_3(2:814,2:814,1:146,1:146)[]
+[   961.6996]#MSG(exatensor): Instruction execution synced
+[   961.6996]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         384
+t1_res_tensor_4(2:814,1:146)[]
+[   962.1087]#MSG(exatensor): Instruction execution synced
+[   962.1087]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         385
+t1_err_tensor_4(2:814,1:146)[]
+[   962.5159]#MSG(exatensor): Instruction execution synced
+[   962.5159]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         386
+t2_res_tensor_4(2:814,2:814,1:146,1:146)[]
+[   963.3347]#MSG(exatensor): Instruction execution synced
+[   963.3347]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         387
+t2_err_tensor_4(2:814,2:814,1:146,1:146)[]
+[   964.1715]#MSG(exatensor): Instruction execution synced
+[   964.1716]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         388
+t1_res_tensor_5(2:814,1:146)[]
+[   964.5748]#MSG(exatensor): Instruction execution synced
+[   964.5748]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         389
+t1_err_tensor_5(2:814,1:146)[]
+[   964.9760]#MSG(exatensor): Instruction execution synced
+[   964.9760]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         390
+t2_res_tensor_5(2:814,2:814,1:146,1:146)[]
+[   965.8020]#MSG(exatensor): Instruction execution synced
+[   965.8020]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         391
+t2_err_tensor_5(2:814,2:814,1:146,1:146)[]
+[   966.6240]#MSG(exatensor): Instruction execution synced
+[   966.6240]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         392
+t1_inp_tensor(2:814,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   967.0245]#MSG(exatensor): Instruction execution synced
+[   967.0246]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         393
+T1O(a,i)+=T1N(a,i)*K(): t1_inp_tensor(2:814,1:146)[] += t1(2:814,1:146)[] * another_one_tensor()[]
+[   967.4249]#MSG(exatensor): Instruction execution synced
+[   967.4249]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         394
+t2_inp_tensor(2:814,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   968.2464]#MSG(exatensor): Instruction execution synced
+[   968.2464]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         395
+T2O(a,b,i,j)+=T2N(a,b,i,j)*K(): t2_inp_tensor(2:814,2:814,1:146,1:146)[] += t2(2:814,2:814,1:146,1:146)[] * another_one_tensor()[]
+[   969.2137]#MSG(exatensor): Instruction execution synced
+[   969.2137]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         396
+scalar_tensor()[]
+[   969.5933]#MSG(exatensor): Instruction execution synced
+[   969.5933]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         397
+result_t()[]
+[   969.9992]#MSG(exatensor): Instruction execution synced
+[   969.9992]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         398
+hoo_aux(1:146,1:146)[]
+[   970.3991]#MSG(exatensor): Instruction execution synced
+[   970.3991]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         399
+hov_aux(1:146,2:814)[]
+[   970.8036]#MSG(exatensor): Instruction execution synced
+[   970.8036]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         400
+s1(2:814,1:146)[]
+[   971.2058]#MSG(exatensor): Instruction execution synced
+[   971.2058]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         401
+s2(2:814,2:814,1:146,1:146)[]
+[   972.0303]#MSG(exatensor): Instruction execution synced
+[   972.0303]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         402
+tau2(2:814,2:814,1:146,1:146)[]
+[   972.8553]#MSG(exatensor): Instruction execution synced
+[   972.8553]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         403
+cint(1:146,2:814,1:146,1:146)[]
+[   973.2632]#MSG(exatensor): Instruction execution synced
+[  7183.3566]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2561
+tau(2:814,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7184.1613]#MSG(exatensor): Instruction execution synced
+[  7184.1613]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2562
+T(a,b,i,j)+=R(a,b,i,j)*K(): tau(2:814,2:814,1:146,1:146)[] += t2(2:814,2:814,1:146,1:146)[] * another_one_tensor()[]
+[  7185.1118]#MSG(exatensor): Instruction execution synced
+[  7185.1119]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2563
+T(a,b,i,j)+=T(a,i)*T(b,j): tau(2:814,2:814,1:146,1:146)[] += t1(2:814,1:146)[] * t1(2:814,1:146)[]
+[  7186.0446]#MSG(exatensor): Instruction execution synced
+[  7186.0446]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2564
+T(a,b,i,j)+=T(a,j)*T(b,i): tau(2:814,2:814,1:146,1:146)[] += t1(2:814,1:146)[] * t1(2:814,1:146)[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7186.9766]#MSG(exatensor): Instruction execution synced
+[  7186.9766]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2565
+s2(2:814,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7187.7840]#MSG(exatensor): Instruction execution synced
+[  7187.7840]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2566
+S(a,b,i,j)+=V(a,b,c,d)*T(c,d,i,j): s2(2:814,2:814,1:146,1:146)[] += vvvv(2:814,2:814,2:814,2:814)[] * tau(2:814,2:814,1:146,1:146)[] * (  0.50000000000000D+00   0.00000000000000D+00)
+[  7304.4549]#MSG(exatensor): Instruction execution synced
+[  7304.4549]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2567
+hvv(2:814,2:814)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7304.8747]#MSG(exatensor): Instruction execution synced
+[  7304.8747]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2568
+H(a,c)+=F(a,c)*K(): hvv(2:814,2:814)[] += fvv(2:814,2:814)[] * another_one_tensor()[]
+[  7305.2862]#MSG(exatensor): Instruction execution synced
+[  7305.2863]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2569
+H(a,c)+=V(k,l,c,d)*T(d,a,k,l): hvv(2:814,2:814)[] += oovv(1:146,1:146,2:814,2:814)[] * tau(2:814,2:814,1:146,1:146)[] * (  0.50000000000000D+00   0.00000000000000D+00)
+[  7313.6847]#MSG(exatensor): Instruction execution synced
+[  7313.6848]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2570
+gvv(2:814,2:814)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7314.4810]#MSG(exatensor): Instruction execution synced
+[  7314.4810]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2571
+G(a,c)+=H(a,c)*K(): gvv(2:814,2:814)[] += hvv(2:814,2:814)[] * another_one_tensor()[]
+[  7315.2897]#MSG(exatensor): Instruction execution synced
+[  7315.2897]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2572
+G(a,c)+=V(a,k,c,d)*T(d,k): gvv(2:814,2:814)[] += vovv(2:814,1:146,2:814,2:814)[] * t1(2:814,1:146)[]
+[  7319.4492]#MSG(exatensor): Instruction execution synced
+[  7319.4492]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2573
+G(a,c)+=F(k,c)*T(a,k): gvv(2:814,2:814)[] += fov(1:146,2:814)[] * t1(2:814,1:146)[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7320.2523]#MSG(exatensor): Instruction execution synced
+[  7320.2524]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2574
+tau2(2:814,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7321.0727]#MSG(exatensor): Instruction execution synced
+[  7321.0727]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2575
+T(a,d,l,i)+=R(a,d,l,i)*K(): tau2(2:814,2:814,1:146,1:146)[] += t2(2:814,2:814,1:146,1:146)[] * another_one_tensor()[] * (  0.50000000000000D+00   0.00000000000000D+00)
+[  7322.0238]#MSG(exatensor): Instruction execution synced
+[  7322.0238]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2576
+T(a,d,l,i)+=T(a,l)*T(d,i): tau2(2:814,2:814,1:146,1:146)[] += t1(2:814,1:146)[] * t1(2:814,1:146)[]
+[  7322.9579]#MSG(exatensor): Instruction execution synced
+[  7322.9579]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2577
+hint(2:814,1:146,2:814,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7323.7764]#MSG(exatensor): Instruction execution synced
+[  7323.7764]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2578
+H(a,k,c,i)+=V(a,k,c,d)*T(d,i): hint(2:814,1:146,2:814,1:146)[] += vovv(2:814,1:146,2:814,2:814)[] * t1(2:814,1:146)[]
+[  7326.2819]#MSG(exatensor): Instruction execution synced
+[  7326.2819]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2579
+H(a,k,c,i)+=V(k,l,i,c)*T(a,l): hint(2:814,1:146,2:814,1:146)[] += ooov(1:146,1:146,1:146,2:814)[] * t1(2:814,1:146)[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7327.6587]#MSG(exatensor): Instruction execution synced
+[  7327.6587]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2580
+H(a,k,c,i)+=V(a,k,c,i)*K(): hint(2:814,1:146,2:814,1:146)[] += vovo(2:814,1:146,2:814,1:146)[] * another_one_tensor()[]
+[  7328.6078]#MSG(exatensor): Instruction execution synced
+[  7328.6078]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2581
+H(a,k,c,i)+=V(k,l,c,d)*T(a,d,l,i): hint(2:814,1:146,2:814,1:146)[] += oovv(1:146,1:146,2:814,2:814)[] * tau2(2:814,2:814,1:146,1:146)[]
+[  7336.5660]#MSG(exatensor): Instruction execution synced
+[  7336.5660]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2582
+S(a,b,i,j)+=H(a,k,c,i)*T(c,b,j,k): s2(2:814,2:814,1:146,1:146)[] += hint(2:814,1:146,2:814,1:146)[] * t2(2:814,2:814,1:146,1:146)[]
+[  7344.7505]#MSG(exatensor): Instruction execution synced
+[  7344.7505]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2583
+S(a,b,i,j)+=H(a,k,c,j)*T(c,b,k,i): s2(2:814,2:814,1:146,1:146)[] += hint(2:814,1:146,2:814,1:146)[] * t2(2:814,2:814,1:146,1:146)[]
+[  7353.2348]#MSG(exatensor): Instruction execution synced
+[  7353.2349]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2584
+S(a,b,i,j)+=H(b,k,c,i)*T(a,c,j,k): s2(2:814,2:814,1:146,1:146)[] += hint(2:814,1:146,2:814,1:146)[] * t2(2:814,2:814,1:146,1:146)[]
+[  7360.4125]#MSG(exatensor): Instruction execution synced
+[  7360.4126]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2585
+S(a,b,i,j)+=H(b,k,c,j)*T(a,c,k,i): s2(2:814,2:814,1:146,1:146)[] += hint(2:814,1:146,2:814,1:146)[] * t2(2:814,2:814,1:146,1:146)[]
+[  7368.8794]#MSG(exatensor): Instruction execution synced
+[  7368.8794]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2586
+cint(1:146,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7369.2775]#MSG(exatensor): Instruction execution synced
+[  7369.2775]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2587
+C(k,b,i,j)+=V(b,k,c,d)*T(c,d,i,j): cint(1:146,2:814,1:146,1:146)[] += vovv(2:814,1:146,2:814,2:814)[] * tau(2:814,2:814,1:146,1:146)[] * ( -0.50000000000000D+00   0.00000000000000D+00)
+[  7415.9547]#MSG(exatensor): Instruction execution synced
+[  7415.9548]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2588
+C(k,b,i,j)+=V(b,k,c,i)*T(c,j): cint(1:146,2:814,1:146,1:146)[] += vovo(2:814,1:146,2:814,1:146)[] * t1(2:814,1:146)[]
+[  7417.5866]#MSG(exatensor): Instruction execution synced
+[  7417.5867]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2589
+C(k,b,i,j)+=V(b,k,c,j)*T(c,i): cint(1:146,2:814,1:146,1:146)[] += vovo(2:814,1:146,2:814,1:146)[] * t1(2:814,1:146)[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7419.1277]#MSG(exatensor): Instruction execution synced
+[  7419.1278]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2590
+C(k,b,i,j)+=V+(i,j,k,b)*K(): cint(1:146,2:814,1:146,1:146)[] += ooov(1:146,1:146,1:146,2:814)[] * another_one_tensor()[]
+[  7419.6878]#MSG(exatensor): Instruction execution synced
+[  7419.6878]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2591
+hoo(1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7420.0681]#MSG(exatensor): Instruction execution synced
+[  7420.0681]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2592
+H(k,i)+=F(k,i)*K(): hoo(1:146,1:146)[] += foo(1:146,1:146)[] * another_one_tensor()[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7420.4704]#MSG(exatensor): Instruction execution synced
+[  7420.4704]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2593
+H(k,i)+=V(k,l,c,d)*T(c,d,l,i): hoo(1:146,1:146)[] += oovv(1:146,1:146,2:814,2:814)[] * tau(2:814,2:814,1:146,1:146)[] * (  0.50000000000000D+00   0.00000000000000D+00)
+[  7428.4444]#MSG(exatensor): Instruction execution synced
+[  7428.4444]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2594
+goo(1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7428.8248]#MSG(exatensor): Instruction execution synced
+[  7428.8248]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2595
+G(k,i)+=H(k,i)*K(): goo(1:146,1:146)[] += hoo(1:146,1:146)[] * another_one_tensor()[]
+[  7429.2287]#MSG(exatensor): Instruction execution synced
+[  7429.2288]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2596
+G(k,i)+=V(k,l,i,c)*T(c,l): goo(1:146,1:146)[] += ooov(1:146,1:146,1:146,2:814)[] * t1(2:814,1:146)[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7431.0097]#MSG(exatensor): Instruction execution synced
+[  7431.0097]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2597
+G(k,i)+=F(k,c)*T(c,i): goo(1:146,1:146)[] += fov(1:146,2:814)[] * t1(2:814,1:146)[]
+[  7431.4067]#MSG(exatensor): Instruction execution synced
+[  7431.4067]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2598
+hov(1:146,2:814)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7431.8076]#MSG(exatensor): Instruction execution synced
+[  7431.8077]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2599
+H(k,c)+=V(k,l,c,d)*T(d,l): hov(1:146,2:814)[] += oovv(1:146,1:146,2:814,2:814)[] * t1(2:814,1:146)[]
+[  7433.7367]#MSG(exatensor): Instruction execution synced
+[  7433.7367]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2600
+H(k,c)+=F(k,c)*K(): hov(1:146,2:814)[] += fov(1:146,2:814)[] * another_one_tensor()[]
+[  7434.1210]#MSG(exatensor): Instruction execution synced
+[  7434.1210]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2601
+hov_aux(1:146,2:814)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7434.5303]#MSG(exatensor): Instruction execution synced
+[  7434.5303]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2602
+L(k,c)+=H(k,c)*K(): hov_aux(1:146,2:814)[] += hov(1:146,2:814)[] * another_one_tensor()[]
+[  7434.9366]#MSG(exatensor): Instruction execution synced
+[  7434.9366]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2603
+H(k,c)+=F(k,c)*K(): hov_aux(1:146,2:814)[] += fov(1:146,2:814)[] * another_one_tensor()[] * ( -0.20000000000000D+01   0.00000000000000D+00)
+[  7435.3420]#MSG(exatensor): Instruction execution synced
+[  7435.3421]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2604
+aint(1:146,1:146,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7435.7487]#MSG(exatensor): Instruction execution synced
+[  7435.7487]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2605
+A(k,l,i,j)+=V(k,l,i,j)*K(): aint(1:146,1:146,1:146,1:146)[] += oooo(1:146,1:146,1:146,1:146)[] * another_one_tensor()[]
+[  7436.2389]#MSG(exatensor): Instruction execution synced
+[  7436.2389]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2606
+A(k,l,i,j)+=V(k,l,i,c)*T(c,j): aint(1:146,1:146,1:146,1:146)[] += ooov(1:146,1:146,1:146,2:814)[] * t1(2:814,1:146)[]
+[  7437.5801]#MSG(exatensor): Instruction execution synced
+[  7437.5802]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2607
+A(k,l,i,j)+=V(k,l,j,c)*T(c,i): aint(1:146,1:146,1:146,1:146)[] += ooov(1:146,1:146,1:146,2:814)[] * t1(2:814,1:146)[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7438.8924]#MSG(exatensor): Instruction execution synced
+[  7438.8924]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2608
+A(k,l,i,j)+=V(k,l,c,d)*T(c,d,i,j): aint(1:146,1:146,1:146,1:146)[] += oovv(1:146,1:146,2:814,2:814)[] * tau(2:814,2:814,1:146,1:146)[] * (  0.50000000000000D+00   0.00000000000000D+00)
+[  7462.1139]#MSG(exatensor): Instruction execution synced
+[  7462.1139]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2609
+S(a,b,i,j)+=G(k,j)*T(a,b,i,k): s2(2:814,2:814,1:146,1:146)[] += goo(1:146,1:146)[] * t2(2:814,2:814,1:146,1:146)[]
+[  7463.1492]#MSG(exatensor): Instruction execution synced
+[  7463.1493]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2610
+S(a,b,i,j)+=G(k,i)*T(a,b,k,j): s2(2:814,2:814,1:146,1:146)[] += goo(1:146,1:146)[] * t2(2:814,2:814,1:146,1:146)[]
+[  7464.2193]#MSG(exatensor): Instruction execution synced
+[  7464.2193]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2611
+S(a,b,i,j)+=V+(c,j,a,b)*T(c,i): s2(2:814,2:814,1:146,1:146)[] += vovv(2:814,1:146,2:814,2:814)[] * t1(2:814,1:146)[]
+[  7467.1496]#MSG(exatensor): Instruction execution synced
+[  7467.1496]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2612
+S(a,b,i,j)+=V+(c,i,a,b)*T(c,j): s2(2:814,2:814,1:146,1:146)[] += vovv(2:814,1:146,2:814,2:814)[] * t1(2:814,1:146)[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7469.3198]#MSG(exatensor): Instruction execution synced
+[  7469.3198]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2613
+S(a,b,i,j)+=G(a,c)*T(c,b,i,j): s2(2:814,2:814,1:146,1:146)[] += gvv(2:814,2:814)[] * t2(2:814,2:814,1:146,1:146)[]
+[  7472.5567]#MSG(exatensor): Instruction execution synced
+[  7472.5567]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2614
+S(a,b,i,j)+=G(b,c)*T(a,c,i,j): s2(2:814,2:814,1:146,1:146)[] += gvv(2:814,2:814)[] * t2(2:814,2:814,1:146,1:146)[]
+[  7475.7676]#MSG(exatensor): Instruction execution synced
+[  7475.7676]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2615
+S(a,b,i,j)+=C(k,b,i,j)*T(a,k): s2(2:814,2:814,1:146,1:146)[] += cint(1:146,2:814,1:146,1:146)[] * t1(2:814,1:146)[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7476.8342]#MSG(exatensor): Instruction execution synced
+[  7476.8342]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2616
+S(a,b,i,j)+=C(k,a,i,j)*T(b,k): s2(2:814,2:814,1:146,1:146)[] += cint(1:146,2:814,1:146,1:146)[] * t1(2:814,1:146)[]
+[  7477.9381]#MSG(exatensor): Instruction execution synced
+[  7477.9381]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2617
+S(a,b,i,j)+=A(k,l,i,j)*T(a,b,k,l): s2(2:814,2:814,1:146,1:146)[] += aint(1:146,1:146,1:146,1:146)[] * tau(2:814,2:814,1:146,1:146)[] * (  0.50000000000000D+00   0.00000000000000D+00)
+[  7487.2270]#MSG(exatensor): Instruction execution synced
+[  7487.2270]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2618
+S(a,b,i,j)+=V+(i,j,a,b)*K(): s2(2:814,2:814,1:146,1:146)[] += oovv(1:146,1:146,2:814,2:814)[] * another_one_tensor()[]
+[  7488.1857]#MSG(exatensor): Instruction execution synced
+[  7488.1857]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2619
+s1(2:814,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7488.5726]#MSG(exatensor): Instruction execution synced
+[  7488.5726]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2620
+S(a,i)+=F+(i,a)*K(): s1(2:814,1:146)[] += fov(1:146,2:814)[] * another_one_tensor()[]
+[  7488.9781]#MSG(exatensor): Instruction execution synced
+[  7488.9781]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2621
+S(a,i)+=V(a,k,c,d)*T(c,d,i,k): s1(2:814,1:146)[] += vovv(2:814,1:146,2:814,2:814)[] * tau(2:814,2:814,1:146,1:146)[] * (  0.50000000000000D+00   0.00000000000000D+00)
+[  7500.6350]#MSG(exatensor): Instruction execution synced
+[  7500.6350]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2622
+S(a,i)+=H(a,c)*T(c,i): s1(2:814,1:146)[] += hvv(2:814,2:814)[] * t1(2:814,1:146)[]
+[  7501.0500]#MSG(exatensor): Instruction execution synced
+[  7501.0501]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2623
+S(a,i)+=H(k,i)*T(a,k): s1(2:814,1:146)[] += hoo(1:146,1:146)[] * t1(2:814,1:146)[]
+[  7501.4398]#MSG(exatensor): Instruction execution synced
+[  7501.4398]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2624
+S(a,i)+=H(k,c)*T(a,c,i,k): s1(2:814,1:146)[] += hov(1:146,2:814)[] * t2(2:814,2:814,1:146,1:146)[]
+[  7503.4764]#MSG(exatensor): Instruction execution synced
+[  7503.4764]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2625
+hoo_aux(1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7503.8548]#MSG(exatensor): Instruction execution synced
+[  7503.8548]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2626
+L(k,i)+=H(k,c)*T(c,i): hoo_aux(1:146,1:146)[] += hov_aux(1:146,2:814)[] * t1(2:814,1:146)[]
+[  7504.2620]#MSG(exatensor): Instruction execution synced
+[  7504.2620]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2627
+S(a,i)+=H(k,i)*T(a,k): s1(2:814,1:146)[] += hoo_aux(1:146,1:146)[] * t1(2:814,1:146)[]
+[  7504.6604]#MSG(exatensor): Instruction execution synced
+[  7504.6604]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2628
+S(a,i)+=V(k,l,i,c)*T(c,a,k,l): s1(2:814,1:146)[] += ooov(1:146,1:146,1:146,2:814)[] * tau(2:814,2:814,1:146,1:146)[] * (  0.50000000000000D+00   0.00000000000000D+00)
+[  7510.9924]#MSG(exatensor): Instruction execution synced
+[  7510.9924]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2629
+S(a,i)+=V(a,k,c,i)*T(c,k): s1(2:814,1:146)[] += vovo(2:814,1:146,2:814,1:146)[] * t1(2:814,1:146)[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7512.7467]#MSG(exatensor): Instruction execution synced
+[  7512.7467]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2630
+t1(2:814,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7513.1309]#MSG(exatensor): Instruction execution synced
+[  7513.1309]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2631
+T1(a,i)+=S1(a,i)*K(): t1(2:814,1:146)[] += s1(2:814,1:146)[] * another_one_tensor()[]
+[  7513.5352]#MSG(exatensor): Instruction execution synced
+[  7513.5352]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =        2632
+t1(2:814,1:146)[] += Denominate
+[  7513.5409]#MSG(exatensor): Instruction execution synced
+[  7513.5409]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2633
+t2(2:814,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7514.3387]#MSG(exatensor): Instruction execution synced
+[  7514.3387]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2634
+T2(a,b,i,j)+=S2(a,b,i,j)*K(): t2(2:814,2:814,1:146,1:146)[] += s2(2:814,2:814,1:146,1:146)[] * another_one_tensor()[]
+[  7515.2900]#MSG(exatensor): Instruction execution synced
+[  7515.2900]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =        2635
+t2(2:814,2:814,1:146,1:146)[] += Denominate
+[  7515.6905]#MSG(exatensor): Instruction execution synced
+[  7515.6905]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2636
+t1_res_tensor_3(2:814,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7516.0766]#MSG(exatensor): Instruction execution synced
+[  7516.0766]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2637
+T1R(a,i)+=T1(a,i)*K(): t1_res_tensor_3(2:814,1:146)[] += t1(2:814,1:146)[] * another_one_tensor()[]
+[  7516.4796]#MSG(exatensor): Instruction execution synced
+[  7516.4796]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2638
+t2_res_tensor_3(2:814,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7517.2800]#MSG(exatensor): Instruction execution synced
+[  7517.2800]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2639
+T2R(a,b,i,j)+=T2(a,b,i,j)*K(): t2_res_tensor_3(2:814,2:814,1:146,1:146)[] += t2(2:814,2:814,1:146,1:146)[] * another_one_tensor()[]
+[  7518.2160]#MSG(exatensor): Instruction execution synced
+[  7518.2160]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2640
+t1_err_tensor_3(2:814,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7518.6030]#MSG(exatensor): Instruction execution synced
+[  7518.6030]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2641
+T1E(a,i)+=T1R(a,i)*K(): t1_err_tensor_3(2:814,1:146)[] += t1(2:814,1:146)[] * another_one_tensor()[]
+[  7519.0068]#MSG(exatensor): Instruction execution synced
+[  7519.0068]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2642
+T1E(a,i)+=T1I(a,i)*K(): t1_err_tensor_3(2:814,1:146)[] += t1_inp_tensor(2:814,1:146)[] * another_one_tensor()[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7519.4111]#MSG(exatensor): Instruction execution synced
+[  7519.4112]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2643
+t2_err_tensor_3(2:814,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7520.2113]#MSG(exatensor): Instruction execution synced
+[  7520.2113]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2644
+T2E(a,b,i,j)+=T2R(a,b,i,j)*K(): t2_err_tensor_3(2:814,2:814,1:146,1:146)[] += t2(2:814,2:814,1:146,1:146)[] * another_one_tensor()[]
+[  7521.1464]#MSG(exatensor): Instruction execution synced
+[  7521.1464]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2645
+T2E(a,b,i,j)+=T2I(a,b,i,j)*K(): t2_err_tensor_3(2:814,2:814,1:146,1:146)[] += t2_inp_tensor(2:814,2:814,1:146,1:146)[] * another_one_tensor()[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7522.0850]#MSG(exatensor): Instruction execution synced
+[  7522.0850]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2646
+scalar_tensor()[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7522.0864]#MSG(exatensor): Instruction execution synced
+[  7522.0864]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2647
+E()+=T+(a,i)*T(a,i): scalar_tensor()[] += t1_err_tensor_3(2:814,1:146)[] * t1_err_tensor_1(2:814,1:146)[]
+[  7522.1011]#MSG(exatensor): Instruction execution synced
+[  7522.1011]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2648
+E()+=T+(a,b,i,j)*T(a,b,i,j): scalar_tensor()[] += t2_err_tensor_3(2:814,2:814,1:146,1:146)[] * t2_err_tensor_1(2:814,2:814,1:146,1:146)[]
+[  7525.2851]#MSG(exatensor): Instruction execution synced
+[  7525.2851]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =        2649
+scalar_tensor()[] += _RetrieveScalar_
+[  7525.2866]#MSG(exatensor): Instruction execution synced
+[  7525.2866]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2650
+scalar_tensor()[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7525.2886]#MSG(exatensor): Instruction execution synced
+[  7525.2886]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2651
+E()+=T+(a,i)*T(a,i): scalar_tensor()[] += t1_err_tensor_3(2:814,1:146)[] * t1_err_tensor_2(2:814,1:146)[]
+[  7525.3031]#MSG(exatensor): Instruction execution synced
+[  7525.3031]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2652
+E()+=T+(a,b,i,j)*T(a,b,i,j): scalar_tensor()[] += t2_err_tensor_3(2:814,2:814,1:146,1:146)[] * t2_err_tensor_2(2:814,2:814,1:146,1:146)[]
+[  7528.6251]#MSG(exatensor): Instruction execution synced
+[  7528.6251]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =        2653
+scalar_tensor()[] += _RetrieveScalar_
+[  7528.6270]#MSG(exatensor): Instruction execution synced
+[  7528.6270]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2654
+scalar_tensor()[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7528.6290]#MSG(exatensor): Instruction execution synced
+[  7528.6290]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2655
+E()+=T+(a,i)*T(a,i): scalar_tensor()[] += t1_err_tensor_3(2:814,1:146)[] * t1_err_tensor_3(2:814,1:146)[]
+[  7528.6429]#MSG(exatensor): Instruction execution synced
+[  7528.6430]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2656
+E()+=T+(a,b,i,j)*T(a,b,i,j): scalar_tensor()[] += t2_err_tensor_3(2:814,2:814,1:146,1:146)[] * t2_err_tensor_3(2:814,2:814,1:146,1:146)[]
+[  7530.2941]#MSG(exatensor): Instruction execution synced
+[  7530.2941]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =        2657
+scalar_tensor()[] += _RetrieveScalar_
+[  7530.2959]#MSG(exatensor): Instruction execution synced
+[  7530.2960]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2658
+scalar_tensor()[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7530.2970]#MSG(exatensor): Instruction execution synced
+[  7530.2970]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2659
+E()+=T+(a,i)*T(a,i): scalar_tensor()[] += t1_err_tensor_3(2:814,1:146)[] * t1_err_tensor_4(2:814,1:146)[]
+[  7530.3116]#MSG(exatensor): Instruction execution synced
+[  7530.3116]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2660
+E()+=T+(a,b,i,j)*T(a,b,i,j): scalar_tensor()[] += t2_err_tensor_3(2:814,2:814,1:146,1:146)[] * t2_err_tensor_4(2:814,2:814,1:146,1:146)[]
+[  7533.4674]#MSG(exatensor): Instruction execution synced
+[  7533.4674]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =        2661
+scalar_tensor()[] += _RetrieveScalar_
+[  7533.4694]#MSG(exatensor): Instruction execution synced
+[  7533.4694]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2662
+scalar_tensor()[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7533.4714]#MSG(exatensor): Instruction execution synced
+[  7533.4714]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2663
+E()+=T+(a,i)*T(a,i): scalar_tensor()[] += t1_err_tensor_3(2:814,1:146)[] * t1_err_tensor_5(2:814,1:146)[]
+[  7533.4861]#MSG(exatensor): Instruction execution synced
+[  7533.4861]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2664
+E()+=T+(a,b,i,j)*T(a,b,i,j): scalar_tensor()[] += t2_err_tensor_3(2:814,2:814,1:146,1:146)[] * t2_err_tensor_5(2:814,2:814,1:146,1:146)[]
+[  7536.8369]#MSG(exatensor): Instruction execution synced
+[  7536.8369]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =        2665
+scalar_tensor()[] += _RetrieveScalar_
+[  7536.8381]#MSG(exatensor): Instruction execution synced
+[  7536.8381]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2666
+t1(2:814,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7537.2210]#MSG(exatensor): Instruction execution synced
+[  7537.2210]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2667
+t2(2:814,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7538.0212]#MSG(exatensor): Instruction execution synced
+[  7538.0212]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2668
+T1(a,i)+=T1O(a,i)*K(): t1(2:814,1:146)[] += t1_res_tensor_1(2:814,1:146)[] * another_one_tensor()[] * ( -0.11754234034297D+00   0.17187102350666D-12)
+[  7538.4206]#MSG(exatensor): Instruction execution synced
+[  7538.4206]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2669
+T2(a,b,i,j)+=T2O(a,b,i,j)*K(): t2(2:814,2:814,1:146,1:146)[] += t2_res_tensor_1(2:814,2:814,1:146,1:146)[] * another_one_tensor()[] * ( -0.11754234034297D+00   0.17187102350666D-12)
+[  7539.3773]#MSG(exatensor): Instruction execution synced
+[  7539.3773]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2670
+T1(a,i)+=T1O(a,i)*K(): t1(2:814,1:146)[] += t1_res_tensor_2(2:814,1:146)[] * another_one_tensor()[] * (  0.29639368125458D+00  -0.25777449078846D-12)
+[  7539.7635]#MSG(exatensor): Instruction execution synced
+[  7539.7635]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2671
+T2(a,b,i,j)+=T2O(a,b,i,j)*K(): t2(2:814,2:814,1:146,1:146)[] += t2_res_tensor_2(2:814,2:814,1:146,1:146)[] * another_one_tensor()[] * (  0.29639368125458D+00  -0.25777449078846D-12)
+[  7540.7169]#MSG(exatensor): Instruction execution synced
+[  7540.7169]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2672
+T1(a,i)+=T1O(a,i)*K(): t1(2:814,1:146)[] += t1_res_tensor_3(2:814,1:146)[] * another_one_tensor()[] * (  0.98187410565928D+00   0.10709167111997D-11)
+[  7541.1032]#MSG(exatensor): Instruction execution synced
+[  7541.1032]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2673
+T2(a,b,i,j)+=T2O(a,b,i,j)*K(): t2(2:814,2:814,1:146,1:146)[] += t2_res_tensor_3(2:814,2:814,1:146,1:146)[] * another_one_tensor()[] * (  0.98187410565928D+00   0.10709167111997D-11)
+[  7542.0559]#MSG(exatensor): Instruction execution synced
+[  7542.0559]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2674
+T1(a,i)+=T1O(a,i)*K(): t1(2:814,1:146)[] += t1_res_tensor_4(2:814,1:146)[] * another_one_tensor()[] * (  0.16472131712914D-01  -0.31944368887611D-12)
+[  7542.4420]#MSG(exatensor): Instruction execution synced
+[  7542.4420]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2675
+T2(a,b,i,j)+=T2O(a,b,i,j)*K(): t2(2:814,2:814,1:146,1:146)[] += t2_res_tensor_4(2:814,2:814,1:146,1:146)[] * another_one_tensor()[] * (  0.16472131712914D-01  -0.31944368887611D-12)
+[  7543.3985]#MSG(exatensor): Instruction execution synced
+[  7543.3985]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2676
+T1(a,i)+=T1O(a,i)*K(): t1(2:814,1:146)[] += t1_res_tensor_5(2:814,1:146)[] * another_one_tensor()[] * ( -0.17719757828380D+00  -0.66556955504183D-12)
+[  7543.7855]#MSG(exatensor): Instruction execution synced
+[  7543.7855]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2677
+T2(a,b,i,j)+=T2O(a,b,i,j)*K(): t2(2:814,2:814,1:146,1:146)[] += t2_res_tensor_5(2:814,2:814,1:146,1:146)[] * another_one_tensor()[] * ( -0.17719757828380D+00  -0.66556955504183D-12)
+[  7544.7397]#MSG(exatensor): Instruction execution synced
+[  7544.7397]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2678
+t1_inp_tensor(2:814,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7545.1247]#MSG(exatensor): Instruction execution synced
+[  7545.1247]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2679
+T1O(a,i)+=T1(a,i)*K(): t1_inp_tensor(2:814,1:146)[] += t1(2:814,1:146)[] * another_one_tensor()[]
+[  7545.5279]#MSG(exatensor): Instruction execution synced
+[  7545.5279]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2680
+t2_inp_tensor(2:814,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7546.3275]#MSG(exatensor): Instruction execution synced
+[  7546.3275]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2681
+T2O(a,b,i,j)+=T2(a,b,i,j)*K(): t2_inp_tensor(2:814,2:814,1:146,1:146)[] += t2(2:814,2:814,1:146,1:146)[] * another_one_tensor()[]
+[  7547.2643]#MSG(exatensor): Instruction execution synced
+[  7547.2643]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2682
+result_t()[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7547.2660]#MSG(exatensor): Instruction execution synced
+[  7547.2660]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2683
+E()+=T(a,i)*F(i,a): result_t()[] += t1(2:814,1:146)[] * fov(1:146,2:814)[]
+[  7547.2813]#MSG(exatensor): Instruction execution synced
+[  7547.2813]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =        2684
+result_t()[] += _RetrieveScalar_
+[  7547.2825]#MSG(exatensor): Instruction execution synced
+[  7547.2825]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2685
+result_t()[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7547.2834]#MSG(exatensor): Instruction execution synced
+[  7547.2835]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =        2686
+tau(2:814,2:814,1:146,1:146)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[  7548.0873]#MSG(exatensor): Instruction execution synced
+[  7548.0873]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2687
+T(a,b,i,j)+=R(a,b,i,j)*K(): tau(2:814,2:814,1:146,1:146)[] += t2(2:814,2:814,1:146,1:146)[] * another_one_tensor()[]
+[  7549.0232]#MSG(exatensor): Instruction execution synced
+[  7549.0232]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2688
+T(a,b,i,j)+=T(a,i)*T(b,j): tau(2:814,2:814,1:146,1:146)[] += t1(2:814,1:146)[] * t1(2:814,1:146)[]
+[  7549.9488]#MSG(exatensor): Instruction execution synced
+[  7549.9488]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2689
+T(a,b,i,j)+=T(a,j)*T(b,i): tau(2:814,2:814,1:146,1:146)[] += t1(2:814,1:146)[] * t1(2:814,1:146)[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[  7550.8729]#MSG(exatensor): Instruction execution synced
+[  7550.8729]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =        2690
+E()+=T(a,b,i,j)*V(i,j,a,b): result_t()[] += tau(2:814,2:814,1:146,1:146)[] * oovv(1:146,1:146,2:814,2:814)[]
+[  7553.9659]#MSG(exatensor): Instruction execution synced
+[  7553.9659]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by method): IP =        2691
+result_t()[] += _RetrieveScalar_
+[  7553.9670]#MSG(exatensor): Instruction execution synced
+[  7553.9670]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2692
+s1(2:814,1:146)[]
+[  7553.9693]#MSG(exatensor): Instruction execution synced
+[  7553.9694]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2693
+s2(2:814,2:814,1:146,1:146)[]
+[  7554.0084]#MSG(exatensor): Instruction execution synced
+[  7554.0084]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2694
+tau2(2:814,2:814,1:146,1:146)[]
+[  7554.0476]#MSG(exatensor): Instruction execution synced
+[  7554.0476]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2695
+cint(1:146,2:814,1:146,1:146)[]
+[  7554.0558]#MSG(exatensor): Instruction execution synced
+[  7554.0558]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2696
+hoo_aux(1:146,1:146)[]
+[  7554.0584]#MSG(exatensor): Instruction execution synced
+[  7554.0584]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2697
+hov_aux(1:146,2:814)[]
+[  7554.0609]#MSG(exatensor): Instruction execution synced
+[  7554.0610]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2698
+result_t()[]
+[  7554.0623]#MSG(exatensor): Instruction execution synced
+[  7554.0624]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2699
+t1_inp_tensor(2:814,1:146)[]
+[  7554.0650]#MSG(exatensor): Instruction execution synced
+[  7554.0650]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2700
+t2_inp_tensor(2:814,2:814,1:146,1:146)[]
+[  7554.1042]#MSG(exatensor): Instruction execution synced
+[  7554.1042]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2701
+t1_res_tensor_1(2:814,1:146)[]
+[  7554.1068]#MSG(exatensor): Instruction execution synced
+[  7554.1068]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2702
+t1_err_tensor_1(2:814,1:146)[]
+[  7554.1094]#MSG(exatensor): Instruction execution synced
+[  7554.1094]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2703
+t2_res_tensor_1(2:814,2:814,1:146,1:146)[]
+[  7554.1486]#MSG(exatensor): Instruction execution synced
+[  7554.1486]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2704
+t2_err_tensor_1(2:814,2:814,1:146,1:146)[]
+[  7554.1878]#MSG(exatensor): Instruction execution synced
+[  7554.1878]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2705
+t1_res_tensor_2(2:814,1:146)[]
+[  7554.1905]#MSG(exatensor): Instruction execution synced
+[  7554.1905]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2706
+t1_err_tensor_2(2:814,1:146)[]
+[  7554.1928]#MSG(exatensor): Instruction execution synced
+[  7554.1928]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2707
+t2_res_tensor_2(2:814,2:814,1:146,1:146)[]
+[  7554.2322]#MSG(exatensor): Instruction execution synced
+[  7554.2323]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2708
+t2_err_tensor_2(2:814,2:814,1:146,1:146)[]
+[  7554.2714]#MSG(exatensor): Instruction execution synced
+[  7554.2714]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2709
+t1_res_tensor_3(2:814,1:146)[]
+[  7554.2738]#MSG(exatensor): Instruction execution synced
+[  7554.2738]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2710
+t1_err_tensor_3(2:814,1:146)[]
+[  7554.2761]#MSG(exatensor): Instruction execution synced
+[  7554.2762]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2711
+t2_res_tensor_3(2:814,2:814,1:146,1:146)[]
+[  7554.3157]#MSG(exatensor): Instruction execution synced
+[  7554.3157]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2712
+t2_err_tensor_3(2:814,2:814,1:146,1:146)[]
+[  7554.3551]#MSG(exatensor): Instruction execution synced
+[  7554.3551]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2713
+t1_res_tensor_4(2:814,1:146)[]
+[  7554.3576]#MSG(exatensor): Instruction execution synced
+[  7554.3576]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2714
+t1_err_tensor_4(2:814,1:146)[]
+[  7554.3602]#MSG(exatensor): Instruction execution synced
+[  7554.3602]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2715
+t2_res_tensor_4(2:814,2:814,1:146,1:146)[]
+[  7554.3996]#MSG(exatensor): Instruction execution synced
+[  7554.3997]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2716
+t2_err_tensor_4(2:814,2:814,1:146,1:146)[]
+[  7554.4387]#MSG(exatensor): Instruction execution synced
+[  7554.4387]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2717
+t1_res_tensor_5(2:814,1:146)[]
+[  7554.4412]#MSG(exatensor): Instruction execution synced
+[  7554.4412]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2718
+t1_err_tensor_5(2:814,1:146)[]
+[  7554.4436]#MSG(exatensor): Instruction execution synced
+[  7554.4436]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2719
+t2_res_tensor_5(2:814,2:814,1:146,1:146)[]
+[  7554.4828]#MSG(exatensor): Instruction execution synced
+[  7554.4829]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2720
+t2_err_tensor_5(2:814,2:814,1:146,1:146)[]
+[  7554.5225]#MSG(exatensor): Instruction execution synced
+[  7554.5225]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2721
+scalar_tensor()[]
+[  7554.5238]#MSG(exatensor): Instruction execution synced
+[  7554.5239]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2722
+oooo(1:146,1:146,1:146,1:146)[]
+[  7554.5264]#MSG(exatensor): Instruction execution synced
+[  7554.5265]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2723
+ooov(1:146,1:146,1:146,2:814)[]
+[  7554.5343]#MSG(exatensor): Instruction execution synced
+[  7554.5343]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2724
+oovv(1:146,1:146,2:814,2:814)[]
+[  7554.5727]#MSG(exatensor): Instruction execution synced
+[  7554.5727]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2725
+vovo(2:814,1:146,2:814,1:146)[]
+[  7554.6158]#MSG(exatensor): Instruction execution synced
+[  7554.6158]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2726
+vovv(2:814,1:146,2:814,2:814)[]
+[  7554.8037]#MSG(exatensor): Instruction execution synced
+[  7554.8037]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2727
+vvvv(2:814,2:814,2:814,2:814)[]
+[  7555.7679]#MSG(exatensor): Instruction execution synced
+[  7555.7680]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2728
+foo(1:146,1:146)[]
+[  7555.7711]#MSG(exatensor): Instruction execution synced
+[  7555.7711]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2729
+fov(1:146,2:814)[]
+[  7555.7737]#MSG(exatensor): Instruction execution synced
+[  7555.7737]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2730
+fvv(2:814,2:814)[]
+[  7555.7839]#MSG(exatensor): Instruction execution synced
+[  7555.7839]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2731
+tau(2:814,2:814,1:146,1:146)[]
+[  7555.8229]#MSG(exatensor): Instruction execution synced
+[  7555.8229]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2732
+hoo(1:146,1:146)[]
+[  7555.8247]#MSG(exatensor): Instruction execution synced
+[  7555.8247]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2733
+hov(1:146,2:814)[]
+[  7555.8273]#MSG(exatensor): Instruction execution synced
+[  7555.8273]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2734
+hvv(2:814,2:814)[]
+[  7555.8370]#MSG(exatensor): Instruction execution synced
+[  7555.8371]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2735
+goo(1:146,1:146)[]
+[  7555.8389]#MSG(exatensor): Instruction execution synced
+[  7555.8389]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2736
+gvv(2:814,2:814)[]
+[  7555.8490]#MSG(exatensor): Instruction execution synced
+[  7555.8490]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2737
+aint(1:146,1:146,1:146,1:146)[]
+[  7555.8513]#MSG(exatensor): Instruction execution synced
+[  7555.8513]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2738
+hint(2:814,1:146,2:814,1:146)[]
+[  7555.8899]#MSG(exatensor): Instruction execution synced
+[  7555.8900]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2739
+result_tensor()[]
+[  7555.8920]#MSG(exatensor): Instruction execution synced
+[  7555.8920]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2740
+another_one_tensor()[]
+[  7555.8940]#MSG(exatensor): Instruction execution synced
+[  7555.8940]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2741
+t1(2:814,1:146)[]
+[  7555.8971]#MSG(exatensor): Instruction execution synced
+[  7555.8971]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP = [  7555.8971]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =        2742
+t2(2:814,2:814,1:146,1:146)[]
+[  7555.9355]#MSG(exatensor): Instruction execution synced
+[  7555.9355]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP = [  7555.9355]#MSG(exatensor): New Instruction: STOP ExaTENSOR: IP =        2743
+[  7555.9356]#MSG(exatensor): Instruction execution synced
