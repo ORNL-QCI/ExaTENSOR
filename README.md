@@ -1,9 +1,11 @@
-ExaTENSOR: Basic numerical tensor algebra library for distributed
-           HPC systems equipped with multicore CPU and NVIDIA GPU.
-           The ExaTENSOR parallel runtime is based on the virtual
-           tensor algebra processors, i.e. software processors
-           specialized to numerical tensor algebra workloads on
-           heterogeneous HPC systems (multicore/KNL + NVIDIA GPU).
+ExaTENSOR is a basic numerical tensor algebra library for
+distributed HPC systems equipped with multicore CPU and NVIDIA GPU.
+The hierarchical task-based parallel runtime of ExaTENSOR
+is based on the virtual tensor algebra processor architecture,
+i.e. a software processor specialized to numerical tensor algebra
+workloads on heterogeneous HPC systems (multicore/KNL + NVIDIA GPU).
+
+(Details can be found here: https://doi.org/10.1002/qua.25926)
 
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
 
@@ -12,12 +14,21 @@ Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 LICENSE: GNU Lesser General Public License v.3
 
+___
+** This is NOT a production version yet as the work on fixing performance
+   issues and addressing numerous problems in existing MPI-3 implementations
+   is still in progress. Stay tuned. **
+___
+
 PROGRAMMING MODEL: OOP FORTRAN 2003+, C/C++11, OpenMP 3+, MPI 3+, CUDA.
 
-LIBRARY DEPENDENCIES: MPI-3 (OpenMPI/3.1.0 or MPICH/3.2.1 tested)
-                      CPU BLAS (optional)
-                      cuBLAS (optional)
-                      cuTT (optional)
+SUPPORTED COMPILERS: GNU 8.x.y, Intel 18.x.y, IBM XL 16.1.x.
+
+LIBRARY DEPENDENCIES: MPI-3 (OpenMPI/3.1.0 or MPICH/3.2.1 tested);
+                      CPU BLAS (optional: ATLAS, MKL, ACML, ESSL);
+                      cuBLAS (optional);
+                      cuTT (optional);
+                      cuTensor (optional).
 
 DESCRIPTION: The ExaTENSOR framework further elaborates on the idea of
              domain-specific virtual processing, that is, it introduces an
@@ -88,8 +99,12 @@ RUN: An example script run.sh shows how to run ExaTENSOR for a test case (Qforce
      The test should normally take less than a minute to run.
 
 KNOWN ISSUES:
-     (a) OpenMPI/3.1.0 sometimes hangs in MPI_Raccumulate() non-blocking call.
-     (b) Cray-MPICH sometimes hangs in MPI_Win_unlock() and MPI_Win_flush() calls.
-     (c) GNU 9.1 gfortran introduced a regression resulting in Internal Compiler Error
+     (a) So far the most stable openmpi version is 3.1.0. Other openmpi versions
+         have issues with the THREAD_MULTIPLE support of passive-target one-sided
+         MPI communication over dynamic MPI windows. The IBM Spectrum-MPI derivative
+         of openmpi is stable.
+     (b) So far the MPICH/3.2.1 implementation is the recommended one.
+         Cray-MPICH derivative of MPICH sometimes hangs in MPI_Win_unlock() and MPI_Win_flush().
+     (c) GNU 9.1 gfortran introduced a regression resulting in an Internal Compiler Error
          due to inability to generate finalization wrappers for tens_signature_t and
-         tens_shape_t in INTRAVIRT/tensor_recursive.F90.
+         tens_shape_t derived types in INTRAVIRT/tensor_recursive.F90.
