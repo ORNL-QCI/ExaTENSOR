@@ -53,7 +53,11 @@ else
 FC_NOWRAP = $(FC_$(MPILIB))
 endif
 FC_WRAP = ftn
+ifeq ($(EXATN_SERVICE),YES)
+FCOMP = $(CMAKE_Fortran_COMPILER)
+else
 FCOMP = $(COMP_PREF) $(FC_$(WRAP))
+endif
 #C compiler:
 CC_GNU = gcc
 CC_PGI = pgcc
@@ -68,7 +72,11 @@ else
 CC_NOWRAP = $(CC_$(MPILIB))
 endif
 CC_WRAP = cc
+ifeq ($(EXATN_SERVICE),YES)
+CCOMP = $(CMAKE_C_COMPILER)
+else
 CCOMP = $(COMP_PREF) $(CC_$(WRAP))
+endif
 #C++ compiler:
 CPP_GNU = g++
 CPP_PGI = pgc++
@@ -87,7 +95,11 @@ else
 CPP_NOWRAP = $(CPP_$(MPILIB))
 endif
 CPP_WRAP = CC
+ifeq ($(EXATN_SERVICE),YES)
+CPPCOMP = $(CMAKE_CXX_COMPILER)
+else
 CPPCOMP = $(COMP_PREF) $(CPP_$(WRAP))
+endif
 
 #COMPILER INCLUDES:
 INC_GNU = -I.
