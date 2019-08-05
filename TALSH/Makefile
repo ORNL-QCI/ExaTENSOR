@@ -106,7 +106,7 @@ else
 FC_NOWRAP = $(FC_$(MPILIB))
 endif
 FC_WRAP = ftn
-ifeq ($(EXATN_SERVICE),YES)
+ifeq ($(EXA_TALSH_ONLY),YES)
 FCOMP = $(CMAKE_Fortran_COMPILER)
 else
 FCOMP = $(COMP_PREF) $(FC_$(WRAP))
@@ -125,7 +125,7 @@ else
 CC_NOWRAP = $(CC_$(MPILIB))
 endif
 CC_WRAP = cc
-ifeq ($(EXATN_SERVICE),YES)
+ifeq ($(EXA_TALSH_ONLY),YES)
 CCOMP = $(CMAKE_C_COMPILER)
 else
 CCOMP = $(COMP_PREF) $(CC_$(WRAP))
@@ -148,7 +148,7 @@ else
 CPP_NOWRAP = $(CPP_$(MPILIB))
 endif
 CPP_WRAP = CC
-ifeq ($(EXATN_SERVICE),YES)
+ifeq ($(EXA_TALSH_ONLY),YES)
 CPPCOMP = $(CMAKE_CXX_COMPILER)
 else
 CPPCOMP = $(COMP_PREF) $(CPP_$(WRAP))
