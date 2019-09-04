@@ -245,10 +245,9 @@ talsh_tens_t * Tensor::getTalshTensorPtr()
 }
 
 
-/** Resets the write task on the tensor. **/
+/** Resets the write task on the tensor. The preceding task must have been finalized. **/
 void Tensor::resetWriteTask(TensorTask * task)
 {
- this->completeWriteTask();
  pimpl_->write_task_ = task;
  return;
 }
