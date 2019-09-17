@@ -79,6 +79,7 @@
         integer, parameter, private:: MAX_THREADS=1024        !max allowed number of threads in this module
         integer, private:: MEM_ALLOC_POLICY=MEM_ALLOC_TMP_BUF !memory allocation policy
         logical, private:: MEM_ALLOC_FALLBACK=.TRUE.          !memory allocation fallback to the regular allocator
+        logical, private:: ZERO_UNINITIALIZED_OUTPUT=.TRUE.   !initialize uninitialized output tensors to zero in tensor contractions
         logical, private:: DATA_KIND_SYNC=.FALSE. !if .TRUE., each tensor operation will syncronize all existing data kinds
         logical, private:: TRANS_SHMEM=.TRUE.     !cache-efficient (true) VS scatter (false) tensor transpose algorithm
 #ifndef NO_BLAS
@@ -3707,10 +3708,12 @@
         if(CHECK_NAN) then
          if(tensor_block_has_nan(ltens)) then
           write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_contract): NaN detected in left input tensor!")')
+          flush(CONS_OUT)
           call crash()
          endif
          if(tensor_block_has_nan(rtens)) then
           write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_contract): NaN detected in right input tensor!")')
+          flush(CONS_OUT)
           call crash()
          endif
         endif
@@ -3736,11 +3739,25 @@
         lrank=ltens%tensor_shape%num_dim; rrank=rtens%tensor_shape%num_dim; drank=dtens%tensor_shape%num_dim
         if(lrank.ge.0.and.lrank.le.max_tensor_rank.and.rrank.ge.0.and.rrank.le.max_tensor_rank.and.&
           &drank.ge.0.and.drank.le.max_tensor_rank) then
+ !Determine computational data kind:
          if(present(data_kind)) then
           dtk=data_kind
          else
           call determine_data_kind(dtk,ierr); if(ierr.ne.0) then; ierr=6; return; endif
          endif
+ !Zero out the output tensor if necessary:
+         beta=(1d0,0d0); accum=.TRUE.
+         if(present(accumulative)) then
+          accum=accumulative
+          if(.not.accum) then
+           if(ZERO_UNINITIALIZED_OUTPUT) then
+            call tensor_block_init(dtk,dtens,ierr); if(ierr.ne.0) then; ierr=42; return; endif
+           endif
+           dtens%scalar_value=(0d0,0d0)
+           beta=(0d0,0d0)
+          endif
+         endif
+         if(present(alpha)) then; alf=alpha; else; alf=(1d0,0d0); endif
  !Check the requested contraction pattern:
          contr_ok=contr_ptrn_ok(contr_ptrn,lrank,rrank,drank)
          if(present(ord_rest)) contr_ok=contr_ok.and.ord_rest_ok(ord_rest,contr_ptrn,lrank,rrank,drank)
@@ -3876,12 +3893,6 @@
          if(l0.ne.lld.or.l1.ne.lcd.or.l2.ne.lrd) then; ierr=17; goto 999; endif
          if(rtrm.eq.'C') then; l2=lrd; else; l2=lcd; endif !leading dimension for the right matrix
  !Multiply two matrices (dtp += ltp * rtp):
-         beta=(1d0,0d0); accum=.TRUE.
-         if(present(accumulative)) then
-          accum=accumulative
-          if(.not.accum) then; dtp%scalar_value=(0d0,0d0); beta=(0d0,0d0); endif
-         endif
-         if(present(alpha)) then; alf=alpha; else; alf=(1d0,0d0); endif
 	 start_gemm=thread_wtime() !debug
 	 select case(contr_case)
 	 case(PARTIAL_CONTRACTION) !destination is an array
@@ -4025,6 +4036,13 @@
 	 if(CHECK_NAN) then
 	  if(tensor_block_has_nan(dtens)) then
 	   write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_contract): NaN detected in output tensor!")')
+	   if(tensor_block_has_nan(ltens)) then
+	    write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_contract): NaN now also detected in left input tensor!")')
+	   endif
+	   if(tensor_block_has_nan(rtens)) then
+	    write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_contract): NaN now also detected in right input tensor!")')
+	   endif
+	   flush(CONS_OUT)
 	   call crash()
 	  endif
 	 endif
