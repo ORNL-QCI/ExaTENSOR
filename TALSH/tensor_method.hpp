@@ -9,11 +9,11 @@ Copyright (C) 2018-2019 Oak Ridge National Laboratory (UT-Battelle) **/
 
 #ifdef EXATN_SERVICE
 
-#include "talshxx.hpp"
-
 #include "byte_packet.h"
 
 namespace talsh{
+
+class Tensor;
 
 //External tensor functor (identifiable):
 template <typename IdentifiableConcept>
