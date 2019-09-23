@@ -1,9 +1,9 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/12/10
+!REVISION: 2019/09/23
 
-!Copyright (C) 2014-2018 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2018 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -133,7 +133,7 @@
           import
           implicit none
           character(C_CHAR), intent(in):: annotation(*)
-          integer(C_INT), value:: color
+          integer(C_INT), intent(in), value:: color
          end subroutine nvtx_push
          subroutine nvtx_pop() bind(c,name='prof_pop')
          end subroutine nvtx_pop
