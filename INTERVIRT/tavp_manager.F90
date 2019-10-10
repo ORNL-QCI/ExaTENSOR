@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/06/25
+!REVISION: 2019/10/10
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -435,6 +435,7 @@
 !VISIBILITY:
  !non-member:
         public tavp_mng_reset_output
+        public tavp_mng_reset_logging
  !tens_entry_mng_t:
         private TensEntryMngCtor
         private TensEntryMngGetOwnerId
@@ -544,10 +545,17 @@
 ![non-member]=================================
         subroutine tavp_mng_reset_output(devo)
          implicit none
-         integer(INTD), intent(in)::devo
+         integer(INTD), intent(in)::devo !in: new output device
          CONS_OUT=devo
          return
         end subroutine tavp_mng_reset_output
+!---------------------------------------------------
+        subroutine tavp_mng_reset_logging(log_level)
+         implicit none
+         integer(INTD), intent(in):: log_level !in: new logging level
+         LOGGING=log_level
+         return
+        end subroutine tavp_mng_reset_logging
 ![tens_entry_mng_t]========================================
         subroutine TensEntryMngCtor(this,tensor,owner,ierr)
 !Constructs a <tens_entry_mng_t>. Note move semantics for <tensor>!

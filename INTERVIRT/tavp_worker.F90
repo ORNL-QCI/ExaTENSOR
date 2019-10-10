@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/06/25
+!REVISION: 2019/10/10
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -456,6 +456,7 @@
  !non-member test/debug:
         private test_carma
         public tavp_wrk_reset_output
+        public tavp_wrk_reset_logging
  !instr_time_t:
         private InstrTimeClean
         private InstrTimePrintIt
@@ -1001,10 +1002,17 @@
 !---------------------------------------------
         subroutine tavp_wrk_reset_output(devo)
          implicit none
-         integer(INTD), intent(in):: devo
+         integer(INTD), intent(in):: devo !in: new output device
          CONS_OUT=devo
          return
         end subroutine tavp_wrk_reset_output
+!---------------------------------------------------
+        subroutine tavp_wrk_reset_logging(log_level)
+         implicit none
+         integer(INTD), intent(in):: log_level !in: new logging level
+         LOGGING=log_level
+         return
+        end subroutine tavp_wrk_reset_logging
 ![instr_time_t]=============================
         subroutine InstrTimeClean(this,ierr)
 !Clears all time stamps.
