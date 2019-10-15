@@ -25,6 +25,8 @@ export EXA_OS ?= LINUX
 
 #ADJUST EXTRAS (optional):
 
+#LAPACK: [YES|NO]:
+export WITH_LAPACK ?= NO
 #Fast GPU tensor transpose (cuTT library): [YES|NO]:
 export WITH_CUTT ?= NO
 #In-place GPU tensor contractions (cuTensor library): [YES|NO]:
@@ -58,9 +60,9 @@ export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.1.0
  export PATH_OPENMPI_BIN ?= $(PATH_OPENMPI)/bin
 
 #BLAS library (whichever you have chosen above):
-# Set this path if you have chosen ATLAS (default Linux BLAS):
+# Set this path if you have chosen ATLAS (any default Linux BLAS):
 export PATH_BLAS_ATLAS ?= /usr/lib/x86_64-linux-gnu
-# Set this path if you have chosen Intel MKL:
+# Set this path to Intel root directory if you have chosen Intel MKL:
 export PATH_INTEL ?= /opt/intel
 #  Only reset these if Intel MKL libraries are spread in system directories:
 export PATH_BLAS_MKL ?= $(PATH_INTEL)/mkl/lib/intel64
@@ -72,9 +74,13 @@ export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 export PATH_BLAS_ESSL ?= /sw/summit/essl/6.1.0-2/essl/6.1/lib64
 
 #IBM XL (only set these if you use IBM XL and/or ESSL):
-export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-1/xlC/16.1.1/lib
-export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-1/xlf/16.1.1/lib
-export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-1/xlsmp/5.1.1/lib
+export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-3/xlC/16.1.1/lib
+export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-3/xlf/16.1.1/lib
+export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-3/xlsmp/5.1.1/lib
+
+#LAPACK (only set these if you have chosen WITH_LAPACK=YES):
+export PATH_LAPACK_LIB ?= /usr/lib/x86_64-linux-gnu
+export LAPACK_LIBS ?= -llapack
 
 #CUDA (only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
