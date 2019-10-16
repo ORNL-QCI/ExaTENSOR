@@ -32,18 +32,6 @@ export PATH_OPENMPI ?= /usr/local/mpi/openmpi/2.0.1
  export PATH_OPENMPI_LIB ?= $(PATH_OPENMPI)/lib
  export PATH_OPENMPI_BIN ?= $(PATH_OPENMPI)/bin
 
-#BLAS library (whichever you have, set one):
-# Set this if you do not have a vendor provided BLAS:
-export PATH_BLAS_ATLAS ?= /usr/lib
-# Set this if you have vendor provided BLAS (choose):
-#  MKL BLAS:
-export PATH_BLAS_MKL ?= /opt/intel/mkl/lib/intel64
-export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64_lin
-#  ACML BLAS:
-export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
-#  ESSL BLAS:
-export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
-
 #YOU ARE DONE!
 
 
@@ -157,22 +145,6 @@ endif
 MPI_LINK_WRAP = -L.
 MPI_LINK = $(MPI_LINK_$(WRAP))
 
-#LINEAR ALGEBRA FLAGS:
-LA_LINK_ATLAS = -L$(PATH_BLAS_ATLAS) -lblas
-ifeq ($(TOOLKIT),GNU)
-LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_gnu_thread -lpthread -lm -ldl
-else
-LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lpthread -lm -ldl
-endif
-LA_LINK_ACML = -L$(PATH_BLAS_ACML) -lacml_mp
-ifeq ($(BLASLIB),NONE)
-LA_LINK_NOWRAP = -L.
-else
-LA_LINK_NOWRAP = $(LA_LINK_$(BLASLIB))
-endif
-LA_LINK_WRAP = -L.
-LA_LINK = $(LA_LINK_$(WRAP))
-
 #Accelerator support:
 ifeq ($(TOOLKIT),IBM)
 DF := -WF,
@@ -244,7 +216,7 @@ LTHREAD_IBM   = -lxlsmp
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:
-LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(LIB)
+LFLAGS = $(LTHREAD) $(MPI_LINK) $(LIB)
 
 OBJS = ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/timer.o ./OBJ/timers.o ./OBJ/combinatoric.o ./OBJ/parse_prim.o
 

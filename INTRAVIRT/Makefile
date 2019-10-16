@@ -22,6 +22,8 @@ export EXA_OS ?= LINUX
 
 #ADJUST EXTRAS (optional):
 
+#LAPACK: [YES|NO]:
+export WITH_LAPACK ?= NO
 #Fast GPU tensor transpose (cuTT library): [YES|NO]:
 export WITH_CUTT ?= NO
 #In-place GPU tensor contractions (cuTensor library): [YES|NO]:
@@ -32,13 +34,13 @@ export WITH_CUTENSOR ?= NO
 
 #MPI library (whichever you have, set one):
 # Set this if you have MPICH or its derivative:
-export PATH_MPICH ?= /usr/local/mpi/mpich/3.2
+export PATH_MPICH ?= /usr/local/mpi/mpich/3.2.1
 #  Only reset these if MPI files are spread in the system directories:
  export PATH_MPICH_INC ?= $(PATH_MPICH)/include
  export PATH_MPICH_LIB ?= $(PATH_MPICH)/lib
  export PATH_MPICH_BIN ?= $(PATH_MPICH)/bin
 # Set this if you have OPENMPI or its derivative:
-export PATH_OPENMPI ?= /usr/local/mpi/openmpi/2.0.1
+export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.1.0
 #  Only reset these if MPI files are spread in the system directories:
  export PATH_OPENMPI_INC ?= $(PATH_OPENMPI)/include
  export PATH_OPENMPI_LIB ?= $(PATH_OPENMPI)/lib
@@ -56,10 +58,14 @@ export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 #  ESSL BLAS (also set PATH_IBM_XL_CPP, PATH_IBM_XL_FOR, PATH_IBM_XL_SMP below):
 export PATH_BLAS_ESSL ?= /sw/summit/essl/6.1.0-1/essl/6.1/lib64
 
-#IBM XL (only set these if you use IBM XL and/or ESSL):
-export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-beta4/xlC/16.1.1/lib
-export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-beta4/xlf/16.1.1/lib
-export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-beta4/xlsmp/5.1.1/lib
+#IBM XL (only set these if you use IBM XL):
+export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-3/xlC/16.1.1/lib
+export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-3/xlf/16.1.1/lib
+export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-3/xlsmp/5.1.1/lib
+
+#LAPACK (only set these if you have chosen WITH_LAPACK=YES):
+export PATH_LAPACK_LIB ?= /usr/lib/x86_64-linux-gnu
+export LAPACK_LIBS ?= -llapack
 
 #CUDA (only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
@@ -203,7 +209,11 @@ LA_LINK_WRAP = $(LA_LINK_MKL)
 else
 LA_LINK_WRAP = -L.
 endif
+ifeq ($(WITH_LAPACK),YES)
+LA_LINK = $(LA_LINK_$(WRAP)) -L$(PATH_LAPACK_LIB) $(LAPACK_LIBS)
+else
 LA_LINK = $(LA_LINK_$(WRAP))
+endif
 
 #CUDA INCLUDES:
 ifeq ($(GPU_CUDA),CUDA)
