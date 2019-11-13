@@ -1,0 +1,1048 @@
+512
+[     0.0000]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =           0
+result_tensor()[]
+[    32.9662]#MSG(exatensor): Instruction execution synced
+[    32.9663]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =           1
+another_one_tensor()[]
+[    33.3694]#MSG(exatensor): Instruction execution synced
+[    33.3694]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =           2
+another_one_tensor()[] = (  0.10000000000000D+01   0.00000000000000D+00)
+[    33.3720]#MSG(exatensor): Instruction execution synced
+[    33.3720]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =           3
+oooo(1:146,1:146,1:146,1:146)[]
+[    33.7757]#MSG(exatensor): Instruction execution synced
+[    33.7757]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =           4
+ooov(1:146,1:146,1:146,2:814)[]
+[    35.5841]#MSG(exatensor): Instruction execution synced
+[    35.5842]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =           5
+oovv(1:146,1:146,2:814,2:814)[]
+[    36.3854]#MSG(exatensor): Instruction execution synced
+[    36.3855]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =           6
+vovo(2:814,1:146,2:814,1:146)[]
+[    37.2117]#MSG(exatensor): Instruction execution synced
+[    37.2117]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =           7
+vovv(2:814,1:146,2:814,2:814)[]
+[    40.1083]#MSG(exatensor): Instruction execution synced
+[    40.1083]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =           8
+vvvv(2:814,2:814,2:814,2:814)[]
+[    53.0769]#MSG(exatensor): Instruction execution synced
+[    53.0769]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =           9
+aotensor(0:551,0:551,0:551,0:551)[]
+[    57.1907]#MSG(exatensor): Instruction execution synced
+[    57.1908]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          10
+aotensor(0:551,0:551,0:551,0:551)[] = Aoint_calculator
+[    63.5687]#MSG(exatensor): Instruction execution synced
+[    63.5687]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          11
+mulliken(2:814,2:814,2:814,2:814)[]
+[    76.3622]#MSG(exatensor): Instruction execution synced
+[    76.3623]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          12
+a2int(2:814,2:814,0:551,0:551)[]
+[    83.4477]#MSG(exatensor): Instruction execution synced
+[    83.4477]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          13
+mocoef_11(0:551,2:814)[]
+[    83.8470]#MSG(exatensor): Instruction execution synced
+[    83.8470]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          14
+mocoef_11(0:551,2:814)[] = MOCoef02A
+[    83.8610]#MSG(exatensor): Instruction execution synced
+[    83.8610]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          15
+mocoef_21(0:551,2:814)[]
+[    84.6587]#MSG(exatensor): Instruction execution synced
+[    84.6587]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          16
+mocoef_21(0:551,2:814)[] = MOCoef02B
+[    84.6676]#MSG(exatensor): Instruction execution synced
+[    84.6676]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          17
+mocoef_12(0:551,2:814)[]
+[    85.0643]#MSG(exatensor): Instruction execution synced
+[    85.0643]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          18
+mocoef_12(0:551,2:814)[] = MOCoef02A
+[    85.0754]#MSG(exatensor): Instruction execution synced
+[    85.0754]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          19
+mocoef_22(0:551,2:814)[]
+[    85.8789]#MSG(exatensor): Instruction execution synced
+[    85.8789]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          20
+mocoef_22(0:551,2:814)[] = MOCoef02B
+[    85.8886]#MSG(exatensor): Instruction execution synced
+[    85.8886]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          21
+a1int(2:814,0:551,0:551,0:551)[]
+[    91.2413]#MSG(exatensor): Instruction execution synced
+[    91.2413]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          22
+D(i,q,r,s)+=R+(p,i)*L(p,q,r,s): a1int(2:814,0:551,0:551,0:551)[] += mocoef_11(0:551,2:814)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   115.2844]#MSG(exatensor): Instruction execution synced
+[   115.2844]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          23
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(2:814,2:814,0:551,0:551)[] += a1int(2:814,0:551,0:551,0:551)[] * mocoef_12(0:551,2:814)[]
+[   151.0767]#MSG(exatensor): Instruction execution synced
+[   151.0767]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =          24
+a1int(2:814,0:551,0:551,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   156.5001]#MSG(exatensor): Instruction execution synced
+[   156.5002]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          25
+D(i,q,r,s)=R+(p,i)*L(p,q,r,s): a1int(2:814,0:551,0:551,0:551)[] += mocoef_21(0:551,2:814)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   172.8859]#MSG(exatensor): Instruction execution synced
+[   172.8859]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          26
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(2:814,2:814,0:551,0:551)[] += a1int(2:814,0:551,0:551,0:551)[] * mocoef_22(0:551,2:814)[]
+[   196.1149]#MSG(exatensor): Instruction execution synced
+[   196.1149]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          27
+a1int(2:814,0:551,0:551,0:551)[]
+[   196.5604]#MSG(exatensor): Instruction execution synced
+[   196.5604]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          28
+mocoef_11(0:551,2:814)[]
+[   196.5711]#MSG(exatensor): Instruction execution synced
+[   196.5711]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          29
+mocoef_21(0:551,2:814)[]
+[   196.5787]#MSG(exatensor): Instruction execution synced
+[   196.5787]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          30
+mocoef_12(0:551,2:814)[]
+[   196.5865]#MSG(exatensor): Instruction execution synced
+[   196.5865]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          31
+mocoef_22(0:551,2:814)[]
+[   196.5948]#MSG(exatensor): Instruction execution synced
+[   196.5948]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          32
+mocoef_13(0:551,2:814)[]
+[   196.9831]#MSG(exatensor): Instruction execution synced
+[   196.9831]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          33
+mocoef_13(0:551,2:814)[] = MOCoef02A
+[   196.9941]#MSG(exatensor): Instruction execution synced
+[   196.9941]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          34
+mocoef_23(0:551,2:814)[]
+[   197.8075]#MSG(exatensor): Instruction execution synced
+[   197.8075]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          35
+mocoef_23(0:551,2:814)[] = MOCoef02B
+[   197.8161]#MSG(exatensor): Instruction execution synced
+[   197.8161]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          36
+mocoef_14(0:551,2:814)[]
+[   198.6227]#MSG(exatensor): Instruction execution synced
+[   198.6227]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          37
+mocoef_14(0:551,2:814)[] = MOCoef02A
+[   198.6313]#MSG(exatensor): Instruction execution synced
+[   198.6314]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          38
+mocoef_24(0:551,2:814)[]
+[   199.4415]#MSG(exatensor): Instruction execution synced
+[   199.4415]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          39
+mocoef_24(0:551,2:814)[] = MOCoef02B
+[   199.4503]#MSG(exatensor): Instruction execution synced
+[   199.4503]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          40
+a3int(2:814,2:814,2:814,0:551)[]
+[   208.9565]#MSG(exatensor): Instruction execution synced
+[   208.9565]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =          41
+a3int(2:814,2:814,2:814,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   218.5730]#MSG(exatensor): Instruction execution synced
+[   218.5731]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          42
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(2:814,2:814,2:814,0:551)[] += mocoef_13(0:551,2:814)[] * a2int(2:814,2:814,0:551,0:551)[]
+[   290.4505]#MSG(exatensor): Instruction execution synced
+[   290.4505]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          43
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(2:814,2:814,2:814,2:814)[] += a3int(2:814,2:814,2:814,0:551)[] * mocoef_14(0:551,2:814)[]
+[   357.9785]#MSG(exatensor): Instruction execution synced
+[   357.9786]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =          44
+a3int(2:814,2:814,2:814,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   367.7292]#MSG(exatensor): Instruction execution synced
+[   367.7292]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          45
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(2:814,2:814,2:814,0:551)[] += mocoef_23(0:551,2:814)[] * a2int(2:814,2:814,0:551,0:551)[]
+[   413.4019]#MSG(exatensor): Instruction execution synced
+[   413.4020]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          46
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(2:814,2:814,2:814,2:814)[] += a3int(2:814,2:814,2:814,0:551)[] * mocoef_24(0:551,2:814)[]
+[   478.8735]#MSG(exatensor): Instruction execution synced
+[   478.8736]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          47
+a3int(2:814,2:814,2:814,0:551)[]
+[   479.6428]#MSG(exatensor): Instruction execution synced
+[   479.6428]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          48
+mocoef_13(0:551,2:814)[]
+[   479.6550]#MSG(exatensor): Instruction execution synced
+[   479.6550]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          49
+mocoef_23(0:551,2:814)[]
+[   479.6626]#MSG(exatensor): Instruction execution synced
+[   479.6626]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          50
+mocoef_14(0:551,2:814)[]
+[   479.6704]#MSG(exatensor): Instruction execution synced
+[   479.6704]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          51
+mocoef_24(0:551,2:814)[]
+[   479.6778]#MSG(exatensor): Instruction execution synced
+[   479.6778]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          52
+a2int(2:814,2:814,0:551,0:551)[]
+[   480.2297]#MSG(exatensor): Instruction execution synced
+[   480.2297]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          53
+one_tensor()[]
+[   480.6175]#MSG(exatensor): Instruction execution synced
+[   480.6175]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =          54
+one_tensor()[] = (  0.10000000000000D+01   0.00000000000000D+00)
+[   480.6205]#MSG(exatensor): Instruction execution synced
+[   480.6205]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          55
+D(p,q,r,s)+=M(p,r,q,s)*C(): vvvv(2:814,2:814,2:814,2:814)[] += mulliken(2:814,2:814,2:814,2:814)[] * one_tensor()[]
+[   496.9599]#MSG(exatensor): Instruction execution synced
+[   496.9600]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          56
+D(p,q,r,s)+=M(q,r,p,s)*C(): vvvv(2:814,2:814,2:814,2:814)[] += mulliken(2:814,2:814,2:814,2:814)[] * one_tensor()[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[   513.6868]#MSG(exatensor): Instruction execution synced
+[   513.6869]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          57
+one_tensor()[]
+[   513.6933]#MSG(exatensor): Instruction execution synced
+[   513.6933]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          58
+mulliken(2:814,2:814,2:814,2:814)[]
+[   514.6737]#MSG(exatensor): Instruction execution synced
+[   514.6737]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          59
+mulliken(2:814,2:814,1:146,2:814)[]
+[   517.6022]#MSG(exatensor): Instruction execution synced
+[   517.6022]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          60
+a2int(2:814,2:814,0:551,0:551)[]
+[   524.7902]#MSG(exatensor): Instruction execution synced
+[   524.7902]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          61
+mocoef_11(0:551,2:814)[]
+[   525.6111]#MSG(exatensor): Instruction execution synced
+[   525.6111]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          62
+mocoef_11(0:551,2:814)[] = MOCoef02A
+[   525.6228]#MSG(exatensor): Instruction execution synced
+[   525.6229]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          63
+mocoef_21(0:551,2:814)[]
+[   526.0213]#MSG(exatensor): Instruction execution synced
+[   526.0213]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          64
+mocoef_21(0:551,2:814)[] = MOCoef02B
+[   526.0340]#MSG(exatensor): Instruction execution synced
+[   526.0340]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          65
+mocoef_12(0:551,2:814)[]
+[   526.8430]#MSG(exatensor): Instruction execution synced
+[   526.8431]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          66
+mocoef_12(0:551,2:814)[] = MOCoef02A
+[   526.8524]#MSG(exatensor): Instruction execution synced
+[   526.8525]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          67
+mocoef_22(0:551,2:814)[]
+[   527.2559]#MSG(exatensor): Instruction execution synced
+[   527.2559]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          68
+mocoef_22(0:551,2:814)[] = MOCoef02B
+[   527.2650]#MSG(exatensor): Instruction execution synced
+[   527.2651]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          69
+a1int(2:814,0:551,0:551,0:551)[]
+[   532.7265]#MSG(exatensor): Instruction execution synced
+[   532.7265]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          70
+D(i,q,r,s)+=R+(p,i)*L(p,q,r,s): a1int(2:814,0:551,0:551,0:551)[] += mocoef_11(0:551,2:814)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   546.8311]#MSG(exatensor): Instruction execution synced
+[   546.8311]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          71
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(2:814,2:814,0:551,0:551)[] += a1int(2:814,0:551,0:551,0:551)[] * mocoef_12(0:551,2:814)[]
+[   571.6935]#MSG(exatensor): Instruction execution synced
+[   571.6935]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =          72
+a1int(2:814,0:551,0:551,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   577.2554]#MSG(exatensor): Instruction execution synced
+[   577.2555]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          73
+D(i,q,r,s)=R+(p,i)*L(p,q,r,s): a1int(2:814,0:551,0:551,0:551)[] += mocoef_21(0:551,2:814)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   591.3212]#MSG(exatensor): Instruction execution synced
+[   591.3212]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          74
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(2:814,2:814,0:551,0:551)[] += a1int(2:814,0:551,0:551,0:551)[] * mocoef_22(0:551,2:814)[]
+[   614.6069]#MSG(exatensor): Instruction execution synced
+[   614.6069]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          75
+a1int(2:814,0:551,0:551,0:551)[]
+[   615.0408]#MSG(exatensor): Instruction execution synced
+[   615.0408]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          76
+mocoef_11(0:551,2:814)[]
+[   615.0505]#MSG(exatensor): Instruction execution synced
+[   615.0505]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          77
+mocoef_21(0:551,2:814)[]
+[   615.0584]#MSG(exatensor): Instruction execution synced
+[   615.0584]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          78
+mocoef_12(0:551,2:814)[]
+[   615.0659]#MSG(exatensor): Instruction execution synced
+[   615.0659]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          79
+mocoef_22(0:551,2:814)[]
+[   615.0735]#MSG(exatensor): Instruction execution synced
+[   615.0735]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          80
+mocoef_13(0:551,1:146)[]
+[   615.4598]#MSG(exatensor): Instruction execution synced
+[   615.4598]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          81
+mocoef_13(0:551,1:146)[] = MOCoef01A
+[   615.4636]#MSG(exatensor): Instruction execution synced
+[   615.4636]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          82
+mocoef_23(0:551,1:146)[]
+[   615.8646]#MSG(exatensor): Instruction execution synced
+[   615.8647]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          83
+mocoef_23(0:551,1:146)[] = MOCoef01B
+[   615.8676]#MSG(exatensor): Instruction execution synced
+[   615.8676]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          84
+mocoef_14(0:551,2:814)[]
+[   616.6831]#MSG(exatensor): Instruction execution synced
+[   616.6831]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          85
+mocoef_14(0:551,2:814)[] = MOCoef02A
+[   616.6916]#MSG(exatensor): Instruction execution synced
+[   616.6916]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          86
+mocoef_24(0:551,2:814)[]
+[   617.0920]#MSG(exatensor): Instruction execution synced
+[   617.0920]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =          87
+mocoef_24(0:551,2:814)[] = MOCoef02B
+[   617.1005]#MSG(exatensor): Instruction execution synced
+[   617.1005]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =          88
+a3int(2:814,2:814,1:146,0:551)[]
+[   619.6065]#MSG(exatensor): Instruction execution synced
+[   619.6065]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =          89
+a3int(2:814,2:814,1:146,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   622.1256]#MSG(exatensor): Instruction execution synced
+[   622.1256]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          90
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(2:814,2:814,1:146,0:551)[] += mocoef_13(0:551,1:146)[] * a2int(2:814,2:814,0:551,0:551)[]
+[   628.7015]#MSG(exatensor): Instruction execution synced
+[   628.7015]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          91
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(2:814,2:814,1:146,2:814)[] += a3int(2:814,2:814,1:146,0:551)[] * mocoef_14(0:551,2:814)[]
+[   638.4595]#MSG(exatensor): Instruction execution synced
+[   638.4595]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =          92
+a3int(2:814,2:814,1:146,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   640.9344]#MSG(exatensor): Instruction execution synced
+[   640.9344]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          93
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(2:814,2:814,1:146,0:551)[] += mocoef_23(0:551,1:146)[] * a2int(2:814,2:814,0:551,0:551)[]
+[   647.4709]#MSG(exatensor): Instruction execution synced
+[   647.4710]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =          94
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(2:814,2:814,1:146,2:814)[] += a3int(2:814,2:814,1:146,0:551)[] * mocoef_24(0:551,2:814)[]
+[   656.9925]#MSG(exatensor): Instruction execution synced
+[   656.9926]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          95
+a3int(2:814,2:814,1:146,0:551)[]
+[   657.1538]#MSG(exatensor): Instruction execution synced
+[   657.1538]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          96
+mocoef_13(0:551,1:146)[]
+[   657.1579]#MSG(exatensor): Instruction execution synced
+[   657.1579]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          97
+mocoef_23(0:551,1:146)[]
+[   657.1604]#MSG(exatensor): Instruction execution synced
+[   657.1604]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          98
+mocoef_14(0:551,2:814)[]
+[   657.1682]#MSG(exatensor): Instruction execution synced
+[   657.1682]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =          99
+mocoef_24(0:551,2:814)[]
+[   657.1759]#MSG(exatensor): Instruction execution synced
+[   657.1759]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         100
+a2int(2:814,2:814,0:551,0:551)[]
+[   657.7183]#MSG(exatensor): Instruction execution synced
+[   657.7183]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         101
+one_tensor()[]
+[   658.0954]#MSG(exatensor): Instruction execution synced
+[   658.0954]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         102
+one_tensor()[] = (  0.10000000000000D+01   0.00000000000000D+00)
+[   658.1049]#MSG(exatensor): Instruction execution synced
+[   658.1050]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         103
+D(p,q,r,s)+=M(p,r,q,s)*C(): vovv(2:814,1:146,2:814,2:814)[] += mulliken(2:814,2:814,1:146,2:814)[] * one_tensor()[]
+[   661.4662]#MSG(exatensor): Instruction execution synced
+[   661.4662]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         104
+D(p,q,r,s)+=M(p,s,q,r)*C(): vovv(2:814,1:146,2:814,2:814)[] += mulliken(2:814,2:814,1:146,2:814)[] * one_tensor()[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[   664.9489]#MSG(exatensor): Instruction execution synced
+[   664.9489]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         105
+one_tensor()[]
+[   664.9506]#MSG(exatensor): Instruction execution synced
+[   664.9506]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         106
+mulliken(2:814,2:814,1:146,2:814)[]
+[   665.1453]#MSG(exatensor): Instruction execution synced
+[   665.1453]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         107
+mulliken(1:146,2:814,1:146,2:814)[]
+[   665.9486]#MSG(exatensor): Instruction execution synced
+[   665.9486]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         108
+a2int(1:146,2:814,0:551,0:551)[]
+[   667.9976]#MSG(exatensor): Instruction execution synced
+[   667.9977]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         109
+mocoef_11(0:551,1:146)[]
+[   668.4012]#MSG(exatensor): Instruction execution synced
+[   668.4012]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         110
+mocoef_11(0:551,1:146)[] = MOCoef01A
+[   668.4055]#MSG(exatensor): Instruction execution synced
+[   668.4055]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         111
+mocoef_21(0:551,1:146)[]
+[   668.8062]#MSG(exatensor): Instruction execution synced
+[   668.8063]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         112
+mocoef_21(0:551,1:146)[] = MOCoef01B
+[   668.8146]#MSG(exatensor): Instruction execution synced
+[   668.8146]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         113
+mocoef_12(0:551,2:814)[]
+[   669.6125]#MSG(exatensor): Instruction execution synced
+[   669.6125]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         114
+mocoef_12(0:551,2:814)[] = MOCoef02A
+[   669.6226]#MSG(exatensor): Instruction execution synced
+[   669.6226]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         115
+mocoef_22(0:551,2:814)[]
+[   670.0222]#MSG(exatensor): Instruction execution synced
+[   670.0222]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         116
+mocoef_22(0:551,2:814)[] = MOCoef02B
+[   670.0315]#MSG(exatensor): Instruction execution synced
+[   670.0315]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         117
+a1int(1:146,0:551,0:551,0:551)[]
+[   671.6537]#MSG(exatensor): Instruction execution synced
+[   671.6537]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         118
+D(i,q,r,s)+=R+(p,i)*L(p,q,r,s): a1int(1:146,0:551,0:551,0:551)[] += mocoef_11(0:551,1:146)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   674.7215]#MSG(exatensor): Instruction execution synced
+[   674.7215]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         119
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(1:146,2:814,0:551,0:551)[] += a1int(1:146,0:551,0:551,0:551)[] * mocoef_12(0:551,2:814)[]
+[   679.4899]#MSG(exatensor): Instruction execution synced
+[   679.4900]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         120
+a1int(1:146,0:551,0:551,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   681.1380]#MSG(exatensor): Instruction execution synced
+[   681.1380]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         121
+D(i,q,r,s)=R+(p,i)*L(p,q,r,s): a1int(1:146,0:551,0:551,0:551)[] += mocoef_21(0:551,1:146)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   684.9039]#MSG(exatensor): Instruction execution synced
+[   684.9040]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         122
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(1:146,2:814,0:551,0:551)[] += a1int(1:146,0:551,0:551,0:551)[] * mocoef_22(0:551,2:814)[]
+[   689.7093]#MSG(exatensor): Instruction execution synced
+[   689.7094]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         123
+a1int(1:146,0:551,0:551,0:551)[]
+[   689.7902]#MSG(exatensor): Instruction execution synced
+[   689.7902]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         124
+mocoef_11(0:551,1:146)[]
+[   689.7926]#MSG(exatensor): Instruction execution synced
+[   689.7926]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         125
+mocoef_21(0:551,1:146)[]
+[   689.7950]#MSG(exatensor): Instruction execution synced
+[   689.7951]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         126
+mocoef_12(0:551,2:814)[]
+[   689.8028]#MSG(exatensor): Instruction execution synced
+[   689.8029]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         127
+mocoef_22(0:551,2:814)[]
+[   689.8104]#MSG(exatensor): Instruction execution synced
+[   689.8104]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         128
+mocoef_13(0:551,1:146)[]
+[   690.1947]#MSG(exatensor): Instruction execution synced
+[   690.1947]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         129
+mocoef_13(0:551,1:146)[] = MOCoef01A
+[   690.2110]#MSG(exatensor): Instruction execution synced
+[   690.2110]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         130
+mocoef_23(0:551,1:146)[]
+[   690.5997]#MSG(exatensor): Instruction execution synced
+[   690.5997]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         131
+mocoef_23(0:551,1:146)[] = MOCoef01B
+[   690.6036]#MSG(exatensor): Instruction execution synced
+[   690.6036]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         132
+mocoef_14(0:551,2:814)[]
+[   691.4146]#MSG(exatensor): Instruction execution synced
+[   691.4147]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         133
+mocoef_14(0:551,2:814)[] = MOCoef02A
+[   691.4236]#MSG(exatensor): Instruction execution synced
+[   691.4236]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         134
+mocoef_24(0:551,2:814)[]
+[   692.2290]#MSG(exatensor): Instruction execution synced
+[   692.2290]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         135
+mocoef_24(0:551,2:814)[] = MOCoef02B
+[   692.2391]#MSG(exatensor): Instruction execution synced
+[   692.2391]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         136
+a3int(1:146,2:814,1:146,0:551)[]
+[   693.0568]#MSG(exatensor): Instruction execution synced
+[   693.0569]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         137
+a3int(1:146,2:814,1:146,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   693.8842]#MSG(exatensor): Instruction execution synced
+[   693.8842]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         138
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(1:146,2:814,1:146,0:551)[] += mocoef_13(0:551,1:146)[] * a2int(1:146,2:814,0:551,0:551)[]
+[   696.0846]#MSG(exatensor): Instruction execution synced
+[   696.0846]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         139
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(1:146,2:814,1:146,2:814)[] += a3int(1:146,2:814,1:146,0:551)[] * mocoef_14(0:551,2:814)[]
+[   698.7498]#MSG(exatensor): Instruction execution synced
+[   698.7498]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         140
+a3int(1:146,2:814,1:146,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   699.5758]#MSG(exatensor): Instruction execution synced
+[   699.5759]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         141
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(1:146,2:814,1:146,0:551)[] += mocoef_23(0:551,1:146)[] * a2int(1:146,2:814,0:551,0:551)[]
+[   701.7411]#MSG(exatensor): Instruction execution synced
+[   701.7411]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         142
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(1:146,2:814,1:146,2:814)[] += a3int(1:146,2:814,1:146,0:551)[] * mocoef_24(0:551,2:814)[]
+[   704.1882]#MSG(exatensor): Instruction execution synced
+[   704.1882]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         143
+a3int(1:146,2:814,1:146,0:551)[]
+[   704.2147]#MSG(exatensor): Instruction execution synced
+[   704.2148]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         144
+mocoef_13(0:551,1:146)[]
+[   704.2184]#MSG(exatensor): Instruction execution synced
+[   704.2184]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         145
+mocoef_23(0:551,1:146)[]
+[   704.2215]#MSG(exatensor): Instruction execution synced
+[   704.2215]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         146
+mocoef_14(0:551,2:814)[]
+[   704.2294]#MSG(exatensor): Instruction execution synced
+[   704.2294]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         147
+mocoef_24(0:551,2:814)[]
+[   704.2369]#MSG(exatensor): Instruction execution synced
+[   704.2369]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         148
+a2int(1:146,2:814,0:551,0:551)[]
+[   704.3413]#MSG(exatensor): Instruction execution synced
+[   704.3414]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         149
+one_tensor()[]
+[   704.7194]#MSG(exatensor): Instruction execution synced
+[   704.7194]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         150
+one_tensor()[] = (  0.10000000000000D+01   0.00000000000000D+00)
+[   704.7236]#MSG(exatensor): Instruction execution synced
+[   704.7236]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         151
+D(p,q,r,s)+=M(p,r,q,s)*C(): oovv(1:146,1:146,2:814,2:814)[] += mulliken(1:146,2:814,1:146,2:814)[] * one_tensor()[]
+[   705.6803]#MSG(exatensor): Instruction execution synced
+[   705.6803]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         152
+D(p,q,r,s)+=M(q,r,p,s)*C(): oovv(1:146,1:146,2:814,2:814)[] += mulliken(1:146,2:814,1:146,2:814)[] * one_tensor()[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[   706.6434]#MSG(exatensor): Instruction execution synced
+[   706.6434]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         153
+one_tensor()[]
+[   706.6454]#MSG(exatensor): Instruction execution synced
+[   706.6454]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         154
+mulliken(1:146,2:814,1:146,2:814)[]
+[   706.6844]#MSG(exatensor): Instruction execution synced
+[   706.6844]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         155
+mulliken(1:146,1:146,1:146,2:814)[]
+[   707.0814]#MSG(exatensor): Instruction execution synced
+[   707.0814]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         156
+a2int(1:146,1:146,0:551,0:551)[]
+[   707.9145]#MSG(exatensor): Instruction execution synced
+[   707.9145]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         157
+mocoef_11(0:551,1:146)[]
+[   708.3295]#MSG(exatensor): Instruction execution synced
+[   708.3295]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         158
+mocoef_11(0:551,1:146)[] = MOCoef01A
+[   708.3321]#MSG(exatensor): Instruction execution synced
+[   708.3321]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         159
+mocoef_21(0:551,1:146)[]
+[   708.7429]#MSG(exatensor): Instruction execution synced
+[   708.7429]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         160
+mocoef_21(0:551,1:146)[] = MOCoef01B
+[   708.7459]#MSG(exatensor): Instruction execution synced
+[   708.7459]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         161
+mocoef_12(0:551,1:146)[]
+[   709.1602]#MSG(exatensor): Instruction execution synced
+[   709.1602]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         162
+mocoef_12(0:551,1:146)[] = MOCoef01A
+[   709.1629]#MSG(exatensor): Instruction execution synced
+[   709.1629]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         163
+mocoef_22(0:551,1:146)[]
+[   709.5714]#MSG(exatensor): Instruction execution synced
+[   709.5714]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         164
+mocoef_22(0:551,1:146)[] = MOCoef01B
+[   709.5748]#MSG(exatensor): Instruction execution synced
+[   709.5748]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         165
+a1int(1:146,0:551,0:551,0:551)[]
+[   711.2041]#MSG(exatensor): Instruction execution synced
+[   711.2041]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         166
+D(i,q,r,s)+=R+(p,i)*L(p,q,r,s): a1int(1:146,0:551,0:551,0:551)[] += mocoef_11(0:551,1:146)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   714.4557]#MSG(exatensor): Instruction execution synced
+[   714.4557]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         167
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(1:146,1:146,0:551,0:551)[] += a1int(1:146,0:551,0:551,0:551)[] * mocoef_12(0:551,1:146)[]
+[   716.7191]#MSG(exatensor): Instruction execution synced
+[   716.7191]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         168
+a1int(1:146,0:551,0:551,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   718.3627]#MSG(exatensor): Instruction execution synced
+[   718.3627]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         169
+D(i,q,r,s)=R+(p,i)*L(p,q,r,s): a1int(1:146,0:551,0:551,0:551)[] += mocoef_21(0:551,1:146)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   721.6206]#MSG(exatensor): Instruction execution synced
+[   721.6206]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         170
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(1:146,1:146,0:551,0:551)[] += a1int(1:146,0:551,0:551,0:551)[] * mocoef_22(0:551,1:146)[]
+[   723.8283]#MSG(exatensor): Instruction execution synced
+[   723.8283]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         171
+a1int(1:146,0:551,0:551,0:551)[]
+[   723.9079]#MSG(exatensor): Instruction execution synced
+[   723.9079]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         172
+mocoef_11(0:551,1:146)[]
+[   723.9100]#MSG(exatensor): Instruction execution synced
+[   723.9101]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         173
+mocoef_21(0:551,1:146)[]
+[   723.9126]#MSG(exatensor): Instruction execution synced
+[   723.9126]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         174
+mocoef_12(0:551,1:146)[]
+[   723.9151]#MSG(exatensor): Instruction execution synced
+[   723.9151]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         175
+mocoef_22(0:551,1:146)[]
+[   723.9176]#MSG(exatensor): Instruction execution synced
+[   723.9176]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         176
+mocoef_13(0:551,1:146)[]
+[   724.3109]#MSG(exatensor): Instruction execution synced
+[   724.3109]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         177
+mocoef_13(0:551,1:146)[] = MOCoef01A
+[   724.3158]#MSG(exatensor): Instruction execution synced
+[   724.3158]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         178
+mocoef_23(0:551,1:146)[]
+[   724.7262]#MSG(exatensor): Instruction execution synced
+[   724.7263]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         179
+mocoef_23(0:551,1:146)[] = MOCoef01B
+[   724.7306]#MSG(exatensor): Instruction execution synced
+[   724.7306]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         180
+mocoef_14(0:551,2:814)[]
+[   725.5489]#MSG(exatensor): Instruction execution synced
+[   725.5489]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         181
+mocoef_14(0:551,2:814)[] = MOCoef02A
+[   725.5580]#MSG(exatensor): Instruction execution synced
+[   725.5580]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         182
+mocoef_24(0:551,2:814)[]
+[   725.9641]#MSG(exatensor): Instruction execution synced
+[   725.9641]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         183
+mocoef_24(0:551,2:814)[] = MOCoef02B
+[   725.9730]#MSG(exatensor): Instruction execution synced
+[   725.9730]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         184
+a3int(1:146,1:146,1:146,0:551)[]
+[   726.3853]#MSG(exatensor): Instruction execution synced
+[   726.3853]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         185
+a3int(1:146,1:146,1:146,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   726.8081]#MSG(exatensor): Instruction execution synced
+[   726.8081]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         186
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(1:146,1:146,1:146,0:551)[] += mocoef_13(0:551,1:146)[] * a2int(1:146,1:146,0:551,0:551)[]
+[   727.9297]#MSG(exatensor): Instruction execution synced
+[   727.9297]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         187
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(1:146,1:146,1:146,2:814)[] += a3int(1:146,1:146,1:146,0:551)[] * mocoef_14(0:551,2:814)[]
+[   729.6686]#MSG(exatensor): Instruction execution synced
+[   729.6686]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         188
+a3int(1:146,1:146,1:146,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   730.0707]#MSG(exatensor): Instruction execution synced
+[   730.0707]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         189
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(1:146,1:146,1:146,0:551)[] += mocoef_23(0:551,1:146)[] * a2int(1:146,1:146,0:551,0:551)[]
+[   731.3328]#MSG(exatensor): Instruction execution synced
+[   731.3328]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         190
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(1:146,1:146,1:146,2:814)[] += a3int(1:146,1:146,1:146,0:551)[] * mocoef_24(0:551,2:814)[]
+[   733.2574]#MSG(exatensor): Instruction execution synced
+[   733.2574]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         191
+a3int(1:146,1:146,1:146,0:551)[]
+[   733.2673]#MSG(exatensor): Instruction execution synced
+[   733.2673]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         192
+mocoef_13(0:551,1:146)[]
+[   733.2697]#MSG(exatensor): Instruction execution synced
+[   733.2697]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         193
+mocoef_23(0:551,1:146)[]
+[   733.2721]#MSG(exatensor): Instruction execution synced
+[   733.2721]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         194
+mocoef_14(0:551,2:814)[]
+[   733.2795]#MSG(exatensor): Instruction execution synced
+[   733.2795]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         195
+mocoef_24(0:551,2:814)[]
+[   733.2872]#MSG(exatensor): Instruction execution synced
+[   733.2872]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         196
+a2int(1:146,1:146,0:551,0:551)[]
+[   733.3075]#MSG(exatensor): Instruction execution synced
+[   733.3075]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         197
+one_tensor()[]
+[   733.6909]#MSG(exatensor): Instruction execution synced
+[   733.6909]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         198
+one_tensor()[] = (  0.10000000000000D+01   0.00000000000000D+00)
+[   733.6923]#MSG(exatensor): Instruction execution synced
+[   733.6923]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         199
+D(p,q,r,s)+=M(p,r,q,s)*C(): ooov(1:146,1:146,1:146,2:814)[] += mulliken(1:146,1:146,1:146,2:814)[] * one_tensor()[]
+[   734.6994]#MSG(exatensor): Instruction execution synced
+[   734.6995]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         200
+D(p,q,r,s)+=M(q,r,p,s)*C(): ooov(1:146,1:146,1:146,2:814)[] += mulliken(1:146,1:146,1:146,2:814)[] * one_tensor()[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[   735.7294]#MSG(exatensor): Instruction execution synced
+[   735.7294]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         201
+one_tensor()[]
+[   735.7309]#MSG(exatensor): Instruction execution synced
+[   735.7310]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         202
+mulliken(1:146,1:146,1:146,2:814)[]
+[   735.7390]#MSG(exatensor): Instruction execution synced
+[   735.7390]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         203
+mulliken(1:146,1:146,1:146,1:146)[]
+[   736.1312]#MSG(exatensor): Instruction execution synced
+[   736.1312]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         204
+a2int(1:146,1:146,0:551,0:551)[]
+[   736.9648]#MSG(exatensor): Instruction execution synced
+[   736.9648]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         205
+mocoef_11(0:551,1:146)[]
+[   737.3797]#MSG(exatensor): Instruction execution synced
+[   737.3797]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         206
+mocoef_11(0:551,1:146)[] = MOCoef01A
+[   737.3831]#MSG(exatensor): Instruction execution synced
+[   737.3831]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         207
+mocoef_21(0:551,1:146)[]
+[   737.7928]#MSG(exatensor): Instruction execution synced
+[   737.7928]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         208
+mocoef_21(0:551,1:146)[] = MOCoef01B
+[   737.7958]#MSG(exatensor): Instruction execution synced
+[   737.7959]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         209
+mocoef_12(0:551,1:146)[]
+[   738.2069]#MSG(exatensor): Instruction execution synced
+[   738.2069]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         210
+mocoef_12(0:551,1:146)[] = MOCoef01A
+[   738.2098]#MSG(exatensor): Instruction execution synced
+[   738.2098]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         211
+mocoef_22(0:551,1:146)[]
+[   738.6220]#MSG(exatensor): Instruction execution synced
+[   738.6221]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         212
+mocoef_22(0:551,1:146)[] = MOCoef01B
+[   738.6260]#MSG(exatensor): Instruction execution synced
+[   738.6260]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         213
+a1int(1:146,0:551,0:551,0:551)[]
+[   740.2865]#MSG(exatensor): Instruction execution synced
+[   740.2865]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         214
+D(i,q,r,s)+=R+(p,i)*L(p,q,r,s): a1int(1:146,0:551,0:551,0:551)[] += mocoef_11(0:551,1:146)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   744.0970]#MSG(exatensor): Instruction execution synced
+[   744.0970]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         215
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(1:146,1:146,0:551,0:551)[] += a1int(1:146,0:551,0:551,0:551)[] * mocoef_12(0:551,1:146)[]
+[   746.2837]#MSG(exatensor): Instruction execution synced
+[   746.2837]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         216
+a1int(1:146,0:551,0:551,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   747.9592]#MSG(exatensor): Instruction execution synced
+[   747.9592]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         217
+D(i,q,r,s)=R+(p,i)*L(p,q,r,s): a1int(1:146,0:551,0:551,0:551)[] += mocoef_21(0:551,1:146)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   751.7971]#MSG(exatensor): Instruction execution synced
+[   751.7971]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         218
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(1:146,1:146,0:551,0:551)[] += a1int(1:146,0:551,0:551,0:551)[] * mocoef_22(0:551,1:146)[]
+[   753.9972]#MSG(exatensor): Instruction execution synced
+[   753.9972]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         219
+a1int(1:146,0:551,0:551,0:551)[]
+[   754.0772]#MSG(exatensor): Instruction execution synced
+[   754.0772]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         220
+mocoef_11(0:551,1:146)[]
+[   754.0797]#MSG(exatensor): Instruction execution synced
+[   754.0797]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         221
+mocoef_21(0:551,1:146)[]
+[   754.0822]#MSG(exatensor): Instruction execution synced
+[   754.0823]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         222
+mocoef_12(0:551,1:146)[]
+[   754.0847]#MSG(exatensor): Instruction execution synced
+[   754.0847]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         223
+mocoef_22(0:551,1:146)[]
+[   754.0873]#MSG(exatensor): Instruction execution synced
+[   754.0873]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         224
+mocoef_13(0:551,1:146)[]
+[   754.4788]#MSG(exatensor): Instruction execution synced
+[   754.4788]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         225
+mocoef_13(0:551,1:146)[] = MOCoef01A
+[   754.4861]#MSG(exatensor): Instruction execution synced
+[   754.4861]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         226
+mocoef_23(0:551,1:146)[]
+[   754.8903]#MSG(exatensor): Instruction execution synced
+[   754.8903]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         227
+mocoef_23(0:551,1:146)[] = MOCoef01B
+[   754.8954]#MSG(exatensor): Instruction execution synced
+[   754.8955]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         228
+mocoef_14(0:551,1:146)[]
+[   755.2973]#MSG(exatensor): Instruction execution synced
+[   755.2973]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         229
+mocoef_14(0:551,1:146)[] = MOCoef01A
+[   755.3007]#MSG(exatensor): Instruction execution synced
+[   755.3008]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         230
+mocoef_24(0:551,1:146)[]
+[   755.7105]#MSG(exatensor): Instruction execution synced
+[   755.7105]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         231
+mocoef_24(0:551,1:146)[] = MOCoef01B
+[   755.7137]#MSG(exatensor): Instruction execution synced
+[   755.7137]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         232
+a3int(1:146,1:146,1:146,0:551)[]
+[   756.1251]#MSG(exatensor): Instruction execution synced
+[   756.1251]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         233
+a3int(1:146,1:146,1:146,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   756.5452]#MSG(exatensor): Instruction execution synced
+[   756.5452]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         234
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(1:146,1:146,1:146,0:551)[] += mocoef_13(0:551,1:146)[] * a2int(1:146,1:146,0:551,0:551)[]
+[   758.1236]#MSG(exatensor): Instruction execution synced
+[   758.1236]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         235
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(1:146,1:146,1:146,1:146)[] += a3int(1:146,1:146,1:146,0:551)[] * mocoef_14(0:551,1:146)[]
+[   759.1313]#MSG(exatensor): Instruction execution synced
+[   759.1314]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         236
+a3int(1:146,1:146,1:146,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   759.5257]#MSG(exatensor): Instruction execution synced
+[   759.5257]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         237
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(1:146,1:146,1:146,0:551)[] += mocoef_23(0:551,1:146)[] * a2int(1:146,1:146,0:551,0:551)[]
+[   760.6998]#MSG(exatensor): Instruction execution synced
+[   760.6998]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         238
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(1:146,1:146,1:146,1:146)[] += a3int(1:146,1:146,1:146,0:551)[] * mocoef_24(0:551,1:146)[]
+[   761.7470]#MSG(exatensor): Instruction execution synced
+[   761.7470]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         239
+a3int(1:146,1:146,1:146,0:551)[]
+[   761.7531]#MSG(exatensor): Instruction execution synced
+[   761.7531]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         240
+mocoef_13(0:551,1:146)[]
+[   761.7551]#MSG(exatensor): Instruction execution synced
+[   761.7551]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         241
+mocoef_23(0:551,1:146)[]
+[   761.7571]#MSG(exatensor): Instruction execution synced
+[   761.7571]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         242
+mocoef_14(0:551,1:146)[]
+[   761.7598]#MSG(exatensor): Instruction execution synced
+[   761.7598]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         243
+mocoef_24(0:551,1:146)[]
+[   761.7621]#MSG(exatensor): Instruction execution synced
+[   761.7621]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         244
+a2int(1:146,1:146,0:551,0:551)[]
+[   761.7825]#MSG(exatensor): Instruction execution synced
+[   761.7825]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         245
+one_tensor()[]
+[   762.1619]#MSG(exatensor): Instruction execution synced
+[   762.1619]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         246
+one_tensor()[] = (  0.10000000000000D+01   0.00000000000000D+00)
+[   762.1639]#MSG(exatensor): Instruction execution synced
+[   762.1639]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         247
+D(p,q,r,s)+=M(p,r,q,s)*C(): oooo(1:146,1:146,1:146,1:146)[] += mulliken(1:146,1:146,1:146,1:146)[] * one_tensor()[]
+[   762.7012]#MSG(exatensor): Instruction execution synced
+[   762.7012]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         248
+D(p,q,r,s)+=M(q,r,p,s)*C(): oooo(1:146,1:146,1:146,1:146)[] += mulliken(1:146,1:146,1:146,1:146)[] * one_tensor()[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[   763.2389]#MSG(exatensor): Instruction execution synced
+[   763.2389]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         249
+one_tensor()[]
+[   763.2405]#MSG(exatensor): Instruction execution synced
+[   763.2405]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         250
+mulliken(1:146,1:146,1:146,1:146)[]
+[   763.2431]#MSG(exatensor): Instruction execution synced
+[   763.2431]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         251
+mulliken(2:814,2:814,1:146,1:146)[]
+[   764.0616]#MSG(exatensor): Instruction execution synced
+[   764.0616]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         252
+a2int(2:814,2:814,0:551,0:551)[]
+[   771.2699]#MSG(exatensor): Instruction execution synced
+[   771.2700]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         253
+mocoef_11(0:551,2:814)[]
+[   771.6752]#MSG(exatensor): Instruction execution synced
+[   771.6752]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         254
+mocoef_11(0:551,2:814)[] = MOCoef02A
+[   771.6871]#MSG(exatensor): Instruction execution synced
+[   771.6871]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         255
+mocoef_21(0:551,2:814)[]
+[   772.4948]#MSG(exatensor): Instruction execution synced
+[   772.4948]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         256
+mocoef_21(0:551,2:814)[] = MOCoef02B
+[   772.5035]#MSG(exatensor): Instruction execution synced
+[   772.5035]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         257
+mocoef_12(0:551,2:814)[]
+[   772.9087]#MSG(exatensor): Instruction execution synced
+[   772.9088]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         258
+mocoef_12(0:551,2:814)[] = MOCoef02A
+[   772.9176]#MSG(exatensor): Instruction execution synced
+[   772.9176]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         259
+mocoef_22(0:551,2:814)[]
+[   773.7359]#MSG(exatensor): Instruction execution synced
+[   773.7359]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         260
+mocoef_22(0:551,2:814)[] = MOCoef02B
+[   773.7441]#MSG(exatensor): Instruction execution synced
+[   773.7441]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         261
+a1int(2:814,0:551,0:551,0:551)[]
+[   779.2076]#MSG(exatensor): Instruction execution synced
+[   779.2076]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         262
+D(i,q,r,s)+=R+(p,i)*L(p,q,r,s): a1int(2:814,0:551,0:551,0:551)[] += mocoef_11(0:551,2:814)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   791.1133]#MSG(exatensor): Instruction execution synced
+[   791.1133]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         263
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(2:814,2:814,0:551,0:551)[] += a1int(2:814,0:551,0:551,0:551)[] * mocoef_12(0:551,2:814)[]
+[   815.2265]#MSG(exatensor): Instruction execution synced
+[   815.2265]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         264
+a1int(2:814,0:551,0:551,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   820.6688]#MSG(exatensor): Instruction execution synced
+[   820.6688]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         265
+D(i,q,r,s)=R+(p,i)*L(p,q,r,s): a1int(2:814,0:551,0:551,0:551)[] += mocoef_21(0:551,2:814)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   832.6027]#MSG(exatensor): Instruction execution synced
+[   832.6027]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         266
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(2:814,2:814,0:551,0:551)[] += a1int(2:814,0:551,0:551,0:551)[] * mocoef_22(0:551,2:814)[]
+[   855.4576]#MSG(exatensor): Instruction execution synced
+[   855.4576]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         267
+a1int(2:814,0:551,0:551,0:551)[]
+[   855.8676]#MSG(exatensor): Instruction execution synced
+[   855.8677]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         268
+mocoef_11(0:551,2:814)[]
+[   855.8752]#MSG(exatensor): Instruction execution synced
+[   855.8752]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         269
+mocoef_21(0:551,2:814)[]
+[   855.8842]#MSG(exatensor): Instruction execution synced
+[   855.8842]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         270
+mocoef_12(0:551,2:814)[]
+[   855.8919]#MSG(exatensor): Instruction execution synced
+[   855.8919]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         271
+mocoef_22(0:551,2:814)[]
+[   855.8993]#MSG(exatensor): Instruction execution synced
+[   855.8993]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         272
+mocoef_13(0:551,1:146)[]
+[   856.2797]#MSG(exatensor): Instruction execution synced
+[   856.2798]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         273
+mocoef_13(0:551,1:146)[] = MOCoef01A
+[   856.3028]#MSG(exatensor): Instruction execution synced
+[   856.3028]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         274
+mocoef_23(0:551,1:146)[]
+[   856.6861]#MSG(exatensor): Instruction execution synced
+[   856.6862]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         275
+mocoef_23(0:551,1:146)[] = MOCoef01B
+[   856.6900]#MSG(exatensor): Instruction execution synced
+[   856.6901]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         276
+mocoef_14(0:551,1:146)[]
+[   857.0932]#MSG(exatensor): Instruction execution synced
+[   857.0932]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         277
+mocoef_14(0:551,1:146)[] = MOCoef01A
+[   857.1001]#MSG(exatensor): Instruction execution synced
+[   857.1001]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         278
+mocoef_24(0:551,1:146)[]
+[   857.5046]#MSG(exatensor): Instruction execution synced
+[   857.5046]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         279
+mocoef_24(0:551,1:146)[] = MOCoef01B
+[   857.5074]#MSG(exatensor): Instruction execution synced
+[   857.5075]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         280
+a3int(2:814,2:814,1:146,0:551)[]
+[   859.9765]#MSG(exatensor): Instruction execution synced
+[   859.9765]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         281
+a3int(2:814,2:814,1:146,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   862.4668]#MSG(exatensor): Instruction execution synced
+[   862.4668]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         282
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(2:814,2:814,1:146,0:551)[] += mocoef_13(0:551,1:146)[] * a2int(2:814,2:814,0:551,0:551)[]
+[   868.9198]#MSG(exatensor): Instruction execution synced
+[   868.9199]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         283
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(2:814,2:814,1:146,1:146)[] += a3int(2:814,2:814,1:146,0:551)[] * mocoef_14(0:551,1:146)[]
+[   870.7505]#MSG(exatensor): Instruction execution synced
+[   870.7505]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         284
+a3int(2:814,2:814,1:146,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   873.2405]#MSG(exatensor): Instruction execution synced
+[   873.2406]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         285
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(2:814,2:814,1:146,0:551)[] += mocoef_23(0:551,1:146)[] * a2int(2:814,2:814,0:551,0:551)[]
+[   879.7300]#MSG(exatensor): Instruction execution synced
+[   879.7300]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         286
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(2:814,2:814,1:146,1:146)[] += a3int(2:814,2:814,1:146,0:551)[] * mocoef_24(0:551,1:146)[]
+[   881.9359]#MSG(exatensor): Instruction execution synced
+[   881.9359]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         287
+a3int(2:814,2:814,1:146,0:551)[]
+[   882.0781]#MSG(exatensor): Instruction execution synced
+[   882.0781]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         288
+mocoef_13(0:551,1:146)[]
+[   882.0823]#MSG(exatensor): Instruction execution synced
+[   882.0823]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         289
+mocoef_23(0:551,1:146)[]
+[   882.0847]#MSG(exatensor): Instruction execution synced
+[   882.0847]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         290
+mocoef_14(0:551,1:146)[]
+[   882.0873]#MSG(exatensor): Instruction execution synced
+[   882.0873]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         291
+mocoef_24(0:551,1:146)[]
+[   882.0906]#MSG(exatensor): Instruction execution synced
+[   882.0906]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         292
+a2int(2:814,2:814,0:551,0:551)[]
+[   882.6272]#MSG(exatensor): Instruction execution synced
+[   882.6272]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         293
+one_tensor()[]
+[   883.0034]#MSG(exatensor): Instruction execution synced
+[   883.0034]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         294
+one_tensor()[] = (  0.10000000000000D+01   0.00000000000000D+00)
+[   883.0124]#MSG(exatensor): Instruction execution synced
+[   883.0125]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         295
+D(p,q,r,s)+=M(p,r,q,s)*C(): vovo(2:814,1:146,2:814,1:146)[] += mulliken(2:814,2:814,1:146,1:146)[] * one_tensor()[]
+[   883.9675]#MSG(exatensor): Instruction execution synced
+[   883.9675]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         296
+one_tensor()[]
+[   883.9690]#MSG(exatensor): Instruction execution synced
+[   883.9690]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         297
+mulliken(2:814,2:814,1:146,1:146)[]
+[   884.0089]#MSG(exatensor): Instruction execution synced
+[   884.0089]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         298
+ovvo(1:146,2:814,2:814,1:146)[]
+[   884.8132]#MSG(exatensor): Instruction execution synced
+[   884.8132]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         299
+mulliken(1:146,2:814,2:814,1:146)[]
+[   885.6322]#MSG(exatensor): Instruction execution synced
+[   885.6323]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         300
+a2int(1:146,2:814,0:551,0:551)[]
+[   887.6850]#MSG(exatensor): Instruction execution synced
+[   887.6851]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         301
+mocoef_11(0:551,1:146)[]
+[   888.0848]#MSG(exatensor): Instruction execution synced
+[   888.0848]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         302
+mocoef_11(0:551,1:146)[] = MOCoef01A
+[   888.0891]#MSG(exatensor): Instruction execution synced
+[   888.0891]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         303
+mocoef_21(0:551,1:146)[]
+[   888.4882]#MSG(exatensor): Instruction execution synced
+[   888.4882]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         304
+mocoef_21(0:551,1:146)[] = MOCoef01B
+[   888.4942]#MSG(exatensor): Instruction execution synced
+[   888.4942]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         305
+mocoef_12(0:551,2:814)[]
+[   888.8978]#MSG(exatensor): Instruction execution synced
+[   888.8978]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         306
+mocoef_12(0:551,2:814)[] = MOCoef02A
+[   888.9060]#MSG(exatensor): Instruction execution synced
+[   888.9061]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         307
+mocoef_22(0:551,2:814)[]
+[   889.7133]#MSG(exatensor): Instruction execution synced
+[   889.7133]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         308
+mocoef_22(0:551,2:814)[] = MOCoef02B
+[   889.7219]#MSG(exatensor): Instruction execution synced
+[   889.7219]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         309
+a1int(1:146,0:551,0:551,0:551)[]
+[   891.3611]#MSG(exatensor): Instruction execution synced
+[   891.3611]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         310
+D(i,q,r,s)+=R+(p,i)*L(p,q,r,s): a1int(1:146,0:551,0:551,0:551)[] += mocoef_11(0:551,1:146)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   894.6374]#MSG(exatensor): Instruction execution synced
+[   894.6374]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         311
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(1:146,2:814,0:551,0:551)[] += a1int(1:146,0:551,0:551,0:551)[] * mocoef_12(0:551,2:814)[]
+[   899.4890]#MSG(exatensor): Instruction execution synced
+[   899.4890]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         312
+a1int(1:146,0:551,0:551,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   901.1425]#MSG(exatensor): Instruction execution synced
+[   901.1425]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         313
+D(i,q,r,s)=R+(p,i)*L(p,q,r,s): a1int(1:146,0:551,0:551,0:551)[] += mocoef_21(0:551,1:146)[] * aotensor(0:551,0:551,0:551,0:551)[]
+[   904.3279]#MSG(exatensor): Instruction execution synced
+[   904.3279]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         314
+D(i,j,r,s)+=L(i,q,r,s)*R(q,j): a2int(1:146,2:814,0:551,0:551)[] += a1int(1:146,0:551,0:551,0:551)[] * mocoef_22(0:551,2:814)[]
+[   909.1213]#MSG(exatensor): Instruction execution synced
+[   909.1214]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         315
+a1int(1:146,0:551,0:551,0:551)[]
+[   909.2090]#MSG(exatensor): Instruction execution synced
+[   909.2090]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         316
+mocoef_11(0:551,1:146)[]
+[   909.2128]#MSG(exatensor): Instruction execution synced
+[   909.2128]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         317
+mocoef_21(0:551,1:146)[]
+[   909.2148]#MSG(exatensor): Instruction execution synced
+[   909.2148]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         318
+mocoef_12(0:551,2:814)[]
+[   909.2223]#MSG(exatensor): Instruction execution synced
+[   909.2223]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         319
+mocoef_22(0:551,2:814)[]
+[   909.2298]#MSG(exatensor): Instruction execution synced
+[   909.2298]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         320
+mocoef_13(0:551,2:814)[]
+[   909.6201]#MSG(exatensor): Instruction execution synced
+[   909.6201]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         321
+mocoef_13(0:551,2:814)[] = MOCoef02A
+[   909.6307]#MSG(exatensor): Instruction execution synced
+[   909.6308]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         322
+mocoef_23(0:551,2:814)[]
+[   910.4374]#MSG(exatensor): Instruction execution synced
+[   910.4374]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         323
+mocoef_23(0:551,2:814)[] = MOCoef02B
+[   910.4461]#MSG(exatensor): Instruction execution synced
+[   910.4461]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         324
+mocoef_14(0:551,1:146)[]
+[   910.8459]#MSG(exatensor): Instruction execution synced
+[   910.8459]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         325
+mocoef_14(0:551,1:146)[] = MOCoef01A
+[   910.8516]#MSG(exatensor): Instruction execution synced
+[   910.8516]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         326
+mocoef_24(0:551,1:146)[]
+[   911.2579]#MSG(exatensor): Instruction execution synced
+[   911.2579]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP =         327
+mocoef_24(0:551,1:146)[] = MOCoef01B
+[   911.2607]#MSG(exatensor): Instruction execution synced
+[   911.2607]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         328
+a3int(1:146,2:814,2:814,0:551)[]
+[   913.7260]#MSG(exatensor): Instruction execution synced
+[   913.7260]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         329
+a3int(1:146,2:814,2:814,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   916.2030]#MSG(exatensor): Instruction execution synced
+[   916.2030]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         330
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(1:146,2:814,2:814,0:551)[] += mocoef_13(0:551,2:814)[] * a2int(1:146,2:814,0:551,0:551)[]
+[   922.8944]#MSG(exatensor): Instruction execution synced
+[   922.8945]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         331
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(1:146,2:814,2:814,1:146)[] += a3int(1:146,2:814,2:814,0:551)[] * mocoef_14(0:551,1:146)[]
+[   925.0903]#MSG(exatensor): Instruction execution synced
+[   925.0903]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         332
+a3int(1:146,2:814,2:814,0:551)[] = (  0.00000000000000D+00   0.00000000000000D+00)
+[   927.5684]#MSG(exatensor): Instruction execution synced
+[   927.5684]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         333
+D(i,j,k,s)+=R+(r,k)*L(i,j,r,s): a3int(1:146,2:814,2:814,0:551)[] += mocoef_23(0:551,2:814)[] * a2int(1:146,2:814,0:551,0:551)[]
+[   934.2645]#MSG(exatensor): Instruction execution synced
+[   934.2646]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         334
+D(i,j,k,l)+=L(i,j,k,s)*R(s,l): mulliken(1:146,2:814,2:814,1:146)[] += a3int(1:146,2:814,2:814,0:551)[] * mocoef_24(0:551,1:146)[]
+[   936.4513]#MSG(exatensor): Instruction execution synced
+[   936.4514]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         335
+a3int(1:146,2:814,2:814,0:551)[]
+[   936.5937]#MSG(exatensor): Instruction execution synced
+[   936.5937]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         336
+mocoef_13(0:551,2:814)[]
+[   936.6022]#MSG(exatensor): Instruction execution synced
+[   936.6022]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         337
+mocoef_23(0:551,2:814)[]
+[   936.6096]#MSG(exatensor): Instruction execution synced
+[   936.6097]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         338
+mocoef_14(0:551,1:146)[]
+[   936.6120]#MSG(exatensor): Instruction execution synced
+[   936.6120]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         339
+mocoef_24(0:551,1:146)[]
+[   936.6145]#MSG(exatensor): Instruction execution synced
+[   936.6145]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         340
+a2int(1:146,2:814,0:551,0:551)[]
+[   936.7205]#MSG(exatensor): Instruction execution synced
+[   936.7206]#MSG(exatensor): New Instruction: CREATE TENSOR: IP =         341
+one_tensor()[]
+[   937.1019]#MSG(exatensor): Instruction execution synced
+[   937.1019]#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP =         342
+one_tensor()[] = (  0.10000000000000D+01   0.00000000000000D+00)
+[   937.1091]#MSG(exatensor): Instruction execution synced
+[   937.1092]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         343
+D(p,q,r,s)+=M(p,r,q,s)*C(): ovvo(1:146,2:814,2:814,1:146)[] += mulliken(1:146,2:814,2:814,1:146)[] * one_tensor()[]
+[   938.0676]#MSG(exatensor): Instruction execution synced
+[   938.0676]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         344
+one_tensor()[]
+[   938.0690]#MSG(exatensor): Instruction execution synced
+[   938.0690]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         345
+mulliken(1:146,2:814,2:814,1:146)[]
+[   938.1083]#MSG(exatensor): Instruction execution synced
+[   938.1083]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP =         346
+V(a,i,b,j)+=V(i,a,b,j)*K(): vovo(2:814,1:146,2:814,1:146)[] += ovvo(1:146,2:814,2:814,1:146)[] * another_one_tensor()[] * ( -0.10000000000000D+01   0.00000000000000D+00)
+[   939.0734]#MSG(exatensor): Instruction execution synced
+[   939.0734]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         347
+ovvo(1:146,2:814,2:814,1:146)[]
+[   939.1126]#MSG(exatensor): Instruction execution synced
+[   939.1126]#MSG(exatensor): New Instruction: DESTROY TENSOR: IP =         348
+aotensor(0:551,0:551,0:551,0:551)[]
+[   939.4003]#MSG(exatensor): Instruction execution synced
