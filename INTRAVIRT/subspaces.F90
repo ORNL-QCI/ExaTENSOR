@@ -1,7 +1,7 @@
 !ExaTENSOR: Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/22
+!REVISION: 2019/11/19
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -186,9 +186,7 @@
           generic, public:: basis_func_supp_ctor=>BasisFuncSuppCtorEmpty,BasisFuncSuppCtorReal
           procedure, public:: is_set=>BasisFuncSuppIsSet            !returns .TRUE. if the basis function support is set
           procedure, public:: supp_dimsn=>BasisFuncSuppDimsn        !returns the support dimension (>=0), 0 is trivial (no real support)
-#if !(defined(__GNUC__) && __GNUC__ < 8)
           final:: basis_func_supp_dtor
-#endif
         end type basis_func_supp_t
  !Gaussian basis function:
         type, extends(basis_func_supp_t), public:: basis_func_gauss_t

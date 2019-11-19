@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/05/30
+!REVISION: 2019/11/19
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -1717,9 +1717,7 @@
 !Construct the tensor transformation (initialization) object:
           call tens_init%set_argument(tensor,ierr)
           if(ierr.eq.TEREC_SUCCESS) then
-#if !(defined(__GNUC__) && __GNUC__ < 8)
            call tens_init%set_method(ierr,defined=.FALSE.,method_name=method,method_map=method_map_f)
-#endif
            if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor instruction:
             tens_instr=>add_new_instruction(ip,ierr)
@@ -1782,9 +1780,7 @@
 !Construct the tensor transformation object:
           call tens_trans%set_argument(tensor,ierr)
           if(ierr.eq.TEREC_SUCCESS) then
-#if !(defined(__GNUC__) && __GNUC__ < 8)
            call tens_trans%set_method(ierr,defined=.TRUE.,method_name=method,method_map=method_map_f)
-#endif
            if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor instruction:
             tens_instr=>add_new_instruction(ip,ierr)

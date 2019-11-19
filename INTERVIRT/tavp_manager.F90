@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/10/10
+!REVISION: 2019/11/19
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -2175,11 +2175,7 @@
                 call instr_ctrl%get_method(method_name,sl,jerr,scalar=alpha,defined=defined)
                 if(jerr.eq.0) then
                  if(sl.gt.0) then
-#if !(defined(__GNUC__) && __GNUC__ < 8)
                   call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl),method_map_f)
-#else
-                  call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl))
-#endif
                  else
                   call tens_operation%set_method(jerr,alpha,defined)
                  endif

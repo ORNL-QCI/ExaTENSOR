@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/10/10
+!REVISION: 2019/11/19
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -157,9 +157,7 @@
           procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count (number of tensor operands associated with the resource)
           procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count (number of tensor operands associated with the resource)
           procedure, private:: get_ref_count=>TensResrcGetRefCount     !returns the current reference count
-#if !(defined(__GNUC__) && __GNUC__ < 8)
           final:: tens_resrc_dtor
-#endif
         end type tens_resrc_t
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_wrk_t
@@ -4365,11 +4363,7 @@
                 call instr_ctrl%get_method(method_name,sl,jerr,scalar=alpha,defined=defined)
                 if(jerr.eq.0) then
                  if(sl.gt.0) then
-#if !(defined(__GNUC__) && __GNUC__ < 8)
                   call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl),method_map_f)
-#else
-                  call tens_operation%set_method(jerr,alpha,defined,method_name(1:sl))
-#endif
                  else
                   call tens_operation%set_method(jerr,alpha,defined)
                  endif
