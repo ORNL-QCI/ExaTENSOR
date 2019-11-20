@@ -11,7 +11,13 @@ fi
 export OMP_PROC_BIND="close,spread,spread"
 
 if [ $PMIX_RANK -eq 0 ]; then
- nvprof -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x
+ nvprof --openmp-profiling off -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x
+elif [ $PMIX_RANK -eq 127 ]; then
+ nvprof --openmp-profiling off -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x
+elif [ $PMIX_RANK -eq 255 ]; then
+ nvprof --openmp-profiling off -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x
+elif [ $PMIX_RANK -eq 256 ]; then
+ nvprof --openmp-profiling off -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x
 else
  ./Qforce.x
 fi

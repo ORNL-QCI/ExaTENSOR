@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#BSUB -nnodes 6
-#BSUB -W 00:30
+#BSUB -nnodes 129
+#BSUB -W 00:20
 #BSUB -P STF006
 #BSUB -J exatensor
 #BSUB -o exa.out.%J
@@ -9,7 +9,7 @@
 ###BSUB -alloc_flags "gpumps smt1"
 
 # Load modules:
-module load gcc/8.1.0
+module load gcc/8.1.1
 module load essl
 module load cuda
 module load git
@@ -19,16 +19,16 @@ module load cmake
 export EXA_PATH=/ccs/home/div/src/ExaTensor_Summit_gcc8
 
 #ExaTENSOR specific:
-export QF_NUM_PROCS=6             #total number of MPI processes
-export QF_PROCS_PER_NODE=1        #number of MPI processes per logical node (logical nodes are created by node resource isolation)
+export QF_NUM_PROCS=258           #total number of MPI processes
+export QF_PROCS_PER_NODE=2        #number of MPI processes per logical node (logical nodes are created by node resource isolation)
 export QF_CORES_PER_PROCESS=21    #number of physical CPU cores per MPI process (no less than 1)
-export QF_MEM_PER_PROCESS=200000  #host RAM memory limit per MPI process in MB
+export QF_MEM_PER_PROCESS=130000  #host RAM memory limit per MPI process in MB
 export QF_NVMEM_PER_PROCESS=0     #non-volatile memory limit per MPI process in MB
-export QF_HOST_BUFFER_SIZE=200000 #host buffer size per MPI process in MB (must be less than QF_MEM_PER_PROCESS)
+export QF_HOST_BUFFER_SIZE=180000 #host buffer size per MPI process in MB (must be less than QF_MEM_PER_PROCESS)
 export QF_GPUS_PER_PROCESS=3      #number of discrete NVIDIA GPU's per MPI process (optional)
 export QF_MICS_PER_PROCESS=0      #number of discrete Intel Xeon Phi's per MPI process (optional)
 export QF_AMDS_PER_PROCESS=0      #number of discrete AMD GPU's per MPI process (optional)
-export QF_NUM_THREADS=8           #initial number of CPU threads per MPI process (irrelevant, keep it 8)
+export QF_NUM_THREADS=21          #initial number of CPU threads per MPI process (irrelevant, keep it 8)
 
 #OpenMP generic:
 export OMP_NUM_THREADS=$QF_NUM_THREADS #initial number of OpenMP threads per MPI process
@@ -49,7 +49,7 @@ export OMP_PLACES_TITAN="{1},{3},{5},{7,9},{0:8:2},{11},{13},{15}"   #Titan 16-c
 #export OMP_PLACES_POWER9="{0:4},{4:4},{8:4},{12:4},{28:56},{16:4},{20:4},{24:4}" #Summit 21-core SMT4 Power9 socket thread binding (even logical cores do computing)
 export OMP_PLACES_POWER9="{0},{4},{8},{12},{28:56},{16},{20},{24}"   #Summit 21-core SMT4 Power9 socket thread binding (even logical cores do computing)
 export OMP_PLACES_KNL="{1},{3},{5},{7,9},{0:128:2},{11},{13},{15}"   #Percival 64-core SMT4 KNL thread binding (even logical cores do computing)
-export OMP_PLACES=$OMP_PLACES_POWER9
+#export OMP_PLACES=$OMP_PLACES_POWER9
 export OMP_PROC_BIND="close,spread,spread" #nest1: Functional threads (DSVU)
                                            #nest2: TAVP-WRK:Dispatcher spawns coarse-grain Executors
                                            #nest3: TAVP-WRK:Dispatcher:Executor spawns execution threads in CP-TAL kernels
@@ -63,8 +63,8 @@ export MKL_NUM_THREADS=$MKL_NUM_THREADS_DEFAULT #number of Intel MKL threads per
 export MKL_DYNAMIC=false
 
 #Summit specific:
-export PAMI_IBV_ADAPTER_AFFINITY=1
-export PAMI_IBV_DEVICE_NAME="mlx5_0:1,mlx5_3:1"
+#export PAMI_IBV_ADAPTER_AFFINITY=1
+#export PAMI_IBV_DEVICE_NAME="mlx5_0:1,mlx5_3:1"
 export PAMI_IBV_ENABLE_OOO_AR=1                 #adaptive routing is default
 export PAMI_IBV_DISABLE_ODP=0                   #ODP (requires CAPI for performance)
 export PAMI_ENABLE_STRIPING=1                   #increases network bandwidth, also increases latency
@@ -79,9 +79,10 @@ export PAMI_IBV_ENABLE_DCT=1                    #reduces MPI_Init() time at larg
 
 ulimit -s unlimited
 
+rm core.* *.tmp *.log *.out *.x
 cp $EXA_PATH/Qforce.x ./
 
 #One MPI process per node (on only one socket):
-jsrun --smpiargs='-mca common_pami_use_odp 1' -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x
+#jsrun --smpiargs='-mca common_pami_use_odp 1' -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x
 #Two MPI processes per node (one MPI process per socket):
-#jsrun --smpiargs='-mca common_pami_use_odp 1' -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./exec_exa.sh
+jsrun --smpiargs='-mca common_pami_use_odp 1' -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./exec_exa.sh
