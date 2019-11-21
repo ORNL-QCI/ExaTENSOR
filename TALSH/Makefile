@@ -247,6 +247,9 @@ LA_INC = -DUSE_MKL -I$(PATH_BLAS_MKL_INC)
 else
 LA_INC = -I.
 endif
+ifeq ($(WITH_LAPACK),YES)
+LA_INC += -DWITH_LAPACK
+endif
 
 #CUDA INCLUDES:
 ifeq ($(GPU_CUDA),CUDA)
