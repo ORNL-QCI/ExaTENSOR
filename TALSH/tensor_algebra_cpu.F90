@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/11/21
+!REVISION: 2019/11/22
 
 !Copyright (C) 2013-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -4298,9 +4298,13 @@
             lmc8(1:lu,1:nv)=>ltens%data_cmplx8
             rmc8(1:nv,1:ru)=>rtens%data_cmplx8
             allocate(svr8(min(lu,ru)))
+#ifdef WITH_LAPACK
             call zgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc8,int(lu,kind=4),&
                         &0d0,0d0,1,int(nv,kind=4),nfound,svr8,lmc8,int(lu,kind=4),&
                         &rmc8,int(nv,kind=4),work,lwork,rwork,iwork,info)
+#else
+            ierr=-1; return
+#endif
             deallocate(svr8)
            case default
             ierr=1
