@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/11/22
+!REVISION: 2019/11/23
 
 !Copyright (C) 2013-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -4241,23 +4241,25 @@
 !------------------------------------------------------------------------------------
         subroutine tensor_block_decompose_svd(dtens,ltens,rtens,stens,ierr,data_kind)
         implicit none
-        type(tensor_block_t), intent(inout), target:: dtens !inout: tensor to be decomposed
-        type(tensor_block_t), intent(inout), target:: ltens !inout: left singular tensor
-        type(tensor_block_t), intent(inout), target:: rtens !inout: right singular tensor (transposed)
-        type(tensor_block_t), intent(inout), target:: stens !inout: singular value tensor
+        type(tensor_block_t), intent(inout), target:: dtens !inout: tensor to be decomposed (destroyed on exit)
+        type(tensor_block_t), intent(inout), target:: ltens !out: left singular tensor
+        type(tensor_block_t), intent(inout), target:: rtens !out: right singular tensor (transposed)
+        type(tensor_block_t), intent(inout), target:: stens !out: singular value tensor
         integer, intent(inout):: ierr                       !out: error code
         character(2), intent(in), optional:: data_kind      !in: preferred data kind
-        integer:: i
-        integer:: dtb,ltb,rtb,stb,drank,lrank,rrank,srank,lr,rr,cr,nfound,lwork,info
-        integer(8):: lu,ru,nv
+        integer:: i,nfound,lwork,info
+        integer:: dtb,ltb,rtb,stb,drank,lrank,rrank,srank,lr,rr,cr
+        integer(LONGINT):: lu,ru,nv,mlr,lrwork
         character(2):: dtk
-        real(4), pointer, contiguous:: dmr4(:,:),lmr4(:,:),rmr4(:,:),svr4(:)
-        real(8), pointer, contiguous:: dmr8(:,:),lmr8(:,:),rmr8(:,:),svr8(:)
-        complex(4), pointer, contiguous:: dmc4(:,:),lmc4(:,:),rmc4(:,:)
-        complex(8), pointer, contiguous:: dmc8(:,:),lmc8(:,:),rmc8(:,:)
-        complex(8), pointer, contiguous:: work(:)
-        real(8), pointer, contiguous:: rwork(:)
-        integer, pointer, contiguous:: iwork(:)
+        real(4):: wr4(1)
+        real(8):: wr8(1)
+        complex(4):: wc4(1)
+        complex(8):: wc8(1)
+        real(4), pointer, contiguous:: dmr4(:,:),lmr4(:,:),rmr4(:,:),wrkr4(:),rwrk4(:),sv4(:)
+        real(8), pointer, contiguous:: dmr8(:,:),lmr8(:,:),rmr8(:,:),wrkr8(:),rwrk8(:),sv8(:)
+        complex(4), pointer, contiguous:: dmc4(:,:),lmc4(:,:),rmc4(:,:),wrkc4(:)
+        complex(8), pointer, contiguous:: dmc8(:,:),lmc8(:,:),rmc8(:,:),wrkc8(:)
+        integer, allocatable:: iwork(:)
 
         ierr=0
  !Get tensor ranks:
@@ -4270,15 +4272,15 @@
           &lrank.gt.srank.and.rrank.gt.srank.and.lrank+rrank.eq.drank+2*srank) then
  !Check argument storage layout:
          dtb=tensor_block_layout(dtens,ierr); if(ierr.ne.0) then; ierr=1; return; endif
-         ltb=tensor_block_layout(ltens,ierr); if(ierr.ne.0) then; ierr=1; return; endif
-         rtb=tensor_block_layout(rtens,ierr); if(ierr.ne.0) then; ierr=1; return; endif
-         stb=tensor_block_layout(stens,ierr); if(ierr.ne.0) then; ierr=1; return; endif
+         ltb=tensor_block_layout(ltens,ierr); if(ierr.ne.0) then; ierr=2; return; endif
+         rtb=tensor_block_layout(rtens,ierr); if(ierr.ne.0) then; ierr=3; return; endif
+         stb=tensor_block_layout(stens,ierr); if(ierr.ne.0) then; ierr=4; return; endif
          if(dtb.eq.dimension_led.and.ltb.eq.dimension_led.and.rtb.eq.dimension_led.and.stb.eq.dimension_led) then
  !Determine computational data kind:
           if(present(data_kind)) then
            dtk=data_kind
           else
-           call determine_data_kind(dtk,ierr); if(ierr.ne.0) then; ierr=1; return; endif
+           call determine_data_kind(dtk,ierr); if(ierr.ne.0) return
           endif
  !Determine input parameters: D(lr,rr) = L(lr,cr) * S(cr) * R(cr,rr):
           cr=(lrank+rrank-drank)/2 !number of contracted dimensions
@@ -4288,35 +4290,185 @@
            nv=1; do i=1,cr; nv=nv*stens%tensor_shape%dim_extent(i); enddo
            lu=1; do i=1,lr; lu=lu*ltens%tensor_shape%dim_extent(i); enddo
            ru=1; do i=cr+1,rrank; ru=ru*rtens%tensor_shape%dim_extent(i); enddo
+           mlr=min(lu,ru)
+           lrwork=mlr*mlr*2+15*mlr
  !Associate matrices and perform SVD:
            select case(dtk)
            case('r4','R4')
+            dmr4(1:lu,1:ru)=>dtens%data_real4
+            lmr4(1:lu,1:nv)=>ltens%data_real4
+            rmr4(1:nv,1:ru)=>rtens%data_real4
+            ierr=array_alloc(sv4,mlr,in_buffer=.TRUE.,fallback=.TRUE.)
+            if(ierr.eq.0) then
+             allocate(iwork(12*mlr),STAT=ierr)
+             if(ierr.eq.0) then
+#ifdef WITH_LAPACK
+              call sgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmr4,int(lu,kind=4),&
+                          &0d0,0d0,1,int(nv,kind=4),nfound,sv4,lmr4,int(lu,kind=4),&
+                          &rmr4,int(nv,kind=4),wr4,-1,iwork,info)
+              if(info.eq.0) then
+               lwork=int(wr4(1))+1
+               ierr=array_alloc(wrkr4,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
+               if(ierr.eq.0) then
+                call sgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmr4,int(lu,kind=4),&
+                            &0d0,0d0,1,int(nv,kind=4),nfound,sv4,lmr4,int(lu,kind=4),&
+                            &rmr4,int(nv,kind=4),wrkr4,lwork,iwork,info)
+                if(info.ne.0) ierr=6
+                call array_free(wrkr4)
+               else
+                ierr=7
+               endif
+              else
+               ierr=8
+              endif
+#else
+              ierr=-1
+#endif
+              deallocate(iwork)
+             else
+              ierr=9
+             endif
+             call array_free(sv4)
+            else
+             ierr=10
+            endif
            case('r8','R8')
+            dmr8(1:lu,1:ru)=>dtens%data_real8
+            lmr8(1:lu,1:nv)=>ltens%data_real8
+            rmr8(1:nv,1:ru)=>rtens%data_real8
+            ierr=array_alloc(sv8,mlr,in_buffer=.TRUE.,fallback=.TRUE.)
+            if(ierr.eq.0) then
+             allocate(iwork(12*mlr),STAT=ierr)
+             if(ierr.eq.0) then
+#ifdef WITH_LAPACK
+              call dgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmr8,int(lu,kind=4),&
+                          &0d0,0d0,1,int(nv,kind=4),nfound,sv8,lmr8,int(lu,kind=4),&
+                          &rmr8,int(nv,kind=4),wr8,-1,iwork,info)
+              if(info.eq.0) then
+               lwork=int(wr8(1))+1
+               ierr=array_alloc(wrkr8,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
+               if(ierr.eq.0) then
+                call dgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmr8,int(lu,kind=4),&
+                            &0d0,0d0,1,int(nv,kind=4),nfound,sv8,lmr8,int(lu,kind=4),&
+                            &rmr8,int(nv,kind=4),wrkr8,lwork,iwork,info)
+                if(info.ne.0) ierr=11
+                call array_free(wrkr8)
+               else
+                ierr=12
+               endif
+              else
+               ierr=13
+              endif
+#else
+              ierr=-2
+#endif
+              deallocate(iwork)
+             else
+              ierr=14
+             endif
+             call array_free(sv8)
+            else
+             ierr=15
+            endif
            case('c4','C4')
+            dmc4(1:lu,1:ru)=>dtens%data_cmplx4
+            lmc4(1:lu,1:nv)=>ltens%data_cmplx4
+            rmc4(1:nv,1:ru)=>rtens%data_cmplx4
+            ierr=array_alloc(rwrk4,lrwork,in_buffer=.TRUE.,fallback=.TRUE.)
+            if(ierr.eq.0) then
+             ierr=array_alloc(sv4,mlr,in_buffer=.TRUE.,fallback=.TRUE.)
+             if(ierr.eq.0) then
+              allocate(iwork(12*mlr),STAT=ierr)
+              if(ierr.eq.0) then
+#ifdef WITH_LAPACK
+               call cgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc4,int(lu,kind=4),&
+                           &0d0,0d0,1,int(nv,kind=4),nfound,sv4,lmc4,int(lu,kind=4),&
+                           &rmc4,int(nv,kind=4),wc4,-1,rwrk4,iwork,info)
+               if(info.eq.0) then
+                lwork=int(real(wc4(1)))+1
+                ierr=array_alloc(wrkc4,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
+                if(ierr.eq.0) then
+                 call cgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc4,int(lu,kind=4),&
+                             &0d0,0d0,1,int(nv,kind=4),nfound,sv4,lmc4,int(lu,kind=4),&
+                             &rmc4,int(nv,kind=4),wrkc4,lwork,rwrk4,iwork,info)
+                 if(info.ne.0) ierr=16
+                 call array_free(wrkc4)
+                else
+                 ierr=17
+                endif
+               else
+                ierr=18
+               endif
+#else
+               ierr=-3
+#endif
+               deallocate(iwork)
+              else
+               ierr=19
+              endif
+              call array_free(sv4)
+             else
+              ierr=20
+             endif
+             call array_free(rwrk4)
+            else
+             ierr=21
+            endif
            case('c8','C8')
             dmc8(1:lu,1:ru)=>dtens%data_cmplx8
             lmc8(1:lu,1:nv)=>ltens%data_cmplx8
             rmc8(1:nv,1:ru)=>rtens%data_cmplx8
-            allocate(svr8(min(lu,ru)))
+            ierr=array_alloc(rwrk8,lrwork,in_buffer=.TRUE.,fallback=.TRUE.)
+            if(ierr.eq.0) then
+             ierr=array_alloc(sv8,mlr,in_buffer=.TRUE.,fallback=.TRUE.)
+             if(ierr.eq.0) then
+              allocate(iwork(12*mlr),STAT=ierr)
+              if(ierr.eq.0) then
 #ifdef WITH_LAPACK
-            call zgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc8,int(lu,kind=4),&
-                        &0d0,0d0,1,int(nv,kind=4),nfound,svr8,lmc8,int(lu,kind=4),&
-                        &rmc8,int(nv,kind=4),work,lwork,rwork,iwork,info)
+               call zgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc8,int(lu,kind=4),&
+                           &0d0,0d0,1,int(nv,kind=4),nfound,sv8,lmc8,int(lu,kind=4),&
+                           &rmc8,int(nv,kind=4),wc8,-1,rwrk8,iwork,info)
+               if(info.eq.0) then
+                lwork=int(real(wc8(1)))+1
+                ierr=array_alloc(wrkc8,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
+                if(ierr.eq.0) then
+                 call zgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc8,int(lu,kind=4),&
+                             &0d0,0d0,1,int(nv,kind=4),nfound,sv8,lmc8,int(lu,kind=4),&
+                             &rmc8,int(nv,kind=4),wrkc8,lwork,rwrk8,iwork,info)
+                 if(info.ne.0) ierr=22
+                 call array_free(wrkc8)
+                else
+                 ierr=23
+                endif
+               else
+                ierr=24
+               endif
 #else
-            ierr=-1; return
+               ierr=-4
 #endif
-            deallocate(svr8)
+               deallocate(iwork)
+              else
+               ierr=25
+              endif
+              call array_free(sv8)
+             else
+              ierr=26
+             endif
+             call array_free(rwrk8)
+            else
+             ierr=27
+            endif
            case default
-            ierr=1
+            ierr=28
            end select
           else
-           ierr=1
+           ierr=29
           endif
          else
-          ierr=1
+          ierr=30
          endif
         else
-         ierr=1
+         ierr=31
         endif
         return
 
