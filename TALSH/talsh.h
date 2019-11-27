@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2019/11/26
+REVISION: 2019/11/27
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -219,6 +219,10 @@ extern "C"{
 //  Query the current executed flop count:
  double talshDeviceGetFlops(int dev_kind = DEV_DEFAULT,
                             int dev_id = DEV_DEFAULT);
+//  Start memory manager log:
+ void talshMemManagerLogStart();
+//  Finish memory manager log:
+ void talshMemManagerLogFinish();
 //  Print TAL-SH statistics for specific devices:
  int talshStats(int dev_id = -1,
                 int dev_kind = DEV_NULL);

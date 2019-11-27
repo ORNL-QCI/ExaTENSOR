@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2019/11/26
+!REVISION: 2019/11/27
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -199,6 +199,12 @@
           integer(C_INT), value, intent(in):: dev_num
           integer(C_INT), value, intent(in):: dev_kind
          end function talshDeviceBufferFreeSize_
+  !Start memory manager log:
+         subroutine talsh_mem_manager_log_start() bind(c,name='talshMemManagerLogStart')
+         end subroutine talsh_mem_manager_log_start
+  !Finish memory manager log:
+         subroutine talsh_mem_manager_log_finish() bind(c,name='talshMemManagerLogFinish')
+         end subroutine talsh_mem_manager_log_finish
   !Print run-time TAL-SH statistics for chosen devices:
          integer(C_INT) function talshStats_(dev_id,dev_kind) bind(c,name='talshStats_')
           import
@@ -559,6 +565,8 @@
         public talsh_device_tensor_size
         public talsh_device_buffer_free_size
         public talsh_enforce_execution_device
+        public talsh_mem_manager_log_start
+        public talsh_mem_manager_log_finish
         public talsh_stats
  !TAL-SH tensor block API:
         public talsh_tensor_is_empty
