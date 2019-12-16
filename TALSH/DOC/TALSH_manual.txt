@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2019/03/10
+REVISION: 2019/12/16
 
 Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -931,12 +931,11 @@ API: Compute the 2-norm of a tensor block:
 API: Copy a tensor block with an optional dimension reordering:
 
  Fortran 2003:
-  function talsh_tensor_copy(dtens,ltens,prmn,scale,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
+  function talsh_tensor_copy(cptrn,dtens,ltens,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
    integer(C_INT):: ierr                              !out: error code (0:success)
+   character(*), intent(in):: cptrn                   !in: symbolic copy pattern, e.g. "D(a,b,c,d)=L(c,d,b,a)"
    type(talsh_tens_t), intent(inout):: dtens          !inout: destination tensor block
    type(talsh_tens_t), intent(inout):: ltens          !inout: source tensor block
-   integer(C_INT), intent(in), optional:: prmn(1:)    !in: dimension permutation, defaults to trivial
-   complex(8), intent(in), optional:: scale           !in: scaling value, defaults to 1
    integer(C_INT), intent(in), optional:: dev_id      !in: device id (flat or kind-specific)
    integer(C_INT), intent(in), optional:: dev_kind    !in: device kind (if present, <dev_id> is kind-specific)
    integer(C_INT), intent(in), optional:: copy_ctrl   !in: copy control (COPY_XX), defaults to COPY_MT
@@ -944,11 +943,9 @@ API: Copy a tensor block with an optional dimension reordering:
 
  C/C++:
   int talshTensorCopy(               //out: error code (0:success)
+   const char * cptrn,               //in: C-string: symbolic copy pattern, e.g. "D(a,b,c,d)=L(c,d,b,a)"
    talsh_tens_t * dtens,             //inout: destination tensor block
    talsh_tens_t * ltens,             //inout: source tensor block
-   int * prmn = NULL,                //in: dimension permutation, defaults to trivial
-   double scale_real = 1.0,          //in: scaling value (real part), defaults to 1
-   double scale_imag = 0.0,          //in: scaling value (imaginary part), defaults to 0
    int dev_id = DEV_DEFAULT,         //in: device id (flat or kind-specific)
    int dev_kind = DEV_DEFAULT,       //in: device kind (if present, <dev_id> is kind-specific)
    int copy_ctrl = COPY_MT,          //in: copy control (COPY_XX), defaults to COPY_MT
