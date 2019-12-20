@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/12/01 (started 2015/03/18)
+!REVISION: 2019/12/20 (started 2015/03/18)
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -123,8 +123,8 @@
         integer(INT_MPI), parameter, private:: READ_SIGN=+1  !incoming traffic sign (reading direction)
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
-        logical, parameter, private:: LAZY_LOCKING=.FALSE.                !lazy MPI window locking
-        logical, parameter, private:: TEST_AND_FLUSH=.TRUE.               !MPI_Test() will call MPI_Win_flush() on completion when entry reference count becomes 0 (not necessary)
+        logical, parameter, private:: LAZY_LOCKING=.TRUE.                 !lazy MPI window locking
+        logical, parameter, private:: TEST_AND_FLUSH=.FALSE.              !MPI_Test() will call MPI_Win_flush() on completion when entry reference count becomes 0 (not necessary)
         integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27    !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096     !max number of outstanding one-sided data transfer requests per process
         integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0           !default communication tag (for P2P MPI communications)
@@ -817,26 +817,45 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine RankWinListDelete
-!-------------------------------------------------
-        subroutine RankWinListDeleteAll(this,ierr)
-!Deletes all (rank,window) entries.
+!--------------------------------------------------------
+        subroutine RankWinListDeleteAll(this,ierr,window)
+!Deletes all (rank,window) entries with a proper synchronization when needed.
+!If <window> is present, only the (rank,window) entries corresponding to the
+!given <window> will be deleted with a proper synchronization when needed.
         implicit none
         class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI), intent(in), optional:: window  !in: specific window
         integer(INT_MPI):: errc,i,rnk,win
 
         errc=0
-        do i=lbound(this%RankWins,1),ubound(this%RankWins,1)
-         rnk=this%RankWins(i)%Rank; win=this%RankWins(i)%Window
-         if(rnk.ge.0) then !active entry
-          if(this%RankWins(i)%RefCount.gt.0.or.LAZY_LOCKING) call MPI_Win_unlock(rnk,win,errc)
-          if(errc.eq.0) then
-           call this%delete(i,errc); if(errc.ne.0) then; errc=1; exit; endif
-          else
-           errc=2
+        if(present(window)) then
+         do i=lbound(this%RankWins,1),ubound(this%RankWins,1)
+          rnk=this%RankWins(i)%Rank; win=this%RankWins(i)%Window
+          if(rnk.ge.0) then !active entry
+           if(win.eq.window) then
+            if(this%RankWins(i)%RefCount.gt.0.or.LAZY_LOCKING) call MPI_Win_unlock(rnk,win,errc)
+            if(errc.eq.0) then
+             call this%delete(i,errc); if(errc.ne.0) then; errc=1; exit; endif
+            else
+             errc=2; exit
+            endif
+           endif
           endif
-         endif
-        enddo
+         enddo
+        else
+         do i=lbound(this%RankWins,1),ubound(this%RankWins,1)
+          rnk=this%RankWins(i)%Rank; win=this%RankWins(i)%Window
+          if(rnk.ge.0) then !active entry
+           if(this%RankWins(i)%RefCount.gt.0.or.LAZY_LOCKING) call MPI_Win_unlock(rnk,win,errc)
+           if(errc.eq.0) then
+            call this%delete(i,errc); if(errc.ne.0) then; errc=3; exit; endif
+           else
+            errc=4; exit
+           endif
+          endif
+         enddo
+        endif
         if(present(ierr)) ierr=errc
         return
         end subroutine RankWinListDeleteAll
@@ -1425,7 +1444,7 @@
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: i,m,my_rank,errc
         integer(INT_ADDR):: min_mem,loc_size
-
+!$OMP FLUSH
         errc=0
         if(this%NumWins.gt.0) then !initialized distributed memory space
          m=1; min_mem=this%DataWins(m)%WinSize
@@ -1434,63 +1453,21 @@
            min_mem=this%DataWins(i)%WinSize; m=i
           endif
          enddo
-         loc_size=data_vol*data_type_size(data_type,errc) !data buffer size in bytes
-         if(errc.eq.0.and.loc_size.gt.0) then
-          call this%DataWins(m)%attach(loc_ptr,loc_size,errc)
-          if(errc.eq.0) then
-           call MPI_Comm_rank(this%CommMPI,my_rank,errc)
-           if(errc.eq.0) then
-            call data_descr%init(my_rank,this%DataWins(m)%WinMPI,loc_ptr,data_type,data_vol,errc)
-            if(errc.ne.0) then
-             call this%DataWins(m)%detach(loc_ptr,loc_size)
-             errc=1
-            endif
-           else
-            call this%DataWins(m)%detach(loc_ptr,loc_size)
-            errc=2
-           endif
-          else
-           errc=3
-          endif
-         else
-          errc=4
-         endif
-        else
-         errc=5
-        endif
-        if(present(ierr)) ierr=errc
-        return
-        end subroutine DistrSpaceAttach
-!--------------------------------------------------------
-        subroutine DistrSpaceDetach(this,data_descr,ierr)
-!Detaches a previously attached local (contiguous) data buffer from a distributed memory space.
-!The data buffer is specified via a data descriptor.
-        implicit none
-        class(DistrSpace_t), intent(inout):: this        !inout: distributed memory space
-        class(DataDescr_t), intent(inout):: data_descr   !inout: valid data descriptor
-        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI):: i,m,my_rank,errc
-        integer(INT_ADDR):: loc_size
-
-        errc=0
-        if(this%NumWins.gt.0) then !initialized distributed memory space
-         call MPI_Comm_rank(this%CommMPI,my_rank,errc)
+         call RankWinRefs%delete_all(errc,this%DataWins(m)%WinMPI%Window) !sync and delete all (rank,win)-entries on this window
          if(errc.eq.0) then
-          if(data_descr%RankMPI.eq.my_rank) then
-           loc_size=data_descr%DataVol*data_type_size(data_descr%DataType,errc) !data buffer size in bytes
-           if(errc.eq.0.and.loc_size.gt.0) then
-            m=0
-            do i=1,this%NumWins !find the MPI window
-             if(this%DataWins(i)%WinMPI%Window.eq.data_descr%WinMPI%Window) then; m=i; exit; endif
-            enddo
-            if(m.gt.0) then
-             call this%DataWins(m)%detach(data_descr%LocPtr,loc_size,errc)
-             if(errc.eq.0) then
-              call data_descr%clean()
-             else
+          loc_size=data_vol*data_type_size(data_type,errc) !data buffer size in bytes
+          if(errc.eq.0.and.loc_size.gt.0) then
+           call this%DataWins(m)%attach(loc_ptr,loc_size,errc)
+           if(errc.eq.0) then
+            call MPI_Comm_rank(this%CommMPI,my_rank,errc)
+            if(errc.eq.0) then
+             call data_descr%init(my_rank,this%DataWins(m)%WinMPI,loc_ptr,data_type,data_vol,errc)
+             if(errc.ne.0) then
+              call this%DataWins(m)%detach(loc_ptr,loc_size)
               errc=1
              endif
             else
+             call this%DataWins(m)%detach(loc_ptr,loc_size)
              errc=2
             endif
            else
@@ -1506,6 +1483,60 @@
          errc=6
         endif
         if(present(ierr)) ierr=errc
+!$OMP FLUSH
+        return
+        end subroutine DistrSpaceAttach
+!--------------------------------------------------------
+        subroutine DistrSpaceDetach(this,data_descr,ierr)
+!Detaches a previously attached local (contiguous) data buffer from a distributed memory space.
+!The data buffer is specified via a data descriptor.
+        implicit none
+        class(DistrSpace_t), intent(inout):: this        !inout: distributed memory space
+        class(DataDescr_t), intent(inout):: data_descr   !inout: valid data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: i,m,my_rank,errc
+        integer(INT_ADDR):: loc_size
+!$OMP FLUSH
+        errc=0
+        if(this%NumWins.gt.0) then !initialized distributed memory space
+         call MPI_Comm_rank(this%CommMPI,my_rank,errc)
+         if(errc.eq.0) then
+          if(data_descr%RankMPI.eq.my_rank) then
+           loc_size=data_descr%DataVol*data_type_size(data_descr%DataType,errc) !data buffer size in bytes
+           if(errc.eq.0.and.loc_size.gt.0) then
+            m=0
+            do i=1,this%NumWins !find the MPI window
+             if(this%DataWins(i)%WinMPI%Window.eq.data_descr%WinMPI%Window) then; m=i; exit; endif
+            enddo
+            if(m.gt.0) then
+             call RankWinRefs%delete_all(errc,this%DataWins(m)%WinMPI%Window) !sync and delete all (rank,win)-entries on this window
+             if(errc.eq.0) then
+              call this%DataWins(m)%detach(data_descr%LocPtr,loc_size,errc)
+              if(errc.eq.0) then
+               call data_descr%clean()
+              else
+               errc=1
+              endif
+             else
+              errc=2
+             endif
+            else
+             errc=3
+            endif
+           else
+            errc=4
+           endif
+          else
+           errc=5
+          endif
+         else
+          errc=6
+         endif
+        else
+         errc=7
+        endif
+        if(present(ierr)) ierr=errc
+!$OMP FLUSH
         return
         end subroutine DistrSpaceDetach
 !===========================================
