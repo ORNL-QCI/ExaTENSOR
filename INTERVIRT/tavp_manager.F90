@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/11/19
+!REVISION: 2019/12/23
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -316,7 +316,7 @@
          integer(INTD), private:: num_ranks=0                       !number of MPI ranks to dispatch instructions to
          integer(INTD), allocatable, private:: dispatch_rank(:)     !MPI ranks of the processes dispatched to (within their communicator)
          integer(INTL), allocatable, private:: dispatch_count(:)    !current number of tensor instructions dispatched to each MPI rank
-         integer(INTL), allocatable, private:: issue_count(:)       !current number of tensor instruction issued to each MPI rank
+         integer(INTL), allocatable, private:: issue_count(:)       !current number of tensor instructions issued to each MPI rank
          real(8), allocatable, private:: dispatch_flops(:)          !Flop count for currently dispatched tensor instructions for each MPI rank
          type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode buffer for each dispatched MPI rank
          type(comm_handle_t), allocatable, private:: comm_hl(:)     !communication handle for each dispatched MPI rank
@@ -5650,9 +5650,10 @@
          integer(INTD), intent(in), optional:: channel      !in: specific dispatch channel to synchronize
          integer(INTD):: errc,i
          logical:: truly_synced
-         real(8):: tm
+         real(8):: tm,tm_sync
 
          errc=0; synced=.FALSE.; truly_synced=.FALSE.
+         tm=time_sys_sec()
          if(present(channel)) then !sync a specific channel
           if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
            if(this%comm_hl(channel)%is_active(errc)) then
@@ -5688,15 +5689,17 @@
           enddo
          endif
          synced=(errc.eq.0) !will be set to TRUE even if no bytecode was currently pending issue
+         tm_sync=time_sys_sec()-tm
          if(truly_synced.and.(LOGGING.gt.0)) then
           tm=time_sys_sec()
           if(present(channel)) then
 !$OMP CRITICAL (IO)
-           write(CONS_OUT,'("[",F20.6,"]: Synced issue on channel ",i4,": Rank = ",i6)') tm,channel,this%dispatch_rank(channel)
+           write(CONS_OUT,'("[",F20.6,"]: Synced issue on channel ",i4,": Rank = ",i6,": Time (s) = ",F12.6)')&
+           &tm,channel,this%dispatch_rank(channel),tm_sync
 !$OMP END CRITICAL (IO)
           else
 !$OMP CRITICAL (IO)
-           write(CONS_OUT,'("[",F20.6,"]: Synced issue on all channels")') tm
+           write(CONS_OUT,'("[",F20.6,"]: Synced issue on all channels: Time (s) = ",F12.6)') tm,tm_sync
 !$OMP END CRITICAL (IO)
           endif
           flush(CONS_OUT)
@@ -5705,12 +5708,12 @@
           if(errc.eq.0) then
            if(present(channel)) then
 !$OMP CRITICAL (IO)
-            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Synced channel ",i4,": Rank = ",i6)')&
-            &impir,channel,this%dispatch_rank(channel)
+            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Synced channel ",i4,": Rank = ",i6,": Time = ",F12.6)')&
+            &impir,channel,this%dispatch_rank(channel),tm_sync
 !$OMP END CRITICAL (IO)
            else
 !$OMP CRITICAL (IO)
-            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Synced all channels")') impir
+            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Synced all channels: Time = ",F12.6)') impir,tm_sync
 !$OMP END CRITICAL (IO)
            endif
           else
