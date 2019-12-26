@@ -1,9 +1,9 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/08/07
+!REVISION: 2019/12/26
 
-!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -224,6 +224,8 @@
         end interface unpack_builtin
         public unpack_builtin
         public unpack_string
+ !Collective non-member API:
+        public wait_all_comm_handles !completion wait for multiple communication handles
 
        contains
 !DEFINITION:
@@ -1372,12 +1374,12 @@
         end function CommHandleIsActive
 !------------------------------------------------------
         function CommHandleTest(this,ierr) result(answ)
-!Tests the completion of an active communication. An error
-!code PACK_NULL is returned if the communication handle is clean.
-!If completed, the communication handle becomes inactive, but not clean.
+!Tests completion of an active communication. An error code PACK_NULL
+!is returned if the communication handle is clean (empty). If completed,
+!the communication handle becomes inactive, but not clean.
          implicit none
          logical:: answ                              !out: result
-         class(comm_handle_t), intent(inout):: this  !inout: communication handle
+         class(comm_handle_t), intent(inout):: this  !inout: non-empty communication handle
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          integer(INT_MPI):: err_mpi
@@ -1411,18 +1413,18 @@
            endif
           endif
          else
-          errc=PACK_NULL !communication handle is clean
+          errc=PACK_NULL !communication handle is clean (empty)
          endif
          if(present(ierr)) ierr=errc
          return
         end function CommHandleTest
 !-------------------------------------------
         subroutine CommHandleWait(this,ierr)
-!Waits for the completion of an active communication. An error
-!code PACK_NULL is returned if the communication handle is clean.
-!When completed, the communication handle becomes inactive, but not clean.
+!Waits for completion of an active communication. An error code PACK_NULL
+!is returned if the communication handle is clean (empty). When completed,
+!the communication handle becomes inactive, but not clean.
          implicit none
-         class(comm_handle_t), intent(inout):: this  !inout: communication handle
+         class(comm_handle_t), intent(inout):: this  !inout: non-empty communication handle
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          integer(INT_MPI):: err_mpi
@@ -1452,7 +1454,7 @@
            endif
           endif
          else
-          errc=PACK_NULL !communication handle is clean
+          errc=PACK_NULL !communication handle is clean (empty)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -2269,6 +2271,64 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine unpack_string
+!-----------------------------------------------------------------------
+        subroutine wait_all_comm_handles(comm_handles,ierr,truly_synced)
+!Waits for completion of multiple communications. The communication
+!handles passed here are allowed to be empty or inactive in which
+!case nothing will be done on them.
+         implicit none
+         type(comm_handle_t), intent(inout), target:: comm_handles(1:) !inout: communication handles
+         integer(INTD), intent(out), optional:: ierr                   !out: error code
+         logical, intent(out), optional:: truly_synced                 !out: TRUE if there was at least one active comm handle sync
+         integer(INTD):: errc
+         integer(INT_MPI):: i,n,ml,err_mpi
+         integer(INT_MPI):: reqs(size(comm_handles)),stats(MPI_STATUS_SIZE,size(comm_handles))
+         type(comm_handle_t), pointer:: comm_handle
+         logical:: active
+
+         errc=PACK_SUCCESS; n=size(comm_handles); active=.FALSE.
+         if(n.gt.0) then
+          do i=1,n
+           if(comm_handles(i)%is_active(errc)) then
+            if(errc.ne.PACK_SUCCESS) exit
+            reqs(i)=comm_handles(i)%req
+            active=.TRUE.
+           else
+            if(errc.ne.PACK_SUCCESS) exit
+            reqs(i)=MPI_REQUEST_NULL
+           endif
+          enddo
+          if(errc.eq.PACK_SUCCESS.and.active) then
+           call MPI_Waitall(n,reqs,stats,err_mpi)
+           if(err_mpi.eq.MPI_SUCCESS) then
+            do i=1,n
+             comm_handle=>comm_handles(i)
+             if(comm_handle%is_active()) then
+              comm_handle%stat(:)=stats(:,i)
+              if(associated(comm_handle%recv_pack_env)) then !receive operation required decoding
+               call MPI_Get_Count(comm_handle%stat,MPI_CHARACTER,ml,err_mpi)
+               if(err_mpi.eq.MPI_SUCCESS) then
+                call comm_handle%recv_pack_env%decode_mpi_msg(int(ml,INTL),errc)
+                if(errc.ne.PACK_SUCCESS) exit
+                comm_handle%recv_pack_env=>NULL()
+               else
+                errc=PACK_MPI_ERR
+                exit
+               endif
+              endif
+              comm_handle%active=.FALSE.
+             endif
+             comm_handle=>NULL()
+            enddo
+           else
+            errc=PACK_MPI_ERR
+           endif
+          endif
+         endif
+         if(present(truly_synced)) truly_synced=active
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine wait_all_comm_handles
 
        end module pack_prim
 !===================================================================================

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/12/23
+!REVISION: 2019/12/26
 
 !Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
@@ -130,6 +130,7 @@
         integer(INTD), private:: MAX_DECOMPOSE_CHLD_INSTR=16384 !max number of created child instructions in the decomposition phase
         real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3      !max time (sec) before passing instructions to Dispatcher
  !Dispatcher:
+        logical, private:: DISPATCH_WAIT_ALL=.TRUE.             !activates MPI_Waitall() in synchronizing instruction dispatch to lower-level TAVPs
         logical, private:: DISPATCH_RANDOM=.FALSE.              !activates random dispatch for affinity-less tensor instructions
         logical, private:: DISPATCH_BALANCE=.TRUE.              !activates load-balanced dispatch for affinity-less tensor instructions (DISPATCH_RANDOM must be off)
         real(8), private:: DISPATCH_BALANCE_BIAS=32d0           !bias for the balancing function
@@ -5658,35 +5659,56 @@
           if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
            if(this%comm_hl(channel)%is_active(errc)) then
             if(errc.eq.PACK_SUCCESS) then
-             call this%comm_hl(channel)%wait(errc); if(errc.ne.0) errc=-11
+             call this%comm_hl(channel)%wait(errc); if(errc.ne.0) errc=-16
              truly_synced=(errc.eq.0)
-             if(errc.eq.0) then; call this%comm_hl(channel)%clean(errc); if(errc.ne.0) errc=-10; endif
-             if(errc.eq.0) then; call this%bytecode(channel)%clean(errc); if(errc.ne.0) errc=-9; endif
+             if(errc.eq.0) then; call this%comm_hl(channel)%clean(errc); if(errc.ne.0) errc=-15; endif
+             if(errc.eq.0) then; call this%bytecode(channel)%clean(errc); if(errc.ne.0) errc=-14; endif
             else
-             errc=-8
+             errc=-13
             endif
            else
-            if(errc.ne.PACK_SUCCESS) errc=-7
+            if(errc.ne.PACK_SUCCESS) errc=-12
            endif
           else
-           errc=-6
+           errc=-11
           endif
          else !sync all channels
-          do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
-           if(this%comm_hl(i)%is_active(errc)) then
-            if(errc.eq.PACK_SUCCESS) then
-             call this%comm_hl(i)%wait(errc); if(errc.ne.0) errc=-5
-             truly_synced=(errc.eq.0)
-             if(errc.eq.0) then; call this%comm_hl(i)%clean(errc); if(errc.ne.0) errc=-4; endif
-             if(errc.eq.0) then; call this%bytecode(i)%clean(errc); if(errc.ne.0) errc=-3; endif
-            else
-             errc=-2
-            endif
+          if(DISPATCH_WAIT_ALL) then
+           call wait_all_comm_handles(this%comm_hl,errc,truly_synced)
+           if(errc.eq.PACK_SUCCESS) then
+            do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+             if(.not.this%comm_hl(i)%is_clean(errc)) then
+              if(errc.eq.PACK_SUCCESS) then
+               if(errc.eq.0) then; call this%comm_hl(i)%clean(errc); if(errc.ne.0) errc=-10; endif
+               if(errc.eq.0) then; call this%bytecode(i)%clean(errc); if(errc.ne.0) errc=-9; endif
+              else
+               errc=-8
+              endif
+             else
+              if(errc.ne.PACK_SUCCESS) errc=-7
+             endif
+             if(errc.ne.0) exit
+            enddo
            else
-            if(errc.ne.PACK_SUCCESS) errc=-1
+            errc=-6
            endif
-           if(errc.ne.0) exit
-          enddo
+          else
+           do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+            if(this%comm_hl(i)%is_active(errc)) then
+             if(errc.eq.PACK_SUCCESS) then
+              call this%comm_hl(i)%wait(errc); if(errc.ne.0) errc=-5
+              truly_synced=(errc.eq.0)
+              if(errc.eq.0) then; call this%comm_hl(i)%clean(errc); if(errc.ne.0) errc=-4; endif
+              if(errc.eq.0) then; call this%bytecode(i)%clean(errc); if(errc.ne.0) errc=-3; endif
+             else
+              errc=-2
+             endif
+            else
+             if(errc.ne.PACK_SUCCESS) errc=-1
+            endif
+            if(errc.ne.0) exit
+           enddo
+          endif
          endif
          synced=(errc.eq.0) !will be set to TRUE even if no bytecode was currently pending issue
          tm_sync=time_sys_sec()-tm
