@@ -66,8 +66,8 @@ export MKL_DYNAMIC=false
 #Cray/MPICH specific:
 #export CRAY_OMP_CHECK_AFFINITY=TRUE         #CRAY: Show thread placement
 export MPICH_MAX_THREAD_SAFETY=multiple      #CRAY: Required for MPI asynchronous progress
-export MPICH_NEMESIS_ASYNC_PROGRESS="SC"     #CRAY: Activate MPI asynchronous progress thread {"SC","MC"}
-export MPICH_RMA_OVER_DMAPP=1                #CRAY: DMAPP backend for CRAY-MPICH
+export MPICH_NEMESIS_ASYNC_PROGRESS="MC"     #CRAY: Activate MPI asynchronous progress thread {"SC","MC"}
+#export MPICH_RMA_OVER_DMAPP=1               #CRAY: DMAPP backend for CRAY-MPICH
 #export MPICH_GNI_ASYNC_PROGRESS_TIMEOUT=0   #CRAY:
 #export MPICH_GNI_MALLOC_FALLBACK=enabled    #CRAY:
 #export MPICH_ALLOC_MEM_HUGE_PAGES=1         #CRAY: Huge pages
@@ -78,24 +78,26 @@ export MPICH_RMA_OVER_DMAPP=1                #CRAY: DMAPP backend for CRAY-MPICH
 #export MPICH_RANK_REORDER_DISPLAY=1
 
 #Summit specific:
-#export PAMI_IBV_ADAPTER_AFFINITY=1
-#export PAMI_IBV_DEVICE_NAME="mlx5_0:1,mlx5_3:1"
-export PAMI_IBV_ENABLE_OOO_AR=1                 #adaptive routing is default
-export PAMI_IBV_DISABLE_ODP=0                   #ODP (requires CAPI for performance)
-export PAMI_ENABLE_STRIPING=1                   #increases network bandwidth, also increases latency
-export PAMI_IBV_ENABLE_DCT=1                    #reduces MPI_Init() time at large scale
+export PAMI_IBV_ADAPTER_AFFINITY=1
+export PAMI_IBV_DEVICE_NAME="mlx5_0:1,mlx5_3:1"
+export PAMI_IBV_DEVICE_NAME_1="mlx5_3:1,mlx5_0:1"
+export PAMI_IBV_ENABLE_OOO_AR=1                   #adaptive routing is default
+export PAMI_ENABLE_STRIPING=1                     #increases network bandwidth, also increases latency
+export PAMI_IBV_DISABLE_ODP=0                     #ODP (requires CAPI for performance)
+#export PAMI_IBV_ENABLE_TAG_MATCHING=1            #hardware tag matching
+export PAMI_IBV_ENABLE_DCT=1                      #reduces MPI_Init() time at large scale
 #unset PAMI_IBV_ENABLE_DCT
 #export PAMI_IBV_QP_SERVICE_LEVEL=8
 #export PAMI_PMIX_DATACACHE=1
-#export PAMI_IBV_DEBUG_CQE=1                    #CQE error debugging
+#export PAMI_IBV_DEBUG_CQE=1                      #CQE error debugging
 #export PAMI_IBV_DEBUG_QP_TIMEOUT=22
 #export PAMI_IBV_DEBUG_RNR_RETRY=9
 #export OMPI_LD_PRELOAD_POSTPEND=$OLCF_SPECTRUM_MPI_ROOT/lib/libmpitrace.so
 
+ulimit -s unlimited
+
 rm core.* *.tmp *.log *.out *.x
 cp $QF_PATH/Qforce.x ./
-
-ulimit -s unlimited
 
 #/usr/local/mpi/openmpi/3.1.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE -oversubscribe ./Qforce.x #>& qforce.log
 
@@ -103,5 +105,4 @@ ulimit -s unlimited
 
 #aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROCESS -cc none ./Qforce.x #>& qforce.log
 
-#jsrun --smpiargs="-mca common_pami_use_odp 1" -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x #>& qforce.log
-#jsrun --smpiargs="-mca common_pami_use_odp 1" -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone nvprof -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x #>& qforce.log
+#jsrun --smpiargs='-async' --smpiargs='-mca common_pami_use_odp 1' -D PAMI_IBV_DISABLE_ODP=0 -n $QF_NUM_PROCS -r $QF_PROCS_PER_NODE -a 1 -c $QF_CORES_PER_PROCESS -g $QF_GPUS_PER_PROCESS -bnone ./Qforce.x
