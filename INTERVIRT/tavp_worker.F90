@@ -1,9 +1,9 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/12/20
+!REVISION: 2020/01/07
 
-!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -108,7 +108,7 @@
         logical, private:: COMMUNICATOR_BLOCKING=.FALSE.        !switches between blocking and non-blocking one-sided communication semantics
         logical, private:: COMMUNICATOR_OPT_ACC=.TRUE.          !optimized (reduced) accumulation mechanism
         logical, private:: COMMUNICATOR_FLUSH_LOCAL=.TRUE.      !local semantics for one-sided MPI flushing
-        integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=6  !max number of outstanding prefetching instructions issued by Communicator
+        integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=9  !max number of outstanding prefetching instructions issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=3     !max number of outstanding uploading instructions issued by Communicator
         real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-1     !max time (sec) spent by Communicator in each subphase
         logical, private:: COMMUNICATOR_NO_FETCH=.FALSE.        !DEBUG: Turns off all remote data fetches
