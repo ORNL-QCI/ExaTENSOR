@@ -1,8 +1,8 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2019/12/16
+REVISION: 2020/01/23
 
-Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
 
 This file is part of ExaTensor.
 
@@ -61,6 +61,8 @@ FOR DEVELOPER(s):
 #include <omp.h>
 
 #include "timer.h"
+#include "device_algebra.h"
+#include "mem_manager.h"
 #include "talsh.h"
 
 //PARAMETERS:

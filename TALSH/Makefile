@@ -475,10 +475,10 @@ endif
 ./OBJ/tensor_dil_omp.o: tensor_dil_omp.F90 ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_dil_omp.F90 -o ./OBJ/tensor_dil_omp.o
 
-./OBJ/mem_manager.o: mem_manager.cpp mem_manager.h tensor_algebra.h
+./OBJ/mem_manager.o: mem_manager.cpp mem_manager.h tensor_algebra.h device_algebra.h
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) mem_manager.cpp -o ./OBJ/mem_manager.o
 
-./OBJ/tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu talsh_complex.h tensor_algebra.h
+./OBJ/tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu talsh_complex.h tensor_algebra.h device_algebra.h
 ifeq ($(GPU_CUDA),CUDA)
 	$(CUDA_COMP) -ccbin $(CUDA_HOST_COMPILER) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) --ptx --source-in-ptx tensor_algebra_gpu_nvidia.cu -o ./OBJ/tensor_algebra_gpu_nvidia.ptx
 	$(CUDA_COMP) -ccbin $(CUDA_HOST_COMPILER) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu -o ./OBJ/tensor_algebra_gpu_nvidia.o
@@ -491,7 +491,7 @@ endif
 ./OBJ/talshf.o: talshf.F90 ./OBJ/tensor_algebra_cpu_phi.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/mem_manager.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) talshf.F90 -o ./OBJ/talshf.o
 
-./OBJ/talshc.o: talshc.cpp talsh.h tensor_algebra.h ./OBJ/tensor_algebra_cpu_phi.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/mem_manager.o
+./OBJ/talshc.o: talshc.cpp talsh.h talsh_complex.h tensor_algebra.h device_algebra.h ./OBJ/tensor_algebra_cpu_phi.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/mem_manager.o
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) talshc.cpp -o ./OBJ/talshc.o
 
 ./OBJ/talsh_task.o: talsh_task.cpp talsh.h ./OBJ/talshc.o
@@ -500,7 +500,7 @@ endif
 ./OBJ/talshxx.o: talshxx.cpp talshxx.hpp ./OBJ/talshc.o
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) talshxx.cpp -o ./OBJ/talshxx.o
 
-./OBJ/test.o: test.cpp talshxx.hpp talsh_task.hpp talsh.h tensor_algebra.h lib$(NAME).a
+./OBJ/test.o: test.cpp talshxx.hpp talsh_task.hpp talsh.h tensor_algebra.h device_algebra.h lib$(NAME).a
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) test.cpp -o ./OBJ/test.o
 
 ./OBJ/main.o: main.F90 ./OBJ/test.o ./OBJ/talshf.o lib$(NAME).a
