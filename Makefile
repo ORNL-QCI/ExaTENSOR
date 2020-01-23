@@ -2,22 +2,23 @@ NAME = ExaTensor
 
 #ADJUST THE FOLLOWING ENVIRONMENT VARIABLES ACCORDINGLY (choices are given)
 #until you see "YOU ARE DONE!". The comments will guide you through (read them).
-#Alternatively, you can export all relevant environment variables such that this
+#Alternatively you can export all relevant environment variables such that this
 #Makefile will pick their values, so you will not need to update anything here.
+#However you will still need to read the meaning of those variables below.
 
 #Cray cross-compiling wrappers (only for Cray): [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
-#Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
+#Compiler: [GNU|INTEL|CRAY|IBM|PGI]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT|PRF]:
 export BUILD_TYPE ?= OPT
-#MPI Library: [MPICH|OPENMPI]:
+#MPI library base: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
-#BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
-export BLASLIB ?= ATLAS
-#Nvidia GPU via CUDA: [CUDA|NOCUDA]:
+#BLAS: [ATLAS|MKL|OPENBLAS|ACML|LIBSCI|ESSL|NONE]:
+export BLASLIB ?= NONE
+#NVIDIA GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
-#Nvidia GPU architecture (two digits, >=35):
+#NVIDIA GPU architecture (two digits, >=35):
 export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
@@ -29,7 +30,7 @@ export EXA_OS ?= LINUX
 export WITH_LAPACK ?= NO
 #Fast GPU tensor transpose (cuTT library): [YES|NO]:
 export WITH_CUTT ?= NO
-#In-place GPU tensor contractions (cuTensor library): [YES|NO]:
+#In-place GPU tensor contraction (cuTensor library): [YES|NO]:
 export WITH_CUTENSOR ?= NO
 
 
@@ -39,13 +40,13 @@ export WITH_CUTENSOR ?= NO
 export EXA_NO_BUILD ?= NO
 #Only enable TAL-SH build ($EXA_NO_BUILD must be NO): [YES|NO]:
 export EXA_TALSH_ONLY ?= NO
-#The build is part of ExaTN: [YES|NO]:
+#The build is part of the ExaTN library build: [YES|NO]:
 export EXATN_SERVICE ?= NO
 
 
-#SET YOUR LOCAL PATHS (for unwrapped non-Cray builds):
+#SET YOUR LOCAL PATHS (for direct builds without Cray compiler wrappers):
 
-#MPI library (whichever you have, set one):
+#MPI library base (whichever you have, set one):
 # Set this if you use MPICH or its derivative (e.g. Cray-MPICH):
 export PATH_MPICH ?= /usr/local/mpi/mpich/3.2.1
 #  Only reset these if MPICH files are spread in system directories:
@@ -65,29 +66,34 @@ export PATH_BLAS_ATLAS ?= /usr/lib/x86_64-linux-gnu
 # Set this path to Intel root directory if you have chosen Intel MKL:
 export PATH_INTEL ?= /opt/intel
 #  Only reset these if Intel MKL libraries are spread in system directories:
-export PATH_BLAS_MKL ?= $(PATH_INTEL)/mkl/lib/intel64
-export PATH_BLAS_MKL_DEP ?= $(PATH_INTEL)/compilers_and_libraries/linux/lib/intel64_lin
-export PATH_BLAS_MKL_INC ?= $(PATH_INTEL)/mkl/include/intel64/lp64
+ export PATH_BLAS_MKL ?= $(PATH_INTEL)/mkl/lib/intel64
+ export PATH_BLAS_MKL_DEP ?= $(PATH_INTEL)/compilers_and_libraries/linux/lib/intel64_lin
+ export PATH_BLAS_MKL_INC ?= $(PATH_INTEL)/mkl/include/intel64/lp64
+# Set this path if you have chosen OpenBLAS:
+export PATH_BLAS_OPENBLAS ?= /usr/lib/x86_64-linux-gnu
 # Set this path if you have chosen ACML:
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
+# Set this path if you have chosen Cray LibSci:
+export PATH_BLAS_LIBSCI ?= /opt/cray/pe/libsci/19.06.1/CRAY/8.5/x86_64/lib
 # Set this path if you have chosen ESSL (also set PATH_IBM_XL_CPP, PATH_IBM_XL_FOR, PATH_IBM_XL_SMP below):
 export PATH_BLAS_ESSL ?= /sw/summit/essl/6.1.0-2/essl/6.1/lib64
 
-#IBM XL (only set these if you use IBM XL and/or ESSL):
+#IBM XL (only set these if you use IBM XL compiler and/or ESSL library):
 export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-3/xlC/16.1.1/lib
 export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-3/xlf/16.1.1/lib
 export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-3/xlsmp/5.1.1/lib
 
-#LAPACK (only set these if you have chosen WITH_LAPACK=YES):
+#LAPACK (only set these if you have chosen WITH_LAPACK=YES above):
 export PATH_LAPACK_LIB ?= /usr/lib/x86_64-linux-gnu
 export LAPACK_LIBS ?= -llapack
 
-#CUDA (only if you build with CUDA):
+#CUDA (set these only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
 # Only reset these if CUDA files are spread in system directories:
  export PATH_CUDA_INC ?= $(PATH_CUDA)/include
  export PATH_CUDA_LIB ?= $(PATH_CUDA)/lib64
  export PATH_CUDA_BIN ?= $(PATH_CUDA)/bin
+# Reset your CUDA Host compiler if needed:
  export CUDA_HOST_COMPILER ?= /usr/bin/g++
 # cuTT path (only if you use cuTT library):
 export PATH_CUTT ?= /home/dima/src/cutt

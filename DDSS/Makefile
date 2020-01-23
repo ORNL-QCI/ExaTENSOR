@@ -2,49 +2,50 @@ NAME = ddss
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
 
-#Cross-compiling wrappers (only for Cray): [WRAP|NOWRAP]:
+#Cray cross-compiling wrappers (only for Cray): [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
-#Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
+#Compiler: [GNU|INTEL|CRAY|IBM|PGI]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT|PRF]:
 export BUILD_TYPE ?= OPT
-#MPI Library: [MPICH|OPENMPI]:
+#MPI library base: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
-#Nvidia GPU via CUDA: [CUDA|NOCUDA]:
+#NVIDIA GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
-#Nvidia GPU architecture (two digits):
+#NVIDIA GPU architecture (two digits):
 export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
 
-#SET YOUR LOCAL PATHS (for unwrapped builds):
+#SET YOUR LOCAL PATHS (for direct build without Cray compiler wrappers):
 
-#MPI library (whichever you have, set one):
-# Set this if you have MPICH or its derivative:
+#MPI library base (whichever you have, set one):
+# Set this if you use MPICH or its derivative (e.g. Cray-MPICH):
 export PATH_MPICH ?= /usr/local/mpi/mpich/3.2.1
-#  Only reset these if MPI files are spread in the system directories:
+#  Only reset these if MPICH files are spread in system directories:
  export PATH_MPICH_INC ?= $(PATH_MPICH)/include
  export PATH_MPICH_LIB ?= $(PATH_MPICH)/lib
  export PATH_MPICH_BIN ?= $(PATH_MPICH)/bin
-# Set this if you have OPENMPI or its derivative:
+# Set this if you use OPENMPI or its derivative (e.g. IBM Spectrum MPI):
 export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.1.0
-#  Only reset these if MPI files are spread in the system directories:
+#  Only reset these if OPENMPI files are spread in system directories:
  export PATH_OPENMPI_INC ?= $(PATH_OPENMPI)/include
  export PATH_OPENMPI_LIB ?= $(PATH_OPENMPI)/lib
  export PATH_OPENMPI_BIN ?= $(PATH_OPENMPI)/bin
 
-#IBM XL (only set these if you use IBM XL):
+#IBM XL (only set these if you use IBM XL compiler):
 export PATH_IBM_XL_CPP ?= /sw/summit/xl/16.1.1-3/xlC/16.1.1/lib
 export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-3/xlf/16.1.1/lib
 export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-3/xlsmp/5.1.1/lib
 
-# CUDA (only if you build with CUDA):
+#CUDA (set these only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
-#  Only reset these if CUDA files are spread in the system directories:
+# Only reset these if CUDA files are spread in system directories:
  export PATH_CUDA_INC ?= $(PATH_CUDA)/include
  export PATH_CUDA_LIB ?= $(PATH_CUDA)/lib64
  export PATH_CUDA_BIN ?= $(PATH_CUDA)/bin
+# Reset your CUDA Host compiler if needed:
  export CUDA_HOST_COMPILER ?= /usr/bin/g++
 
 #YOU ARE DONE! MAKE IT!
