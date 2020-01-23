@@ -28,7 +28,6 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #include "timer.h"
 
 #include "tensor_algebra.h"
-#include "talsh_complex.h"
 
 //TAL-SH PARAMETERS:
 #define TALSH_MAX_DEV_PRESENT 16 //max number of on-node devices the tensor block can be simultaneously present on
@@ -142,7 +141,8 @@ typedef struct{
  unsigned int num_args;                              //number of tensor operands: [0..MAX_TENSOR_OPERANDS]
  talsh_tens_slice_t tens_slice[MAX_TENSOR_OPERANDS]; //formal tensor operands (tensor slice views)
  const char * symb_pattern;                          //symbolic index pattern specification (non-owning pointer to a C-string)
- talshComplex8 alpha;                                //alpha prefactor (scalar factor)
+ double alpha_real;                                  //alpha prefactor (scalar factor), real part
+ double alpha_imag;                                  //alpha prefactor (scalar factor), imaginary part
  talsh_tens_t tens_arg[MAX_TENSOR_OPERANDS];         //actual tensor operands (actual TAL-SH tensors)
  talsh_task_t task_handle;                           //task handle
  int exec_dev_id;                                    //execution device id (flat device id)
@@ -302,8 +302,8 @@ extern "C"{
                                    int dev_kind = DEV_NULL);
 //  Get the scalar value of the rank-0 tensor:
  int talshTensorGetScalar(talsh_tens_t * tens_block,
-                          talshComplex8 * scalar_complex);
- int talshTensorGetScalar_(talsh_tens_t * tens_block, double * scalar_real, double * scalar_imag);
+                          double * scalar_real,
+                          double * scalar_imag);
 //  Print the information on a tensor block:
  void talshTensorPrintInfo(const talsh_tens_t * tens_block);
 //  Print tensor elements larger by absolute value than some threshold:
