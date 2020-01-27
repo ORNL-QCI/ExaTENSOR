@@ -1,10 +1,10 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/05/30
+!REVISION: 2020/01/27
 
-!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -53,6 +53,10 @@
         use, intrinsic:: ISO_C_BINDING
         implicit none
         private
+
+!Testing parameters:
+        logical, parameter, public:: TEST_CORRECTNESS=.TRUE.  !correctness testing
+        logical, parameter, public:: TEST_PERFORMANCE=.FALSE. !performance testing
 
 !Client (application) provides user-defined function objects:
 
@@ -835,11 +839,11 @@
          implicit none
          integer(INTL), parameter:: SEG_LIMIT=70                           !max segment size
          !integer(INTD), parameter:: NAT_LEVELS=2                          !number of NAT levels
-         !integer(INTL), parameter:: AO_SPACE_DIM=1260                     !dimension of the atomic orbital space
-         !integer(INTL), parameter:: OC_SPACE_DIM=280                      !dimension of the occupied orbital space
+         !integer(INTL), parameter:: AO_SPACE_DIM=SEG_LIMIT*18             !dimension of the atomic orbital space
+         !integer(INTL), parameter:: OC_SPACE_DIM=SEG_LIMIT*6              !dimension of the occupied orbital space
          integer(INTD), parameter:: NAT_LEVELS=1                           !number of NAT levels
-         integer(INTL), parameter:: AO_SPACE_DIM=630                       !dimension of the atomic orbital space
-         integer(INTL), parameter:: OC_SPACE_DIM=140                       !dimension of the occupied orbital space
+         integer(INTL), parameter:: AO_SPACE_DIM=SEG_LIMIT*9               !dimension of the atomic orbital space
+         integer(INTL), parameter:: OC_SPACE_DIM=SEG_LIMIT*3               !dimension of the occupied orbital space
          integer(INTL), parameter:: VI_SPACE_DIM=AO_SPACE_DIM-OC_SPACE_DIM !dimension of the virtual orbital space
          integer(INTD), parameter:: TENSOR_DATA_KIND=EXA_DATA_KIND_C8      !tensor data kind
          complex(8), parameter:: left_val=(1.234d-3,-2.567d-4),right_val=(-9.743d-4,3.576d-3)
@@ -1026,14 +1030,28 @@
   !vtens:
            write(6,'("Contracting vtens+=ctens*atens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_contract(vtens,ctens,atens,'V(a,b,c,d)+=C(d,k)*A(c,b,a,k)')
+           ierr=exatns_tensor_contract(vtens,ctens,atens,'V(a,b,c,d)+=C(d,k)*A(c,b,a,k)',(5d-1,0d0))
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !vtens (repeat):
+           write(6,'("Contracting vtens+=ctens*atens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_contract(vtens,ctens,atens,'V(a,b,c,d)+=C(d,k)*A(c,b,a,k)',(5d-1,0d0))
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
   !ztens:
            write(6,'("Contracting ztens+=vtens*stens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_contract(ztens,vtens,stens,'Z(a,b,i,j)+=V(a,b,c,d)*S(d,c,j,i)')
+           ierr=exatns_tensor_contract(ztens,vtens,stens,'Z(a,b,i,j)+=V(a,b,c,d)*S(d,c,j,i)',(5d-1,0d0))
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !ztens (repeat):
+           write(6,'("Contracting ztens+=vtens*stens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_contract(ztens,vtens,stens,'Z(a,b,i,j)+=V(a,b,c,d)*S(d,c,j,i)',(5d-1,0d0))
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
@@ -1125,10 +1143,14 @@
 !Application initializes MPI:
         call MPI_Init_Thread(MPI_THREAD_MULTIPLE,mpi_th_provided,ierr)
         if(mpi_th_provided.eq.MPI_THREAD_MULTIPLE) then
-         call test_exatensor()
-         call benchmark_exatensor_skinny()
-         call benchmark_exatensor_fat()
-         !call benchmark_exatensor_cc()
+         if(TEST_CORRECTNESS) then
+          call test_exatensor()
+          call benchmark_exatensor_skinny()
+          call benchmark_exatensor_fat()
+         endif
+         if(TEST_PERFORMANCE) then
+          call benchmark_exatensor_cc()
+         endif
         else
          write(6,*) 'Your MPI library does not support MPI_THREAD_MULTIPLE! Change it!'
         endif
