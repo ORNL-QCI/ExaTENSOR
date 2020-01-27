@@ -149,12 +149,8 @@ CPP_PGI = pgc++
 CPP_INTEL = icc
 CPP_CRAY = CC
 CPP_IBM = xlC_r
-CPP_MPICH = $(PATH_MPICH_BIN)/mpic++
-ifeq ($(EXA_OS),LINUX)
-CPP_OPENMPI = $(PATH_OPENMPI_BIN)/mpic++
-else
+CPP_MPICH = $(PATH_MPICH_BIN)/mpicxx
 CPP_OPENMPI = $(PATH_OPENMPI_BIN)/mpicxx
-endif
 ifeq ($(MPILIB),NONE)
 CPP_NOWRAP = $(CPP_$(TOOLKIT))
 else
