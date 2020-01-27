@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/01/07
+!REVISION: 2020/01/27
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -106,7 +106,8 @@
  !Communicator:
         logical, private:: COMMUNICATOR_REQUEST=.TRUE.          !switches between normal and request-based one-sided communication semantics
         logical, private:: COMMUNICATOR_BLOCKING=.FALSE.        !switches between blocking and non-blocking one-sided communication semantics
-        logical, private:: COMMUNICATOR_OPT_ACC=.TRUE.          !optimized (reduced) accumulation mechanism
+        logical, private:: COMMUNICATOR_OPT_ACC=.TRUE.          !optimized (reduced) accumulation mechanism for uploads
+        logical, private:: COMMUNICATOR_LOC_ACC=.FALSE.         !activates direct local upload into the persistent tensor instead of accumulator tensor
         logical, private:: COMMUNICATOR_FLUSH_LOCAL=.TRUE.      !local semantics for one-sided MPI flushing
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=9  !max number of outstanding prefetching instructions issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=3     !max number of outstanding uploading instructions issued by Communicator
