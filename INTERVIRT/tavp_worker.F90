@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/01/27
+!REVISION: 2020/01/28
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -144,10 +144,12 @@
         type, extends(ds_resrc_t), private:: tens_resrc_t
          type(C_PTR), private:: base_addr=C_NULL_PTR   !C pointer to a local buffer for tensor body storage
          integer(C_SIZE_T), private:: bytes=0_C_SIZE_T !size of the tensor body storage buffer in bytes
-         logical, private:: pinned=.FALSE.             !whether or not the buffer is pinned
          integer(C_INT), private:: dev_id=DEV_NULL     !flat device id where the buffer resides
+         logical, private:: pinned=.FALSE.             !whether or not the buffer is pinned
+         logical, private:: imported=.FALSE.           !whether or not this resource was imported (thus non-owning)
          integer(C_INT), private:: ref_count=0         !reference count (how many tensor operands are associated with this resource)
          contains
+          procedure, public:: tens_resrc_ctor=>TensResrcCtorCopy       !ctor
           procedure, public:: is_empty=>TensResrcIsEmpty               !returns TRUE if the tensor resource is empty (unallocated)
           procedure, public:: allocate_buffer=>TensResrcAllocateBuffer !allocates a local buffer for tensor body storage
           procedure, public:: free_buffer=>TensResrcFreeBuffer         !frees the local buffer (at most one tensor operand can be associated with this resource at this time)
@@ -1082,7 +1084,29 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine InstrTimePrintIt
-![tens_resrc_t]=========================================
+![tens_resrc_t]===============================================
+        subroutine TensResrcCtorCopy(this,other_resource,ierr)
+!Copy ctor: Creates a (non-owning) resource reference.
+         implicit none
+         class(tens_resrc_t), intent(out):: this          !out: tensor resource reference
+         class(tens_resrc_t), intent(in):: other_resource !in: imported tensor resource
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(.not.other_resource%is_empty()) then
+          this%base_addr=other_resource%base_addr
+          this%bytes=other_resource%bytes
+          this%dev_id=other_resource%dev_id
+          this%pinned=other_resource%pinned
+          this%imported=.TRUE.
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensResrcCtorCopy
+!-------------------------------------------------------
         function TensResrcIsEmpty(this,ierr) result(ans)
 !Returns TRUE if the tensor resource is empty (unacquired).
          implicit none
@@ -1150,8 +1174,8 @@
             endif
             this%base_addr=addr
             this%bytes=bytes
-            this%pinned=(in_buf.ne.NOPE)
             this%dev_id=dev
+            this%pinned=(in_buf.ne.NOPE)
             if(present(set_to_zero)) then
              if(set_to_zero) then
               call this%zero_buffer(errc); if(errc.ne.0) errc=-4
@@ -1179,27 +1203,32 @@
          integer(INTD):: errc
 
          if(.not.this%is_empty(errc)) then !free only allocated resources
-          if(this%ref_count.le.1) then !at most one (last) tensor operand can still be associated with this resource
-           errc=mem_free(this%dev_id,this%base_addr)
-           if(errc.eq.0) then
-            if(this%pinned) then
+          if(this%ref_count.le.1) then !at most one (last) tensor operand may still be associated with this resource
+           if(.not.this%imported) then
+            errc=mem_free(this%dev_id,this%base_addr)
+            if(errc.eq.0) then
+             if(this%pinned) then
 !$OMP ATOMIC UPDATE
-             host_buf_used=host_buf_used-this%bytes
+              host_buf_used=host_buf_used-this%bytes
+             endif
+!$OMP ATOMIC UPDATE
+             host_ram_used=host_ram_used-this%bytes
+            else
+             if(VERBOSE) then
+!$OMP CRITICAL (IO)
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_resrc_t.free_buffer): mem_free failed with error ",i11)') errc
+!$OMP END CRITICAL (IO)
+              flush(CONS_OUT)
+             endif
+             errc=-2
             endif
-!$OMP ATOMIC UPDATE
-            host_ram_used=host_ram_used-this%bytes
+           endif
+           if(errc.eq.0) then
             this%base_addr=C_NULL_PTR
             this%bytes=0_C_SIZE_T
-            this%pinned=.FALSE.
             this%dev_id=DEV_NULL
-           else
-            if(VERBOSE) then
-!$OMP CRITICAL (IO)
-             write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_resrc_t.free_buffer): mem_free failed with error ",i11)') errc
-             flush(CONS_OUT)
-!$OMP END CRITICAL (IO)
-            endif
-            errc=-2
+            this%pinned=.FALSE.
+            this%imported=.FALSE.
            endif
           else
            errc=-1
@@ -1480,15 +1509,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkUpdateUploadTime
-!-----------------------------------------------------------------------------
-        subroutine TensEntryWrkSetTensorLayout(this,ierr,tensor,with_location)
+!-----------------------------------------------------------------------------------------------
+        subroutine TensEntryWrkSetTensorLayout(this,ierr,tensor,with_location,imported_resource)
 !Sets the tensor layout, either the default one or imported from another tensor.
 !If the tensor stored in the tensor cache entry already has a layout, nothing will be done.
+!Optionally, if <with_location> is TRUE, the tensor location will be imported as well (DDSS descriptor).
+!Optionally, the tensor cache entry may also import a local storage resource which does not
+!have to coincide with the imported tensor location (if imported) since the location may be remote.
          implicit none
          class(tens_entry_wrk_t), intent(inout):: this      !inout: active tensor cache entry (layout acceptor)
          integer(INTD), intent(out), optional:: ierr        !out: error code
          class(tens_rcrsv_t), intent(in), optional:: tensor !in: prototype tensor whose layout to be imported
-         logical, intent(in), optional:: with_location      !in: if TRUE, the tensor location will be imported as well, default to FALSE
+         logical, intent(in), optional:: with_location      !in: if TRUE, the tensor location will be imported as well, defaults to FALSE
+         class(tens_resrc_t), intent(in), optional:: imported_resource !in: if present, will be imported by this tensor cache entry
          integer(INTD):: errc
          class(tens_rcrsv_t), pointer:: tens
          class(tens_header_t), pointer:: header
@@ -1499,17 +1532,18 @@
          if(errc.eq.0.and.associated(tens)) then
           if(tens%is_set(errc,layed=laid)) then
            if(errc.eq.TEREC_SUCCESS) then
+!Set tensor layout:
             if(.not.laid) then
              if(present(tensor)) then !import layout from an existing tensor
               if(tensor%is_set(errc,layed=inp_laid)) then
                if(errc.eq.TEREC_SUCCESS.and.inp_laid) then
                 omit_loc=.TRUE.; if(present(with_location)) omit_loc=(.not.with_location)
-                call tens%import_body(tensor,errc,omit_location=omit_loc); if(errc.ne.TEREC_SUCCESS) errc=-12
+                call tens%import_body(tensor,errc,omit_location=omit_loc); if(errc.ne.TEREC_SUCCESS) errc=-15
                else
-                errc=-11
+                errc=-14
                endif
               else
-               errc=-10
+               errc=-13
               endif
              else !set the default layout
  !Set tensor composition, if not set:
@@ -1517,15 +1551,15 @@
                if(errc.eq.TEREC_SUCCESS) then
                 header=>tens%get_header(errc)
                 if(errc.eq.TEREC_SUCCESS) then
-                 call tens%add_subtensor(header,errc); if(errc.ne.TEREC_SUCCESS) errc=-9
+                 call tens%add_subtensor(header,errc); if(errc.ne.TEREC_SUCCESS) errc=-12
                 else
-                 errc=-8
+                 errc=-11
                 endif
                else
-                errc=-7
+                errc=-10
                endif
               else
-               if(errc.ne.TEREC_SUCCESS) errc=-6
+               if(errc.ne.TEREC_SUCCESS) errc=-9
               endif
  !Resolve tensor dimensions, if not resolved:
               if(errc.eq.0) then
@@ -1543,12 +1577,24 @@
                   flush(CONS_OUT)
                  endif
                 else
-                 errc=-5
+                 errc=-8
                 endif
                else
-                errc=-4
+                errc=-7
                endif
               endif
+             endif
+            endif
+!Import storage resource:
+            if(present(imported_resource).and.errc.eq.0) then
+             if(.not.imported_resource%is_empty()) then
+              if(this%resource%is_empty()) then
+               call this%resource%tens_resrc_ctor(imported_resource,errc); if(errc.ne.0) errc=-6
+              else
+               errc=-5
+              endif
+             else
+              errc=-4
              endif
             endif
            else
