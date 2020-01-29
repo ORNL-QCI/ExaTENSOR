@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/01/28
+!REVISION: 2020/01/29
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -151,6 +151,7 @@
          contains
           procedure, public:: tens_resrc_ctor=>TensResrcCtorCopy       !ctor
           procedure, public:: is_empty=>TensResrcIsEmpty               !returns TRUE if the tensor resource is empty (unallocated)
+          procedure, public:: is_imported=>TensResrcIsImported         !returns TRUE if the tensor resource is imported
           procedure, public:: allocate_buffer=>TensResrcAllocateBuffer !allocates a local buffer for tensor body storage
           procedure, public:: free_buffer=>TensResrcFreeBuffer         !frees the local buffer (at most one tensor operand can be associated with this resource at this time)
           procedure, public:: get_mem_ptr=>TensResrcGetMemPtr          !returns a C pointer to the local memory buffer
@@ -462,7 +463,9 @@
         private InstrTimeClean
         private InstrTimePrintIt
  !tens_resrc_t:
+        private TensResrcCtorCopy
         private TensResrcIsEmpty
+        private TensResrcIsImported
         private TensResrcAllocateBuffer
         private TensResrcFreeBuffer
         private TensResrcGetMemPtr
@@ -1088,8 +1091,8 @@
         subroutine TensResrcCtorCopy(this,other_resource,ierr)
 !Copy ctor: Creates a (non-owning) resource reference.
          implicit none
-         class(tens_resrc_t), intent(out):: this          !out: tensor resource reference
-         class(tens_resrc_t), intent(in):: other_resource !in: imported tensor resource
+         class(tens_resrc_t), intent(out):: this          !out: tensor resource reference (non-owning)
+         class(tens_resrc_t), intent(in):: other_resource !in: imported (shallow-copied) tensor resource
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
@@ -1118,6 +1121,20 @@
          if(present(ierr)) ierr=0
          return
         end function TensResrcIsEmpty
+!----------------------------------------------------------
+        function TensResrcIsImported(this,ierr) result(ans)
+!Returns TRUE if the tensor resource is imported (non-owning).
+         implicit none
+         logical:: ans                               !out: answer
+         class(tens_resrc_t), intent(in):: this      !in: tensor resource
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; ans=this%imported
+         if(this%bytes.le.0_C_SIZE_T) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TensResrcIsImported
 !---------------------------------------------------------------------------------------
         subroutine TensResrcAllocateBuffer(this,bytes,ierr,in_buffer,dev_id,set_to_zero)
 !Allocates local memory either from a system or from a custom buffer.
@@ -1345,7 +1362,8 @@
 !$OMP CRITICAL (IO)
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("RESOURCE{")',ADVANCE='NO')
-         write(devo,'("Device ",i2,": Size (B) = ",i12,"; RefCount = ",i4)',ADVANCE='NO') this%dev_id,this%bytes,this%ref_count
+         write(devo,'("Device ",i2,": Size (B) = ",i12,"; RefCount = ",i4,"; Imported = ",l1)',ADVANCE='NO')&
+         &this%dev_id,this%bytes,this%ref_count,this%imported
          write(devo,'("}")')
 !$OMP END CRITICAL (IO)
          flush(devo)
@@ -2457,21 +2475,24 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetWriteCount
-!-----------------------------------------------------------
-        function TensOprndHasResource(this,ierr) result(res)
+!--------------------------------------------------------------------
+        function TensOprndHasResource(this,ierr,imported) result(res)
 !Returns TRUE if the tensor operand has been allocated an actual local resource.
          implicit none
          logical:: res                               !out: result
          class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(out), optional:: imported   !out: whether or not the resource is imported (non-owning)
          integer(INTD):: errc
+         logical:: imprtd
 
-         res=.FALSE.
+         res=.FALSE.; imprtd=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock()
            if(associated(this%resource)) then
-            res=(.not.this%resource%is_empty(errc)); if(errc.ne.0) then; res=.FALSE.; errc=-3; endif
+            res=(.not.this%resource%is_empty(errc)); if(errc.ne.0) then; res=.FALSE.; errc=-4; endif
+            if(res) then; imprtd=this%resource%is_imported(errc); if(errc.ne.0) errc=-3; endif
            endif
            call this%unlock()
           else
@@ -2480,6 +2501,7 @@
          else
           errc=-1
          endif
+         if(present(imported)) imported=imprtd
          if(present(ierr)) ierr=errc
          return
         end function TensOprndHasResource
@@ -2905,7 +2927,7 @@
             if(.not.skip_acc) then !non-accumulator temporary tensors do not carry DDSS descriptors and do not require upload
              located=this%is_located(errc,remote=remote)
              if(errc.eq.0.and.located) then
-              if(remote.or.accumulator) then
+              if(remote.or.(accumulator.and.(.not.COMMUNICATOR_LOC_ACC))) then
                descr=>this%tensor%get_data_descr(errc)
                if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
                 if(descr%is_set(errc)) then
@@ -7006,6 +7028,8 @@
 !will be injected into the main queue right after the current position with the same
 !instruction id as its parental tensor instruction. Note that the original persistent
 !tensor will still stay in the tensor cache as its reference count is not decremented by this procedure.
+!The accumulator tensor may either use its own resource or get associated with the resource
+!of the persistent tensor in case the latter is owned by this TAVP-WRK.
          implicit none
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK Resourcer (+this%iqueue current iterator position)
          integer(INTD), intent(out), optional:: ierr       !out: error code
@@ -7016,11 +7040,13 @@
          class(tens_instr_t), pointer:: tens_instr
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_rcrsv_t), pointer:: tensor
+         class(tens_resrc_t), pointer:: pers_resource
          class(tens_header_t), pointer:: header
          class(tens_entry_wrk_t), pointer:: cache_entry,tmp_entry,acc_entry
          class(tens_cache_entry_t), pointer:: tmp_cache_entry,acc_cache_entry
          class(*), pointer:: uptr
 
+         errc=0
          tavp=>this%get_dsvp()
          tens_instr=>NULL(); uptr=>this%iqueue%get_value(errc)
          select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
@@ -7032,7 +7058,7 @@
             if(errc.eq.DSVP_SUCCESS.and.n.gt.0) then
              out_oprs(0:)=>tens_instr%get_output_operands(errc,nou)
              if(errc.eq.0.and.lbound(out_oprs,1).eq.0) then
-              do i=0,nou-1
+              do i=0,nou-1 !loop over the output operands
                oprnd=>tens_instr%get_operand(out_oprs(i),errc) !output tensor operand
                if(errc.eq.DSVP_SUCCESS) then
                 select type(oprnd)
@@ -7040,55 +7066,64 @@
                  cache_entry=>oprnd%get_cache_entry(errc)
                  if(errc.eq.0.and.associated(cache_entry)) then
                   call cache_entry%lock()
-                  tensor=>oprnd%get_tensor(errc) !original (persistent) output tensor
-                  if(errc.eq.0.and.associated(tensor)) then
-                   header=>tensor%get_header(errc)
-                   if(errc.eq.TEREC_SUCCESS.and.associated(header)) then
+                  if(oprnd%has_resource()) then
+                   pers_resource=>oprnd%get_resource(errc)
+                  else
+                   pers_resource=>NULL()
+                  endif
+                  if(errc.eq.0) then
+                   tensor=>oprnd%get_tensor(errc) !original (persistent) output tensor
+                   if(errc.eq.0.and.associated(tensor)) then
+                    header=>tensor%get_header(errc)
+                    if(errc.eq.TEREC_SUCCESS.and.associated(header)) then
  !Mark the persistent output tensor as being written to (before substitution):
-                    call cache_entry%incr_write_count() !also note that its reference count will not change here
+                     call cache_entry%incr_write_count() !also note that its reference count will not change here
  !Register the accumulator tensor, if needed (on first occurrence):
-                    call cache_entry%incr_temp_count() !new temporary tensor to be created (this counter is never decremented unless reset)
-                    tc=cache_entry%get_temp_count()
-                    if(tc.eq.1) then !first tensor instruction with this output tensor operand: Register accumulator tensor (temporary #0)
-                     call register_temp_tensor(0,acc_cache_entry,errc); if(errc.ne.0) errc=-17 !register accumulator tensor in the cache
-                    else
-                     call lookup_acc_tensor(acc_cache_entry,errc); if(errc.ne.0) errc=-16
-                    endif
-                    if(errc.eq.0) then
-                     !call acc_cache_entry%lock()
- !Register the new temporary tensor:
-                     call register_temp_tensor(tc,tmp_cache_entry,errc) !register a temporary tensor (its layout will be set later)
- !Substitute the persistent output tensor with a temporary tensor (persistent tensor cache entry reference count is unchanged):
+                     call cache_entry%incr_temp_count() !new temporary tensor to be created (this counter is never decremented unless reset)
+                     tc=cache_entry%get_temp_count()
+                     if(tc.eq.1) then !first tensor instruction with this output tensor operand: Register accumulator tensor (temporary #0)
+                      call register_temp_tensor(0,acc_cache_entry,errc); if(errc.ne.0) errc=-18 !register accumulator tensor in the cache
+                     else
+                      call lookup_acc_tensor(acc_cache_entry,errc); if(errc.ne.0) errc=-17
+                     endif
                      if(errc.eq.0) then
-                      tmp_entry=>NULL()
-                      select type(tmp_cache_entry); class is(tens_entry_wrk_t); tmp_entry=>tmp_cache_entry; end select
-                      if(associated(tmp_entry)) then
-                       call oprnd%tmp_reset_tensor(tmp_entry,.TRUE.,errc) !(persistent --> temporary) output operand rename
-                       if(errc.eq.0) then
+                      !call acc_cache_entry%lock()
+ !Register the new temporary tensor:
+                      call register_temp_tensor(tc,tmp_cache_entry,errc) !register a temporary tensor (its layout will be set later)
+ !Substitute the persistent output tensor with a temporary tensor (persistent tensor cache entry reference count is unchanged):
+                      if(errc.eq.0) then
+                       tmp_entry=>NULL()
+                       select type(tmp_cache_entry); class is(tens_entry_wrk_t); tmp_entry=>tmp_cache_entry; end select
+                       if(associated(tmp_entry)) then
+                        call oprnd%tmp_reset_tensor(tmp_entry,.TRUE.,errc) !(persistent --> temporary) output operand rename
+                        if(errc.eq.0) then
  !Inject an accumulation tensor instruction into the main queue:
-                        acc_entry=>NULL()
-                        select type(acc_cache_entry); class is(tens_entry_wrk_t); acc_entry=>acc_cache_entry; end select
-                        if(associated(acc_entry)) then
-                         if(tc.eq.1) call acc_entry%update_upload_time(time_sys_sec()) !set initial (dummy) upload time for later sync purposes (now we know when acc entry was created)
-                         call create_inject_accumulation(acc_entry,tmp_entry,errc); if(errc.ne.0) errc=-15
-                         call tavp%incr_crtd_instr_counter()
                          acc_entry=>NULL()
+                         select type(acc_cache_entry); class is(tens_entry_wrk_t); acc_entry=>acc_cache_entry; end select
+                         if(associated(acc_entry)) then
+                          if(tc.eq.1) call acc_entry%update_upload_time(time_sys_sec()) !set initial (dummy) upload time for later sync purposes (now we know when acc entry was created)
+                          call create_inject_accumulation(acc_entry,tmp_entry,errc); if(errc.ne.0) errc=-16
+                          call tavp%incr_crtd_instr_counter()
+                          acc_entry=>NULL()
+                         else
+                          errc=-15
+                         endif
                         else
                          errc=-14
                         endif
+                        tmp_entry=>NULL()
                        else
                         errc=-13
                        endif
-                       tmp_entry=>NULL()
+                       call this%arg_cache%release_entry(tmp_cache_entry); tmp_cache_entry=>NULL()
                       else
                        errc=-12
                       endif
-                      call this%arg_cache%release_entry(tmp_cache_entry); tmp_cache_entry=>NULL()
-                     else
-                      errc=-11
+                      !call acc_cache_entry%unlock()
+                      call this%arg_cache%release_entry(acc_cache_entry); acc_cache_entry=>NULL()
                      endif
-                     !call acc_cache_entry%unlock()
-                     call this%arg_cache%release_entry(acc_cache_entry); acc_cache_entry=>NULL()
+                    else
+                     errc=-11
                     endif
                    else
                     errc=-10
@@ -7160,9 +7195,16 @@
                   select type(tens_entry)
                   class is(tens_entry_wrk_t)
                    if(copy_num.eq.0) then !accumulator tensors import data descriptors as well
-                    call tens_entry%set_tensor_layout(jerr,tensor,with_location=.TRUE.); if(jerr.ne.0) jerr=-9 !import temporary tensor layout and location from the persistent tensor
-                   else !temporary tensors do not import data descriptors
-                    call tens_entry%set_tensor_layout(jerr,tensor,with_location=.FALSE.); if(jerr.ne.0) jerr=-8 !import temporary tensor layout from the persistent tensor
+                    if(COMMUNICATOR_LOC_ACC.and.associated(pers_resource)) then !import accumulator tensor layout, location and resource from the persistent tensor
+                     call tens_entry%set_tensor_layout(jerr,tensor,with_location=.TRUE.,imported_resource=pers_resource)
+                     if(jerr.ne.0) jerr=-10
+                    else !import accumulator tensor layout and location from the persistent tensor
+                     call tens_entry%set_tensor_layout(jerr,tensor,with_location=.TRUE.)
+                     if(jerr.ne.0) jerr=-9
+                    endif
+                   else !import temporary tensor layout from the persistent tensor (temporary tensors do not import data descriptors)
+                    call tens_entry%set_tensor_layout(jerr,tensor,with_location=.FALSE.)
+                    if(jerr.ne.0) jerr=-8
                    endif
                   class default
                    jerr=-7
@@ -9354,6 +9396,7 @@
          class(ctrl_tens_add_t), pointer:: ctrl_add
          class(tens_cache_entry_t), pointer:: cache_entry
          type(permutation_t), pointer:: permut
+         logical:: imported
 
          call prof_push('TensorAccumulate'//CHAR_NULL,18)
 !$OMP FLUSH
@@ -9388,8 +9431,20 @@
                  if(cpl.gt.0) then
                   if(.not.COMMUNICATOR_NO_UPLOAD) then !ignore local Accumulates if tensor uploading is disabled
                    if(.not.op0%cache_entry%is_persistent()) then !initialize Accumulator to zero upon first encounter
-                    errc=talsh_tensor_init(tens0,(0d0,0d0),dev_id=0,dev_kind=DEV_HOST,copy_ctrl=COPY_M)
-                    if(errc.eq.TALSH_SUCCESS) call op0%cache_entry%set_persistency(.TRUE.)
+                    if(op0%has_resource(errc,imported)) then
+                     if(errc.eq.0) then
+                      if(COMMUNICATOR_LOC_ACC.and.imported) then !direct accumulation into the local persistent output tensor
+                       errc=TALSH_SUCCESS
+                      else !first accumulation into the Accumulator tensor: Needs initialization to zero
+                       errc=talsh_tensor_init(tens0,(0d0,0d0),dev_id=0,dev_kind=DEV_HOST,copy_ctrl=COPY_M)
+                      endif
+                      if(errc.eq.TALSH_SUCCESS) call op0%cache_entry%set_persistency(.TRUE.)
+                     else
+                      errc=-13
+                     endif
+                    else
+                     errc=-12
+                    endif
                    endif
                    if(errc.eq.0) then
                     errc=talsh_tensor_add(str_ptrn(1:cpl),tens0,tens1,dev_id=dev,copy_ctrl=COPY_TT,&
