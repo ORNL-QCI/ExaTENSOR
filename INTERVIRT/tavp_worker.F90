@@ -107,7 +107,7 @@
         logical, private:: COMMUNICATOR_REQUEST=.TRUE.          !switches between normal and request-based one-sided communication semantics
         logical, private:: COMMUNICATOR_BLOCKING=.FALSE.        !switches between blocking and non-blocking one-sided communication semantics
         logical, private:: COMMUNICATOR_OPT_ACC=.TRUE.          !optimized (reduced) accumulation mechanism for uploads
-        logical, private:: COMMUNICATOR_LOC_ACC=.FALSE.         !activates direct local upload into the persistent tensor instead of accumulator tensor
+        logical, private:: COMMUNICATOR_LOC_ACC=.TRUE.          !activates direct local upload into the persistent tensor instead of accumulator tensor
         logical, private:: COMMUNICATOR_FLUSH_LOCAL=.TRUE.      !local semantics for one-sided MPI flushing
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=9  !max number of outstanding prefetching instructions issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=3     !max number of outstanding uploading instructions issued by Communicator
@@ -2927,7 +2927,7 @@
             if(.not.skip_acc) then !non-accumulator temporary tensors do not carry DDSS descriptors and do not require upload
              located=this%is_located(errc,remote=remote)
              if(errc.eq.0.and.located) then
-              if(remote.or.(accumulator.and.(.not.COMMUNICATOR_LOC_ACC))) then
+              if(remote.or.accumulator) then
                descr=>this%tensor%get_data_descr(errc)
                if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
                 if(descr%is_set(errc)) then
@@ -2936,66 +2936,74 @@
                    if(errc.eq.0) then
                     comm_stat=this%get_comm_stat()
                     if(comm_stat.eq.DS_OPRND_NO_COMM) then
-                     cptr=this%resource%get_mem_ptr(errc)
-                     if(errc.eq.0) then
-                      if(COMMUNICATOR_REQUEST) then !request-based one-sided communication
-                       if(.not.COMMUNICATOR_NO_UPLOAD) then
-                        call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
-                        if(errc.eq.0.and.DEBUG.gt.1) then
-                         comm_stat=descr%get_comm_stat(errc,req)
-!$OMP CRITICAL (IO)
-                         write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated with request = ",i12)') req
-!$OMP END CRITICAL (IO)
-                         flush(CONS_OUT)
-                        endif
-                       else
-                        if(associated(this%cache_entry)) then
-                         call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
-                         call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
-                         call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
-                        endif
-                       !call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-15 !local buffer has been accumulated, thus must be reset to zero
-                       endif
-                      else !regular one-sided communication
-                       if(COMMUNICATOR_BLOCKING) then
-                        if(.not.COMMUNICATOR_NO_UPLOAD) call descr%acc_data(cptr,errc,MPI_ASYNC_NOT)
-                        if(associated(this%cache_entry)) then
-                         call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
-                         call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
-                         call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
-                        endif
-                       !call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-14 !local buffer has been accumulated, thus must be reset to zero
-                       else
+                     if(COMMUNICATOR_LOC_ACC.and.accumulator.and.(.not.remote)) then
+                      if(associated(this%cache_entry)) then
+                       call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                       call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
+                       call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
+                      endif
+                     else
+                      cptr=this%resource%get_mem_ptr(errc)
+                      if(errc.eq.0) then
+                       if(COMMUNICATOR_REQUEST) then !request-based one-sided communication
                         if(.not.COMMUNICATOR_NO_UPLOAD) then
-                         call descr%acc_data(cptr,errc,MPI_ASYNC_NRM)
+                         call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
+                         if(errc.eq.0.and.DEBUG.gt.1) then
+                          comm_stat=descr%get_comm_stat(errc,req)
+!$OMP CRITICAL (IO)
+                          write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated with request = ",i12)') req
+!$OMP END CRITICAL (IO)
+                          flush(CONS_OUT)
+                         endif
                         else
                          if(associated(this%cache_entry)) then
                           call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
                           call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
                           call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
                          endif
-                        !call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-13 !local buffer has been accumulated, thus must be reset to zero
+                        !call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-15 !local buffer has been accumulated, thus must be reset to zero
+                        endif
+                       else !regular one-sided communication
+                        if(COMMUNICATOR_BLOCKING) then
+                         if(.not.COMMUNICATOR_NO_UPLOAD) call descr%acc_data(cptr,errc,MPI_ASYNC_NOT)
+                         if(associated(this%cache_entry)) then
+                          call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                          call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
+                          call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
+                         endif
+                        !call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-14 !local buffer has been accumulated, thus must be reset to zero
+                        else
+                         if(.not.COMMUNICATOR_NO_UPLOAD) then
+                          call descr%acc_data(cptr,errc,MPI_ASYNC_NRM)
+                         else
+                          if(associated(this%cache_entry)) then
+                           call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                           call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
+                           call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
+                          endif
+                         !call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-13 !local buffer has been accumulated, thus must be reset to zero
+                         endif
+                        endif
+                        if(errc.eq.0.and.DEBUG.gt.1.and.(.not.COMMUNICATOR_NO_UPLOAD)) then
+!$OMP CRITICAL (IO)
+                         write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated without request")')
+!$OMP END CRITICAL (IO)
+                         flush(CONS_OUT)
                         endif
                        endif
-                       if(errc.eq.0.and.DEBUG.gt.1.and.(.not.COMMUNICATOR_NO_UPLOAD)) then
+                       if(errc.ne.0.and.errc.ne.TRY_LATER) then
+                        if(VERBOSE) then
 !$OMP CRITICAL (IO)
-                        write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): MPI_Raccumulate initiated without request")')
+                         write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.upload): DataDescr_t.acc_data() error ",i11)') errc
 !$OMP END CRITICAL (IO)
-                        flush(CONS_OUT)
+                         call descr%print_it(dev_out=CONS_OUT)
+                         flush(CONS_OUT)
+                        endif
+                        errc=-12
                        endif
+                      else
+                       errc=-11
                       endif
-                      if(errc.ne.0.and.errc.ne.TRY_LATER) then
-                       if(VERBOSE) then
-!$OMP CRITICAL (IO)
-                        write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.upload): DataDescr_t.acc_data() error ",i11)') errc
-!$OMP END CRITICAL (IO)
-                        call descr%print_it(dev_out=CONS_OUT)
-                        flush(CONS_OUT)
-                       endif
-                       errc=-12
-                      endif
-                     else
-                      errc=-11
                      endif
                     else
                      errc=-10
