@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/01/29
+!REVISION: 2020/02/09
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -49,6 +49,21 @@
 !    Example:
 !     D3 += L1 * R1 -> D3#0 = 0, D3#1 = 0, D3#1 += L1 * R1, D3#0 += D3#1, ~D3#1;
 !     D3 += L2 * R2 ->           D3#2 = 0, D3#2 += L2 * R2,                D3#0 += D3#2, ~D3#2, D3 += D3#0, ~D3#0;
+! # TENSOR INSTRUCTION LIFETIME (timestamps):
+!   * DC: Decoded
+!   * RS: Resourced
+!   * ISS: Issued
+!   * FS: Fetch started
+!   * FC: Fetch completed
+!   * ES: Execution started (compute)
+!   * EC: Execution completed (compute)
+!   * US: Upload started
+!   * UC: Upload completed
+!   * CML: Completed
+!   * RT: Retired
+!   Note that the CML timestamp for substituted tensor instructions refers to the EC timestamp
+!   of the corresponding local accumulation instruction, while the RT timestamp of substituted
+!   tensor instructions follows the timestamp of the actual upload of the locally accumulated result.
 ! # TENSOR INSTRUCTION DEPENDENCY:
 !   (0) The current tensor instruction pipeline is two levels deep for dependent instructions:
 !       One instruction is currently being executed, another (dependent) one is deferred and
@@ -96,7 +111,7 @@
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=16384                        !max number of tensor instructions in a bytecode envelope
  !Decoder:
         logical, private:: DECODER_RECV_PAUSE=.TRUE.  !if TRUE MIN_DECODER_WAIT_TIME will be enforced (see below)
-        real(8), private:: MIN_DECODER_WAIT_TIME=1d-3 !minimal pause (sec) between testing for new incoming bytecode
+        real(8), private:: MIN_DECODER_WAIT_TIME=1d-3 !minimal pause (sec) between probing for new incoming bytecode
  !Resourcer:
         real(8), private:: MAX_RESOURCER_ACTIVE_MEM_FRAC=7d-1 !fraction of Host RAM after which regular resourcing queue blocks and only deferred queue stays active
         integer(INTD), private:: MAX_RESOURCER_INTAKE=512 !max number of instructions in Resourcer's main queue
@@ -120,7 +135,7 @@
         logical, private:: DISPATCHER_ACC_RAND=.TRUE.           !randomized dispatch of TENS_ACCUMULATE intsructions on accelerators
         integer(INTD), private:: MAX_DISPATCHER_INTAKE=64       !max number of instructions taken from the port at a time
         real(8), private:: DISPATCHER_DEFERRED_PAUSE=1d-4       !enforced pause to a Dispatcher before issuing the next instruction after the previous one has been deferred
-        logical, private:: ACCELERATOR_ONLY=.TRUE.              !DEBUG: if TRUE, all tensor contractions will be executed on accelerators
+        logical, private:: ACCELERATOR_ONLY=.TRUE.              !DEBUG: if TRUE, all tensor contractions will be executed on accelerators (on accelerated nodes)
         logical, private:: DISPATCHER_OFF=.FALSE.               !DEBUG: Turns off all actual computations
  !Retirer:
         integer(INTD), private:: MAX_RETIRER_BATCH=32           !max size of the retired instruction batch
@@ -1043,7 +1058,7 @@
         end subroutine InstrTimeClean
 !----------------------------------------------------
         subroutine InstrTimePrintIt(this,ierr,dev_id)
-!Prints the fine instruction time stamps relative to the instruction decode time stamp.
+!Prints the fine instruction time stamps.
          implicit none
          class(instr_time_t), intent(in):: this       !in: instruction
          integer(INTD), intent(out), optional:: ierr  !out: error code
@@ -1059,19 +1074,19 @@
           if(this%time_resourced.ge.0d0) then
            write(devo,'("; RS: ",F10.6)',ADVANCE='NO') this%time_resourced-this%time_decoded
            if(this%time_fetch_started.ge.0d0) then
-            write(devo,'("; FS: ",F10.6)',ADVANCE='NO') this%time_fetch_started-this%time_decoded
+            write(devo,'("; FS: ",F10.6)',ADVANCE='NO') this%time_fetch_started-this%time_resourced
             if(this%time_fetch_synced.ge.0d0) then
-             write(devo,'("; FC: ",F10.6)',ADVANCE='NO') this%time_fetch_synced-this%time_decoded
+             write(devo,'("; FC: ",F10.6)',ADVANCE='NO') this%time_fetch_synced-this%time_resourced
              if(this%time_dispatched.ge.0d0) then
-              write(devo,'("; ES: ",F10.6)',ADVANCE='NO') this%time_dispatched-this%time_decoded
+              write(devo,'("; ES: ",F10.6)',ADVANCE='NO') this%time_dispatched-this%time_resourced
               if(this%time_completed.ge.0d0) then
-               write(devo,'("; EC: ",F10.6)',ADVANCE='NO') this%time_completed-this%time_decoded
+               write(devo,'("; EC: ",F10.6)',ADVANCE='NO') this%time_completed-this%time_resourced
                if(this%time_upload_started.ge.0d0) then
-                write(devo,'("; US: ",F10.6)',ADVANCE='NO') this%time_upload_started-this%time_decoded
+                write(devo,'("; US: ",F10.6)',ADVANCE='NO') this%time_upload_started-this%time_resourced
                 if(this%time_upload_synced.ge.0d0) then
-                 write(devo,'("; UC: ",F10.6)',ADVANCE='NO') this%time_upload_synced-this%time_decoded
+                 write(devo,'("; UC: ",F10.6)',ADVANCE='NO') this%time_upload_synced-this%time_resourced
                  if(this%time_retired.ge.0d0) then
-                  write(devo,'("; RT: ",F10.6)',ADVANCE='NO') this%time_retired-this%time_decoded
+                  write(devo,'("; RT: ",F10.6)',ADVANCE='NO') this%time_retired-this%time_resourced
                  endif
                 endif
                endif
@@ -5280,7 +5295,7 @@
         end subroutine TensInstrResetAccumulations
 !------------------------------------------------------------------
         subroutine TensInstrPrintLogInfo(this,ierr,dev_id,msg_head)
-!Prints a brief log info for the tensor instruction.
+!Prints a brief log info for the tensor instruction, including time stamps.
          implicit none
          class(tens_instr_t), intent(in):: this        !in: tensor instruction
          integer(INTD), intent(out), optional:: ierr   !out: error code
@@ -5327,7 +5342,7 @@
           isst=this%get_issue_time(); comt=this%get_completion_time()
 !$OMP CRITICAL (IO)
           call printl(devo,str(1:l),adv=.FALSE.)
-          write(devo,'(" iss ",F20.6,"; cml ",F20.6,": ")',ADVANCE='NO') isst,comt
+          write(devo,'(" ISS ",F20.6,"; CML ",F20.6,": ")',ADVANCE='NO') isst,comt
           write(devo,'("Timings:")',ADVANCE='NO')
           if(this%timings%time_decoded.ge.0d0) then
            write(devo,'(" DC: ",F20.6)',ADVANCE='NO') this%timings%time_decoded
@@ -6484,16 +6499,16 @@
 !Reset counters:
          this%num_active=0
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-93
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-96
 !Initialize the staged list:
-         ier=this%stg_list%init(this%staged_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-92
+         ier=this%stg_list%init(this%staged_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-95
 !Initialize the deferred list:
-         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-91
+         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-94
 !Initialize the release list:
-         ier=this%rls_list%init(this%release_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-90
+         ier=this%rls_list%init(this%release_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-93
 !Create a special FENCE instruction:
          call instr_fence%tens_instr_ctor(TAVP_INSTR_CTRL_RESUME,ier,iid=0_INTL,stat=DS_INSTR_SPECIAL)
-         if(ier.ne.0.and.errc.eq.0) errc=-89
+         if(ier.ne.0.and.errc.eq.0) errc=-92
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -6502,17 +6517,17 @@
 !$OMP ATOMIC UPDATE
           tavp%units_active=tavp%units_active+1
 !$OMP FLUSH
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-88
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-91
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-87
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-90
          endif
 !Work loop:
-         ier=timer_start(wait_timer,MAX_RESOURCER_WAIT_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-86
-         ier=timer_start(rsc_timer,MAX_RESOURCER_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-85
+         ier=timer_start(wait_timer,MAX_RESOURCER_WAIT_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-89
+         ier=timer_start(rsc_timer,MAX_RESOURCER_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-88
          active=(errc.eq.0); stopping=(.not.active); deferd=.FALSE.; mainq=.FALSE.; mem_block=.FALSE.; num_staged=0
          wloop: do while(active)
  !Test for possible stalling due to persistent memory resource starvation:
-          expired=timer_expired(wait_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-84; exit wloop; endif
+          expired=timer_expired(wait_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-87; exit wloop; endif
           if(expired) then
 !$OMP CRITICAL (IO)
            write(CONS_OUT,'("#WARNING(TAVP-WRK:Resourcer)[",i6,"]: No instruction has been issued recently: Memory block = ",l1)')&
@@ -6522,27 +6537,27 @@
            ier=timer_reset(wait_timer,MAX_RESOURCER_WAIT_TIME)
           endif
  !Process the deferred queue (check data dependencies and try acquiring resources for tensor operands again):
-          ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-83; exit wloop; endif
+          ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-86; exit wloop; endif
           deferd=.FALSE.; ier=this%def_list%get_status()
           dloop: do while(ier.eq.GFC_IT_ACTIVE)
            deferd=.TRUE.
   !Extract a deferred tensor instruction:
-           uptr=>this%def_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-82; exit wloop; endif
+           uptr=>this%def_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-85; exit wloop; endif
            instr=>NULL(); select type(uptr); class is(tens_instr_t); instr=>uptr; end select
-           if((.not.associated(instr)).and.errc.eq.0) then; errc=-81; exit wloop; endif !trap
-           opcode=instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-80; exit wloop; endif
-           sts=instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-79; exit wloop; endif
-           if(sts.ne.DS_INSTR_RSC_WAIT.and.errc.eq.0) then; errc=-78; exit wloop; endif !trap
+           if((.not.associated(instr)).and.errc.eq.0) then; errc=-84; exit wloop; endif !trap
+           opcode=instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-83; exit wloop; endif
+           sts=instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-82; exit wloop; endif
+           if(sts.ne.DS_INSTR_RSC_WAIT.and.errc.eq.0) then; errc=-81; exit wloop; endif !trap
   !Process the deferred tensor instruction:
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
    !Check data dependencies for the deferred tensor instruction:
-            dependent=.not.instr%dependency_free(.TRUE.,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-77; exit wloop; endif
+            dependent=.not.instr%dependency_free(.TRUE.,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-80; exit wloop; endif
             if(.not.dependent) then
    !Acquire resources for tensor operands (if available):
              call this%acquire_resources(instr,ier,omit_output=.FALSE.)
              if(ier.eq.0) then !resources have been acquired: issue into the staged list
               call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
-              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-76; exit wloop; endif
+              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-79; exit wloop; endif
               instr%timings%time_resourced=time_sys_sec()
               if(LOGGING.gt.1) call instr%print_log_info(dev_id=CONS_OUT,msg_head='[RESOURCER:OD]')
               if(LOGGING.gt.2) then
@@ -6560,7 +6575,7 @@
               endif
    !Mark the tensor instruction issued (from the deferred queue):
               passed=instr%mark_issued(ier,from_deferred=.TRUE.)
-              if((.not.(ier.eq.0.and.passed)).and.errc.eq.0) then; errc=-75; exit wloop; endif
+              if((.not.(ier.eq.0.and.passed)).and.errc.eq.0) then; errc=-78; exit wloop; endif
               if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction issued from deferred queue:")')
@@ -6569,12 +6584,12 @@
                flush(CONS_OUT)
               endif
               ier=timer_reset(wait_timer,MAX_RESOURCER_WAIT_TIME)
-              ier=this%def_list%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-74; exit wloop; endif
+              ier=this%def_list%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-77; exit wloop; endif
               num_staged=num_staged+1
              elseif(ier.eq.TRY_LATER) then !required resources are still unavailable
               ier=this%def_list%next()
              else
-              if(errc.eq.0) then; errc=-73; exit wloop; endif
+              if(errc.eq.0) then; errc=-76; exit wloop; endif
              endif
             else
              if(DEBUG.gt.1) then
@@ -6587,7 +6602,25 @@
              ier=this%def_list%next()
             endif
            else
-            if(errc.eq.0) then; errc=-72; exit wloop; endif
+            if(errc.eq.0) then; errc=-75; exit wloop; endif
+           endif
+  !Periodically pass staged instructions to Communicator Port 0:
+           expired=timer_expired(rsc_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-74; exit wloop; endif
+           if(expired.or.num_staged.gt.MAX_RESOURCER_INSTR) then
+            ier=this%stg_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-73; exit wloop; endif
+            if(this%stg_list%get_status().eq.GFC_IT_ACTIVE) then
+             ier=tavp%communicator%load_port(0,this%stg_list,num_moved=n)
+             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-72; exit wloop; endif
+             if(DEBUG.gt.0.and.n.gt.0) then
+!$OMP CRITICAL (IO)
+              write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," passed ",i9,'//&
+              &'" previously deferred instructions to Communicator")') impir,uid,n
+!$OMP END CRITICAL (IO)
+              flush(CONS_OUT)
+             endif
+             num_staged=0
+            endif
+            if(expired) ier=timer_reset(rsc_timer,MAX_RESOURCER_PHASE_TIME)
            endif
            ier=this%def_list%get_status()
           enddo dloop
