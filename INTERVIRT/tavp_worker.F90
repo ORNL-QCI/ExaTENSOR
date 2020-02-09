@@ -2953,10 +2953,22 @@
                     comm_stat=this%get_comm_stat()
                     if(comm_stat.eq.DS_OPRND_NO_COMM) then
                      if(COMMUNICATOR_LOC_ACC.and.accumulator.and.(.not.remote)) then
-                      if(associated(this%cache_entry)) then
-                       call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
-                       call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
-                       call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
+                      call descr%sync_data(errc)
+                      if(errc.eq.0) then
+                       if(associated(this%cache_entry)) then
+                        call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
+                        call this%cache_entry%set_up_to_date(.FALSE.) !reset accumulator value to UNDEFINED after upload
+                        call this%cache_entry%set_persistency(.FALSE.) !reset accumulator value to UNINITIALIZED after upload
+                       endif
+                      else
+                       if(VERBOSE) then
+!$OMP CRITICAL (IO)
+                        write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.upload): DataDescr_t.sync_data() error ",i11)') errc
+!$OMP END CRITICAL (IO)
+                        call descr%print_it(dev_out=CONS_OUT)
+                        flush(CONS_OUT)
+                       endif
+                       errc=-16
                       endif
                      else
                       cptr=this%resource%get_mem_ptr(errc)
