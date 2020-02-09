@@ -133,7 +133,8 @@
         logical, private:: DISPATCHER_CPU_PARALLEL=.TRUE.       !parallel vs serial execution of numerical operations on CPU
         logical, private:: DISPATCHER_SYNC_WAIT=.FALSE.         !wait versus test semantics for insruction execution synchronization
         logical, private:: DISPATCHER_ACC_RAND=.TRUE.           !randomized dispatch of TENS_ACCUMULATE intsructions on accelerators
-        integer(INTD), private:: MAX_DISPATCHER_INTAKE=64       !max number of instructions taken from the port at a time
+        integer(INTD), private:: MAX_DISPATCHER_INTAKE=1024     !max number of instructions taken from the port at a time
+        real(8), private:: MAX_DISPATCHER_PHASE_TIME=1d-2       !max time (sec) spent by Dispatcher in the issuing subphase
         real(8), private:: DISPATCHER_DEFERRED_PAUSE=1d-4       !enforced pause to a Dispatcher before issuing the next instruction after the previous one has been deferred
         logical, private:: ACCELERATOR_ONLY=.TRUE.              !DEBUG: if TRUE, all tensor contractions will be executed on accelerators (on accelerated nodes)
         logical, private:: DISPATCHER_OFF=.FALSE.               !DEBUG: Turns off all actual computations
@@ -7972,7 +7973,7 @@
            if(expired) then
             ier=timer_reset(com_timer,MAX_COMMUNICATOR_PHASE_TIME)
             if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-42; exit wloop; endif
-            exit floop
+            if(num_fetch.gt.0) exit floop
            endif
           enddo floop
  !Get completed instructions from Dispatcher (port 1) into the upload queue:
@@ -8048,7 +8049,7 @@
            if(expired) then
             ier=timer_reset(com_timer,MAX_COMMUNICATOR_PHASE_TIME)
             if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
-            exit uloop
+            if(num_upload.gt.0) exit uloop
            endif
           enddo uloop
  !Test outstanding communication completion (both fetch and upload):
@@ -8472,7 +8473,8 @@
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid,n,sts,opcode,errcode,num_outstanding,uid,opl
-         logical:: active,stopping,completed
+         integer:: iss_timer
+         logical:: active,stopping,completed,expired
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
          class(ds_oprnd_t), pointer:: oprnd
@@ -8492,11 +8494,11 @@
          endif
          call print_omp_place_info(dev_out=CONS_OUT)
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-41
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-46
 !Initialize the issued instruction queue:
-         ier=this%iss_list%init(this%issued_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-40
+         ier=this%iss_list%init(this%issued_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-45
 !Initialize the completed instruction queue:
-         ier=this%cml_list%init(this%completed_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-39
+         ier=this%cml_list%init(this%completed_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-44
 !Initialize the numerical computing runtime (TAL-SH) and set up tensor argument cache:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -8509,16 +8511,16 @@
            tavp%talsh_in_use=.TRUE.
            this%arg_cache=>tavp%tens_cache
           else
-           if(errc.eq.0) errc=-38
+           if(errc.eq.0) errc=-43
           endif
 !Sync with other TAVP units:
 !$OMP FLUSH
 !$OMP ATOMIC UPDATE
           tavp%units_active=tavp%units_active+1
 !$OMP FLUSH
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-37
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-42
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-36
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-41
          endif
 !Set the max number of OpenMP threads for the next parallel (computing) region:
          opl=get_omp_place_info(n) !get the place id and place width the current (Dispatcher) thread is in
@@ -8532,12 +8534,13 @@
           flush(CONS_OUT)
          endif
 !Work loop:
+         ier=timer_start(iss_timer,MAX_DISPATCHER_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-40
          active=(errc.eq.0); stopping=(.not.active); num_outstanding=0
          wloop: do while(active)
  !Get new instructions from Communicator (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-35; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif
           ier=this%flush_port(0,max_items=MAX_DISPATCHER_INTAKE,num_moved=n)
-          if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-34; exit wloop; endif
+          if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
 !$OMP CRITICAL (IO)
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher unit ",i2," received ",i6," instructions from Communicator")')&
@@ -8547,24 +8550,26 @@
            flush(CONS_OUT)
           endif
  !Issue instructions:
-          ier=this%iss_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-33; exit wloop; endif
-          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
-          do while(this%iqueue%get_status().eq.GFC_IT_ACTIVE)
-           if(stopping.and.errc.eq.0) then; errc=-30; exit wloop; endif !no instruction can follow STOP
-           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
+          ier=this%iss_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-37; exit wloop; endif
+          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-36; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-35; exit wloop; endif
+          ier=timer_reset(iss_timer,MAX_DISPATCHER_PHASE_TIME)
+          if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-34; exit wloop; endif
+          iloop: do while(this%iqueue%get_status().eq.GFC_IT_ACTIVE)
+           if(stopping.and.errc.eq.0) then; errc=-33; exit wloop; endif !no instruction can follow STOP
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-28; exit wloop; endif !trap
-           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
-           if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-26; exit wloop; endif !trap
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-31; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
+           if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-29; exit wloop; endif !trap
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
-            call tens_instr%set_talsh_tensors(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-24; exit wloop; endif
+            call tens_instr%set_talsh_tensors(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-27; exit wloop; endif
             call tens_instr%set_status(DS_INSTR_ISSUED,ier,errcode)
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
             tens_instr%timings%time_dispatched=time_sys_sec()
             if(LOGGING.gt.1) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[DISPATCHER:ISS]')
-            call this%issue_instr(tens_instr,ier)
+            call this%issue_instr(tens_instr,ier) !can be blocking
             if(ier.eq.0) then
              num_outstanding=num_outstanding+1
              if(DEBUG.gt.0) then
@@ -8574,13 +8579,13 @@
               call tens_instr%print_it(dev_id=CONS_OUT)
               flush(CONS_OUT)
              endif
-             ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+             ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
             elseif(ier.eq.TRY_LATER) then !instruction cannot be issued now due to the lack of resources: Deferred
              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,errcode)
              ier=this%iqueue%next()
              !call wait_delay(real(DISPATCHER_DEFERRED_PAUSE,4)) !pause before issuing the next instruction
             else
-             errc=-21; exit wloop
+             errc=-24; exit wloop
             endif
            else !auxiliary or control instruction
             tens_instr%timings%time_dispatched=time_sys_sec()
@@ -8601,22 +8606,28 @@
              endif
             endif
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier,errcode)
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
             tm=time_sys_sec()
 !$OMP ATOMIC WRITE
             tens_instr%timings%time_completed=tm
-            ier=this%iqueue%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
+            ier=this%iqueue%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
            endif
-          enddo
+           expired=timer_expired(iss_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+           if(expired) then
+            ier=timer_reset(iss_timer,MAX_DISPATCHER_PHASE_TIME)
+            if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+            if(num_outstanding.gt.0) exit iloop
+           endif
+          enddo iloop
  !Test/wait for completion of the issued instructions:
-          ier=this%iss_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
-          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
+          ier=this%iss_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
+          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
           do while(this%iss_list%get_status().eq.GFC_IT_ACTIVE)
-           uptr=>this%iss_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
+           uptr=>this%iss_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-15; exit wloop; endif !trap
-           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-16; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
            completed=this%sync_instr(tens_instr,ier,wait=DISPATCHER_SYNC_WAIT)
            if(ier.ne.0.and.errc.eq.0) then
             if(VERBOSE) then
@@ -8626,13 +8637,13 @@
              call tens_instr%print_it(dev_id=CONS_OUT)
              flush(CONS_OUT)
             endif
-            errc=-12; exit wloop
+            errc=-13; exit wloop
            endif
            if(completed) then
  !Mark completed:
             num_outstanding=num_outstanding-1
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier)
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
             tm=time_sys_sec()
             if(tm.lt.0d0.and.errc.eq.0) then !trap: Time stamp is expected to be non-negative
              if(VERBOSE) then
@@ -8641,32 +8652,32 @@
 !$OMP END CRITICAL (IO)
               flush(CONS_OUT)
              endif
-             errc=-10; exit wloop
+             errc=-11; exit wloop
             endif
 !$OMP ATOMIC WRITE
             tens_instr%timings%time_completed=tm
             if(LOGGING.gt.1) call tens_instr%print_log_info(dev_id=CONS_OUT,msg_head='[DISPATCHER:CML]')
  !Increment the number of completed accumulates for substitutable (parent) tensor instructions:
             if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then
-             oprnd=>tens_instr%get_operand(0,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
+             oprnd=>tens_instr%get_operand(0,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
              select type(oprnd)
              class is(tens_oprnd_t)
               entry_acc=>oprnd%get_cache_entry(ier)
               if(ier.eq.0.and.associated(entry_acc)) then
                call entry_acc%decr_temp_count() !mark one more active accumulate processed
               else
-               if(errc.eq.0) errc=-8; exit wloop
+               if(errc.eq.0) errc=-9; exit wloop
               endif
               entry_acc=>NULL()
              class default
-              if(errc.eq.0) errc=-7; exit wloop
+              if(errc.eq.0) errc=-8; exit wloop
              end select
              oprnd=>NULL()
-             parent=>tens_instr%get_parent_instr(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-6; exit wloop; endif
+             parent=>tens_instr%get_parent_instr(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-7; exit wloop; endif
 !$OMP ATOMIC READ
              tm=tens_instr%timings%time_completed
              call parent%set_completion_time(tm,ier) !accumulation completion time stamp
-             call parent%mark_accumulated(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-5; exit wloop; endif !increment the local accumulation count for the substituted parent tensor instruction
+             call parent%mark_accumulated(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-6; exit wloop; endif !increment the local accumulation count for the substituted parent tensor instruction
              parent=>NULL()
             endif
             if(DEBUG.gt.0) then
@@ -8676,16 +8687,16 @@
              call tens_instr%print_it(dev_id=CONS_OUT)
              flush(CONS_OUT)
             endif
-            ier=this%iss_list%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
+            ier=this%iss_list%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
            else
             ier=this%iss_list%next()
            endif
           enddo
  !Pass completed instructions back to Communicator (port 1) for output upload:
-          ier=this%cml_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          ier=this%cml_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
           if(this%cml_list%get_status().eq.GFC_IT_ACTIVE) then
            ier=tavp%communicator%load_port(1,this%cml_list,num_moved=n)
-           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
            if(DEBUG.gt.0.and.n.gt.0) then
 !$OMP CRITICAL (IO)
             write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher unit ",i2," passed ",i6," instructions back to Communicator")')&
@@ -8697,6 +8708,8 @@
  !Exit condition:
           active=.not.(stopping.and.num_outstanding.eq.0)
          enddo wloop
+!Destroy the timer:
+         ier=timer_destroy(iss_timer); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-2
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) then
