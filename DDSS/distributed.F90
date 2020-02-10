@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/01/07 (started 2015/03/18)
+!REVISION: 2020/02/10 (started 2015/03/18)
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -179,7 +179,8 @@
           procedure, private:: new_transfer=>RankWinListNewTrans !register a new data transfer (increment the global transfer ID)
           procedure, private:: delete=>RankWinListDelete         !delete a given active (rank,window) entry
           procedure, private:: delete_all=>RankWinListDeleteAll  !delete all (rank,window) entries
-          procedure, private:: print_all=>RankWinListPrint       !print all active communications
+          procedure, private:: flush_all=>RankWinListFlushAll    !flushes all active (rank,window) entries
+          procedure, private:: print_all=>RankWinListPrintAll    !print all active communications
         end type RankWinList_t
  !Basic MPI window info:
         type, private:: WinMPI_t
@@ -330,6 +331,7 @@
 !FUNCTION VISIBILITY:
  !Global:
         public data_type_size
+        public ddss_flush_all
         public ddss_update_stat
         public ddss_print_stat
  !Auxiliary:
@@ -345,7 +347,8 @@
         private RankWinListNewTrans
         private RankWinListDelete
         private RankWinListDeleteAll
-        private RankWinListPrint
+        private RankWinListFlushAll
+        private RankWinListPrintAll
  !WinMPI_t:
         private WinMPIClean
         private WinMPIPackNew
@@ -455,6 +458,17 @@
         if(present(ierr)) ierr=errc
         return
         end function data_type_size
+!--------------------------------------
+        subroutine ddss_flush_all(ierr)
+!Flushes all active cached communication entries.
+         implicit none
+         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+         integer(INT_MPI):: errc
+
+         call RankWinRefs%flush_all(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ddss_flush_all
 !----------------------------------------------
         subroutine ddss_update_stat(descr,ierr)
          implicit none
@@ -860,8 +874,31 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine RankWinListDeleteAll
-!-----------------------------------------------------
-        subroutine RankWinListPrint(this,ierr,dev_out)
+!------------------------------------------------
+        subroutine RankWinListFlushAll(this,ierr)
+!Flushes all active (rank,window) entries.
+        implicit none
+        class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc,i,rnk,win
+
+        errc=0
+        do i=lbound(this%RankWins,1),ubound(this%RankWins,1)
+         rnk=this%RankWins(i)%Rank; win=this%RankWins(i)%Window
+         if(rnk.ge.0) then !active entry
+          if(this%RankWins(i)%RefCount.gt.0.or.LAZY_LOCKING) call MPI_Win_flush(rnk,win,errc)
+          if(errc.eq.0) then
+           call this%delete(i,errc); if(errc.ne.0) then; errc=1; exit; endif
+          else
+           errc=2; exit
+          endif
+         endif
+        enddo
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine RankWinListFlushAll
+!--------------------------------------------------------
+        subroutine RankWinListPrintAll(this,ierr,dev_out)
 !This subroutine prints the current state of the RankWinList_t,
 !that is, all active communications initiated at origin.
         implicit none
@@ -882,7 +919,7 @@
         write(devo,'(1x,"Total size of communicated data (Mbytes) = ",D18.6)') this%TransSize/(1024d0*1024d0)
         if(present(ierr)) ierr=errc
         return
-        end subroutine RankWinListPrint
+        end subroutine RankWinListPrintAll
 !========================================
         subroutine WinMPIClean(this,ierr)
 !Cleans an MPI window info.
