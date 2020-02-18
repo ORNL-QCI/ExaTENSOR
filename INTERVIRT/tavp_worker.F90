@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/02/09
+!REVISION: 2020/02/18
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -2953,7 +2953,7 @@
                     comm_stat=this%get_comm_stat()
                     if(comm_stat.eq.DS_OPRND_NO_COMM) then
                      if(COMMUNICATOR_LOC_ACC.and.accumulator.and.(.not.remote)) then
-                      call descr%sync_data(errc)
+                      !call descr%sync_data(errc)
                       if(errc.eq.0) then
                        if(associated(this%cache_entry)) then
                         call this%cache_entry%update_upload_time(time_sys_sec()) !update the last upload time for the uploaded tensor cache entry
