@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/02/10 (started 2015/03/18)
+!REVISION: 2020/02/24 (started 2015/03/18)
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -125,7 +125,8 @@
   !Messaging:
         logical, parameter, private:: LAZY_LOCKING=.TRUE.                 !lazy MPI window locking
         logical, parameter, private:: TEST_AND_FLUSH=.FALSE.              !MPI_Test() will call MPI_Win_flush() on completion when entry reference count becomes 0 (not necessary)
-        logical, parameter, private:: NO_FLUSH_BETWEEN_EPOCHS=.FALSE.     !if TRUE, there will be no MPI_Win_flush() between R/W epochs, thus mandating external synchronization
+        logical, parameter, private:: NO_FLUSH_AFTER_READ_EPOCH=.TRUE.    !if TRUE, there will be no MPI_Win_flush() after the read epoch, thus mandating external synchronization
+        logical, parameter, private:: NO_FLUSH_AFTER_WRITE_EPOCH=.FALSE.  !if TRUE, there will be no MPI_Win_flush() after the write epoch, thus mandating external synchronization
         integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27    !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096     !max number of outstanding one-sided data transfer requests per process
         integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0           !default communication tag (for P2P MPI communications)
@@ -2357,7 +2358,7 @@
            endif
            call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
            tm=time_sys_sec()
-           if(.not.NO_FLUSH_BETWEEN_EPOCHS) call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,jerr)
+           if(.not.NO_FLUSH_AFTER_WRITE_EPOCH) call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,jerr)
            tm=time_sys_sec()-tm
            call nvtx_pop()
            if(LOGGING.gt.0) then
@@ -2773,7 +2774,7 @@
            endif
            call nvtx_push('MPI_Win_flush'//CHAR_NULL,2)
            tm=time_sys_sec()
-           if(.not.NO_FLUSH_BETWEEN_EPOCHS) call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,jerr)
+           if(.not.NO_FLUSH_AFTER_READ_EPOCH) call MPI_Win_flush(rw_entry%Rank,rw_entry%Window,jerr)
            tm=time_sys_sec()-tm
            call nvtx_pop()
            if(LOGGING.gt.0) then
