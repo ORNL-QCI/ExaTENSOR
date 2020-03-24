@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2020/03/23
+REVISION: 2020/03/24
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -98,15 +98,6 @@ TO BE FIXED:
 #endif /*NO_GPU*/
 //----------------------------------------------------------------------
 //FUNCTION PROTOTYPES:
-// IMPORTED:
-#ifdef __cplusplus
-extern "C" {
-#endif
- void get_contr_permutations(int lrank, int rrank, const int *cptrn, int conj_bits,
-                             int *dprm, int *lprm, int *rprm, int *ncd, int *nlu, int *nru, int *ierr);
-#ifdef __cplusplus
-}
-#endif
 // LOCAL (PRIVATE):
 static int prmn_convert(int n, const int *o2n, int *n2o);
 static int non_trivial_prmn(int n, const int *prm);
@@ -2355,6 +2346,15 @@ int tens_valid_data_kind(int datk, int * datk_size)
 int tens_valid_data_kind_(int datk, int * datk_size) //Fortran binding
 {
  return tens_valid_data_kind(datk,datk_size);
+}
+
+int permutation_trivial(const int perm_len, const int * perm, const int base)
+{
+ int trivial = 1;
+ for(int i = 0; i < perm_len; ++i){
+  if(perm[i] != (base + i)){trivial = 0; break;}
+ }
+ return trivial;
 }
 
 #ifdef USE_CUTENSOR
@@ -5839,7 +5839,7 @@ NOTES:
  if(cuda_mmend == NULL){errc=cuda_task_record(cuda_task,coh_ctrl,8); errc=gpu_activate(cur_gpu); return 8;}
 #endif
 //Determine the volume and required matricization permutation for each tensor argument:
- get_contr_permutations(lrank,0,cptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
+ get_contr_permutations(1,0,lrank,0,cptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
  if(errc){i=cuda_task_record(cuda_task,coh_ctrl,9); i=gpu_activate(cur_gpu); return 9;}
  for(i=0;i<drank;i++) cuda_task->tens_args[0].prmn_p[i]=dprm[1+i]; //ignore the permutaion sign
  perm_d=non_trivial_prmn(drank,cuda_task->tens_args[0].prmn_p);    //trivial or not
@@ -6560,9 +6560,9 @@ NOTES:
 #endif
 //Determine the volume and required matricization permutation for each tensor argument:
  if(drank > 0 && lrank > 0 && rrank > 0 && drank < (lrank + rrank)){ //GEMM mapped tensor contraction: {TN,NT,NN,TT}
-  get_contr_permutations(lrank,rrank,cptrn,conj_bits,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
+  get_contr_permutations(1,0,lrank,rrank,cptrn,conj_bits,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
  }else{ //custom kernel mapped tensor contraction (complex conjugation does not require modified permutations)
-  get_contr_permutations(lrank,rrank,cptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
+  get_contr_permutations(1,0,lrank,rrank,cptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
  }
 // Get permutations:
  if(errc){i=cuda_task_record(cuda_task,coh_ctrl,11); i=gpu_activate(cur_gpu); return 11;}

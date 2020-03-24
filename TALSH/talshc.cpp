@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2020/03/23
+REVISION: 2020/03/24
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5351,16 +5351,18 @@ int talshTensorContractXL_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_
  return talshTensorContractXL(cptrn,dtens,ltens,rtens,scale_real,scale_imag,dev_id,dev_kind,accumulative);
 }
 
-int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*S(i,j)*R(b,j,d,i)"
+int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
                             talsh_tens_t * dtens, //in: tensor block to be decomposed
                             talsh_tens_t * ltens, //inout: left tensor factor
                             talsh_tens_t * rtens, //inout: right tensor factor
-                            talsh_tens_t * stens, //inout: middle tensor factor (singular values)
+                            talsh_tens_t * stens, //out: middle tensor factor (singular values), must be empty on entrance
                             int dev_id,           //in: device id (flat or kind-specific)
                             int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
- int errc,devid,dvn,dvk,cpl,drnk,lrnk,rrnk,srnk,conj_bits,j;
- int contr_ptrn[MAX_TENSOR_RANK*2],dimg,limg,rimg,simg,dcp,lcp,rcp,scp;
+ int errc,devid,dvn,dvk,cpl,drnk,lrnk,rrnk,srnk,conj_bits,ncd,nlu,nru,i,j;
+ int contr_ptrn[MAX_TENSOR_RANK*2],dimg,limg,rimg,simg,dcp,lcp,rcp,scp,dtr,ltr,rtr;
+ int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK];
+ char perm_sym[512];
  void *dftr,*lftr,*rftr,*sftr;
 #ifndef NO_GPU
  tensBlck_t *dctr,*lctr,*rctr,*sctr;
@@ -5371,14 +5373,23 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  if(dtens == NULL || ltens == NULL || rtens == NULL ||
     stens == NULL || cptrn == NULL) return TALSH_INVALID_ARGS;
- if(talshTensorIsEmpty(dtens) != NOPE || talshTensorIsEmpty(stens) != NOPE ||
-    talshTensorIsEmpty(ltens) != NOPE || talshTensorIsEmpty(rtens) != NOPE) return TALSH_OBJECT_IS_EMPTY;
- if(talshTensorIsHealthy(dtens) != YEP || talshTensorIsHealthy(stens) != YEP ||
-    talshTensorIsHealthy(ltens) != YEP || talshTensorIsHealthy(rtens) != YEP) return TALSH_FAILURE;
- //Check and parse the index correspondence pattern:
+ if(talshTensorIsEmpty(dtens) != NOPE ||
+    talshTensorIsEmpty(ltens) != NOPE ||
+    talshTensorIsEmpty(rtens) != NOPE) return TALSH_OBJECT_IS_EMPTY;
+ if(talshTensorIsEmpty(stens) == NOPE) return TALSH_OBJECT_NOT_EMPTY;
+ if(talshTensorIsHealthy(dtens) != YEP ||
+    talshTensorIsHealthy(ltens) != YEP ||
+    talshTensorIsHealthy(rtens) != YEP) return TALSH_FAILURE;
+ //Parse the index correspondence pattern and determine necessary permutations:
  errc=talsh_get_contr_ptrn_str2dig(cptrn,contr_ptrn,&drnk,&lrnk,&rrnk,&conj_bits);
  if(errc) return TALSH_INVALID_ARGS;
+ if(drnk <= 0 || lrnk <= 0 || rrnk <= 0) return TALSH_INVALID_ARGS;
  cpl=lrnk+rrnk;
+ get_contr_permutations(0,0,lrnk,rrnk,contr_ptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc);
+ if(errc) return TALSH_FAILURE;
+ dtr=permutation_trivial(drnk,dprm,1); //base 1
+ ltr=permutation_trivial(lrnk,lprm,1); //base 1
+ rtr=permutation_trivial(rrnk,rprm,1); //base 1
  //Determine the execution device (devid:[dvk,dvn]):
  if(dev_kind == DEV_DEFAULT){ //device kind is not specified explicitly
   if(dev_id == DEV_DEFAULT){ //neither specific device nor device kind are specified: Find one
@@ -5401,20 +5412,33 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  }
  //Tensor operation will be executed on device of kind <dvk>.
  errc=TALSH_SUCCESS;
- //Choose the tensor body image for each tensor argument:
+ //Create a copy of the destination tensor:
+ 
+ //Create a copy of the left tensor factor, if needed:
+ if(ltr == 0){ //non-trivial permutation
+  i=0; get_contr_pattern_sym(&lrnk,&rrnk,&i,&(lprm[1]),perm_sym,&j,&errc);
+  if(errc) return TALSH_FAILURE;
+  
+ }
+ //Create a copy of the right tensor factor, if needed:
+ 
+ //Create the middle tensor factor:
+ 
+ //Perform the tensor decomposition via SVD:
+ // Choose the tensor body image for each tensor argument:
  dimg=talsh_choose_image_for_device(dtens,COPY_T,&dcp,dvk,dvn);
  limg=talsh_choose_image_for_device(ltens,COPY_M,&lcp,dvk,dvn);
  rimg=talsh_choose_image_for_device(rtens,COPY_M,&rcp,dvk,dvn);
- simg=talsh_choose_image_for_device(stens,COPY_M,&scp,dvk,dvn);
+ simg=talsh_choose_image_for_device(stens,COPY_T,&scp,dvk,dvn);
  if(dimg < 0 || limg < 0 || rimg < 0 || simg < 0) return TALSH_FAILURE;
- //Check data kind of each image (must match):
+ // Check data kind of each image (must match):
  if(dtens->data_kind[dimg] != ltens->data_kind[limg] ||
     dtens->data_kind[dimg] != rtens->data_kind[rimg] ||
     dtens->data_kind[dimg] != stens->data_kind[simg] ||
     ltens->data_kind[limg] != rtens->data_kind[rimg] ||
     ltens->data_kind[limg] != stens->data_kind[simg] ||
     rtens->data_kind[rimg] != stens->data_kind[simg]) return TALSH_INVALID_ARGS;
- //Schedule tensor operation via the device-kind specific runtime:
+ // Schedule tensor operation via the device-kind specific runtime:
  switch(dvk){
   case DEV_HOST:
    //Associate TAL-SH tensor images with <tensor_block_t> objects:
@@ -5581,41 +5605,56 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
   default:
    return TALSH_FAILURE;
  }
+ //Destroy the copy of the destination tensor:
+ 
+ //Permute the left tensor factor and destroy its copy if needed:
+ 
+ //Permute the right tensor factor and destroy its copy if needed:
+ 
 #pragma omp flush
  return errc;
 }
 
 int talshTensorDecomposeSVDL(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
                              talsh_tens_t * dtens, //in: tensor block to be decomposed
-                             talsh_tens_t * ltens, //inout: left tensor factor
+                             talsh_tens_t * ltens, //inout: left tensor factor with absorbed singular values
                              talsh_tens_t * rtens, //inout: right tensor factor
                              int dev_id,           //in: device id (flat or kind-specific)
                              int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
  //`Finish
- return TALSH_SUCCESS;
+ return TALSH_NOT_IMPLEMENTED;
 }
 
 int talshTensorDecomposeSVDR(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
                              talsh_tens_t * dtens, //in: tensor block to be decomposed
                              talsh_tens_t * ltens, //inout: left tensor factor
-                             talsh_tens_t * rtens, //inout: right tensor factor
+                             talsh_tens_t * rtens, //inout: right tensor factor with absorbed singular values
                              int dev_id,           //in: device id (flat or kind-specific)
                              int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
  //`Finish
- return TALSH_SUCCESS;
+ return TALSH_NOT_IMPLEMENTED;
 }
 
 int talshTensorDecomposeSVDLR(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
                               talsh_tens_t * dtens, //in: tensor block to be decomposed
-                              talsh_tens_t * ltens, //inout: left tensor factor
-                              talsh_tens_t * rtens, //inout: right tensor factor
+                              talsh_tens_t * ltens, //inout: left tensor factor with absorbed square-root singular values
+                              talsh_tens_t * rtens, //inout: right tensor factor with absorbed square-root singular values
                               int dev_id,           //in: device id (flat or kind-specific)
                               int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
  //`Finish
- return TALSH_SUCCESS;
+ return TALSH_NOT_IMPLEMENTED;
+}
+
+int talshTensorOrthogonalizeSVD(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
+                                talsh_tens_t * dtens, //inout: on entrance tensor block to be orthogonalized, on exit orthogonalized tensor block
+                                int dev_id,           //in: device id (flat or kind-specific)
+                                int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
+{
+ //`Finish
+ return TALSH_NOT_IMPLEMENTED;
 }
 
 double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens)

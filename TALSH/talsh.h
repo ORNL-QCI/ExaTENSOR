@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2020/03/23
+REVISION: 2020/03/24
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -532,34 +532,39 @@ extern "C"{
  int talshTensorContractXL_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens,
                             double scale_real, double scale_imag, int dev_id, int dev_kind, int accumulative);
 //  Tensor decomposition via SVD:
- int talshTensorDecomposeSVD(const char * cptrn,          //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*S(i,j)*R(b,j,d,i)"
+ int talshTensorDecomposeSVD(const char * cptrn,          //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
                              talsh_tens_t * dtens,        //in: tensor block to be decomposed
                              talsh_tens_t * ltens,        //inout: left tensor factor
                              talsh_tens_t * rtens,        //inout: right tensor factor
-                             talsh_tens_t * stens,        //inout: middle tensor factor (singular values)
+                             talsh_tens_t * stens,        //out: middle tensor factor (singular values), must be empty on etrance
                              int dev_id = DEV_DEFAULT,    //in: device id (flat or kind-specific)
                              int dev_kind = DEV_DEFAULT); //in: device kind (if present, <dev_id> is kind-specific)
 //  Tensor decomposition via SVD with singular values absorbed into the left factor:
  int talshTensorDecomposeSVDL(const char * cptrn,          //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
                               talsh_tens_t * dtens,        //in: tensor block to be decomposed
-                              talsh_tens_t * ltens,        //inout: left tensor factor
+                              talsh_tens_t * ltens,        //inout: left tensor factor with absorbed singular values
                               talsh_tens_t * rtens,        //inout: right tensor factor
                               int dev_id = DEV_DEFAULT,    //in: device id (flat or kind-specific)
                               int dev_kind = DEV_DEFAULT); //in: device kind (if present, <dev_id> is kind-specific)
-//  Tensor decomposition via SVD with absorbed singular values into the right factor:
+//  Tensor decomposition via SVD with singular values absorbed into the right factor:
  int talshTensorDecomposeSVDR(const char * cptrn,          //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
                               talsh_tens_t * dtens,        //in: tensor block to be decomposed
                               talsh_tens_t * ltens,        //inout: left tensor factor
-                              talsh_tens_t * rtens,        //inout: right tensor factor
+                              talsh_tens_t * rtens,        //inout: right tensor factor with absorbed singular values
                               int dev_id = DEV_DEFAULT,    //in: device id (flat or kind-specific)
                               int dev_kind = DEV_DEFAULT); //in: device kind (if present, <dev_id> is kind-specific)
-//  Tensor decomposition via SVD with symmetrically absorbed singular values into both factors:
+//  Tensor decomposition via SVD with symmetrically absorbed square-root singular values into both factors:
  int talshTensorDecomposeSVDLR(const char * cptrn,          //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
                                talsh_tens_t * dtens,        //in: tensor block to be decomposed
-                               talsh_tens_t * ltens,        //inout: left tensor factor
-                               talsh_tens_t * rtens,        //inout: right tensor factor
+                               talsh_tens_t * ltens,        //inout: left tensor factor with absorbed square-root singular values
+                               talsh_tens_t * rtens,        //inout: right tensor factor with absorbed square-root singular values
                                int dev_id = DEV_DEFAULT,    //in: device id (flat or kind-specific)
                                int dev_kind = DEV_DEFAULT); //in: device kind (if present, <dev_id> is kind-specific)
+//  Tensor orthogonalization via SVD (D=LR+ with singular values reset to unity):
+ int talshTensorOrthogonalizeSVD(const char * cptrn,          //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
+                                 talsh_tens_t * dtens,        //inout: on entrance tensor block to be orthogonalized, on exit orthogonalized tensor block
+                                 int dev_id = DEV_DEFAULT,    //in: device id (flat or kind-specific)
+                                 int dev_kind = DEV_DEFAULT); //in: device kind (if present, <dev_id> is kind-specific)
 // TAL-SH debugging:
 //  1-norm of the tensor body image on Host:
  double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens);

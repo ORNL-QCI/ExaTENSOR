@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/03/23
+!REVISION: 2020/03/24
 
 !Copyright (C) 2013-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5241,12 +5241,15 @@
         endif
         return
         end subroutine get_contr_pattern_sym
-!------------------------------------------------------------------------------------------------------
-	subroutine get_contr_permutations(lrank,rrank,cptrn,conj_bits,dprm,lprm,rprm,ncd,nlu,nru,ierr)&
+!---------------------------------------------------------------------------------------------------------------------
+        subroutine get_contr_permutations(gemm_tl,gemm_tr,lrank,rrank,cptrn,conj_bits,dprm,lprm,rprm,ncd,nlu,nru,ierr)&
                                          &bind(c,name='get_contr_permutations') !SERIAL
-!This subroutine returns all tensor index permutations necessary for the tensor
-!contraction specified by <cptrn> (implemented via a matrix multiplication).
+!This subroutine returns all tensor index permutations necessary for converting
+!the tensor contraction specified by <cptrn> into the matrix-matrix multiplication
+!of a given configuration {NN,TN,NT,TT}.
 !INPUT:
+! - gemm_tl - desired configuration of the left matrix in GEMM: 0 is 'N', 1 is 'T';
+! - gemm_tr - desired configuration of the right matrix in GEMM: 0 is 'N', 1 is 'T';
 ! - cptrn(1:lrank+rrank) - digital contraction pattern;
 ! - conj_bits - complex conjugation bits {0:D,1:L,2:R};
 !OUTPUT:
@@ -5257,26 +5260,37 @@
 ! - nlu - number of left uncontracted indices;
 ! - nru - number of right uncontracted indices;
 ! - ierr - error code (0:success).
-	implicit none
+!NOTES:
+! - The default expected GEMM configuration is assumed to be TN.
+!   When requesting the NN case, the left tensor is not allowed to be conjugated.
+!   When requesting the TN or NN case with the right tensor conjugated, it will
+!   be necessary to switch to the TT or NT case, respectively.
+        implicit none
 !------------------------------------------------
-	logical, parameter:: check_pattern=.TRUE.
+        logical, parameter:: check_pattern=.TRUE.
 !------------------------------------------------
-	integer(C_INT), intent(in), value:: lrank,rrank
-	integer(C_INT), intent(in):: cptrn(1:*)
-	integer(C_INT), intent(in), value:: conj_bits
-	integer(C_INT), intent(out):: dprm(0:*),lprm(0:*),rprm(0:*),ncd,nlu,nru
-	integer(C_INT), intent(inout):: ierr
-	integer(C_INT):: i,j,k,drank,jkey(1:lrank+rrank),jtrn0(0:lrank+rrank),jtrn1(0:lrank+rrank)
-	logical:: pattern_ok,simple,left_conj,right_conj
+        integer(C_INT), intent(in), value:: gemm_tl,gemm_tr
+        integer(C_INT), intent(in), value:: lrank,rrank
+        integer(C_INT), intent(in):: cptrn(1:*)
+        integer(C_INT), intent(in), value:: conj_bits
+        integer(C_INT), intent(out):: dprm(0:*),lprm(0:*),rprm(0:*),ncd,nlu,nru
+        integer(C_INT), intent(inout):: ierr
+        integer(C_INT):: i,j,k,drank,jkey(1:lrank+rrank),jtrn0(0:lrank+rrank),jtrn1(0:lrank+rrank)
+        logical:: pattern_ok,simple,left_conj,right_conj
 
-	ierr=0
-	if(check_pattern) then; pattern_ok=contr_pattern_ok(); else; pattern_ok=.TRUE.; endif
-	if(pattern_ok.and.lrank.ge.0.and.rrank.ge.0) then
+        ierr=0
+        if(check_pattern) then; pattern_ok=contr_pattern_ok(); else; pattern_ok=.TRUE.; endif
+        if(pattern_ok.and.lrank.ge.0.and.rrank.ge.0) then
  !Check conjugation bits:
          left_conj=btest(conj_bits,1)
          right_conj=btest(conj_bits,2)
          if(btest(conj_bits,0)) then
-          left_conj=.not.left_conj; right_conj=.not.right_conj
+          left_conj=(.not.left_conj); right_conj=(.not.right_conj)
+         endif
+         if((gemm_tl.eq.0).and.left_conj) then
+          if(VERBOSE) write(CONS_OUT,'("#ERROR(CP-TAL:get_contr_permutations): Left tensor conjugation is not supported'//&
+                                    &' with an untransposed left matrix in GEMM!")')
+          ierr=2; return
          endif
  !Destination operand:
 	 drank=0; dprm(0)=+1
@@ -5313,7 +5327,7 @@
 	  endif
 	 endif
  !Apply conjugation if needed (swap contracted and uncontracted positions):
-         if(left_conj.and..FALSE.) then !left argument is already processed as a transposed matrix
+         if(gemm_tl.eq.0) then !left argument is processed as a transposed matrix by default
           do i=1,lrank
            if(lprm(i).le.ncd) then
             lprm(i)=lprm(i)+nlu
@@ -5322,7 +5336,7 @@
            endif
           enddo
          endif
-         if(right_conj) then
+         if((gemm_tr.ne.0).or.right_conj) then !right argument is processed as a normal matrix by default
           do i=1,rrank
            if(rprm(i).le.ncd) then
             rprm(i)=rprm(i)+nru
