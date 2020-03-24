@@ -1,7 +1,7 @@
 /** ExaTensor::TAL-SH: Lower-level header:
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device agnostic).
-REVISION: 2020/02/26
+REVISION: 2020/03/23
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)

@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2020/03/07
+REVISION: 2020/03/23
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -7664,6 +7664,12 @@ NOTES:
  LastTask[gpu_num]=cuda_task;
  if(gpu_num != cur_gpu) errc=gpu_activate(cur_gpu);
  return stat; //either 0 (success) or NOT_CLEAN (warning)
+}
+
+__host__ int gpu_tensor_block_decompose_svd(tensBlck_t *dtens, tensBlck_t *ltens, tensBlck_t *rtens, tensBlck_t *stens, int gpu_id)
+{
+ //`Finish
+ return -1;
 }
 
 #endif /*NO_GPU*/

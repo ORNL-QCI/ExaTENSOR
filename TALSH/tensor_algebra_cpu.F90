@@ -1,9 +1,9 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/11/30
+!REVISION: 2020/03/23
 
-!Copyright (C) 2013-2019 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2013-2020 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -4242,10 +4242,16 @@
 	end subroutine tensor_block_contract
 !------------------------------------------------------------------------------------
         subroutine tensor_block_decompose_svd(dtens,ltens,rtens,stens,ierr,data_kind)
+!This subroutine performs a (partial) SVD decomposition of a given tensor:
+! dtens(l1,l2,...,lm,r1,r2,...,rn) = ltens(l1,l2,...,lm,s1,s2,...,sk) *
+!                                    stens(s1,s2,...,sk) *
+!                                    rtens^H(s1,s2,...,sk,r1,r2,...,rn)
+!All tensors must have their data stored under the same type/precision.
+!Note that the original tensor dtens will no longer contain its data on exit!
         implicit none
         type(tensor_block_t), intent(inout), target:: dtens !inout: tensor to be decomposed (destroyed on exit)
         type(tensor_block_t), intent(inout), target:: ltens !out: left singular tensor
-        type(tensor_block_t), intent(inout), target:: rtens !out: right singular tensor (transposed)
+        type(tensor_block_t), intent(inout), target:: rtens !out: right singular tensor (conjugated-transposed)
         type(tensor_block_t), intent(inout), target:: stens !out: singular value tensor
         integer, intent(inout):: ierr                       !out: error code
         character(2), intent(in), optional:: data_kind      !in: preferred data kind
@@ -4293,7 +4299,8 @@
            lu=1; do i=1,lr; lu=lu*ltens%tensor_shape%dim_extent(i); enddo
            ru=1; do i=cr+1,rrank; ru=ru*rtens%tensor_shape%dim_extent(i); enddo
            mlr=min(lu,ru)
-           lrwork=mlr*mlr*2+15*mlr
+           lrwork=mlr*(mlr*2+15*mlr) !GESVDX length of RWORK
+           !lrwork=max(mlr*mlr*5+mlr*5,mlr*max(lu,ru)*2+mlr*mlr*2+mlr) !GESDD length of RWORK
  !Associate matrices and perform SVD:
            select case(dtk)
            case('r4','R4')
@@ -4306,16 +4313,23 @@
              if(ierr.eq.0) then
 #ifdef WITH_LAPACK
               call sgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmr4,int(lu,kind=4),&
-                          &0d0,0d0,1,int(nv,kind=4),nfound,sv4,lmr4,int(lu,kind=4),&
+                          &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv4,lmr4,int(lu,kind=4),&
                           &rmr4,int(nv,kind=4),wr4,-1,iwork,info)
               if(info.eq.0) then
                lwork=int(wr4(1))+1
                ierr=array_alloc(wrkr4,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
                if(ierr.eq.0) then
                 call sgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmr4,int(lu,kind=4),&
-                            &0d0,0d0,1,int(nv,kind=4),nfound,sv4,lmr4,int(lu,kind=4),&
+                            &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv4,lmr4,int(lu,kind=4),&
                             &rmr4,int(nv,kind=4),wrkr4,lwork,iwork,info)
-                if(info.ne.0) ierr=6
+                if(info.eq.0) then
+                 wrkr4(1:nv)=>stens%data_real4
+                 do i=1,nfound; wrkr4(i)=sv4(i); enddo !converged singular values
+                 do i=nfound+1,nv; wrkr4(i)=0.0; enddo !unconverged singular values
+                else
+                 if(VERBOSE) write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): SGESVDX error ",i11)') info
+                 ierr=6
+                endif
                 call array_free(wrkr4)
                else
                 ierr=7
@@ -4344,16 +4358,23 @@
              if(ierr.eq.0) then
 #ifdef WITH_LAPACK
               call dgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmr8,int(lu,kind=4),&
-                          &0d0,0d0,1,int(nv,kind=4),nfound,sv8,lmr8,int(lu,kind=4),&
+                          &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv8,lmr8,int(lu,kind=4),&
                           &rmr8,int(nv,kind=4),wr8,-1,iwork,info)
               if(info.eq.0) then
                lwork=int(wr8(1))+1
                ierr=array_alloc(wrkr8,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
                if(ierr.eq.0) then
                 call dgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmr8,int(lu,kind=4),&
-                            &0d0,0d0,1,int(nv,kind=4),nfound,sv8,lmr8,int(lu,kind=4),&
+                            &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv8,lmr8,int(lu,kind=4),&
                             &rmr8,int(nv,kind=4),wrkr8,lwork,iwork,info)
-                if(info.ne.0) ierr=11
+                if(info.eq.0) then
+                 wrkr8(1:nv)=>stens%data_real8
+                 do i=1,nfound; wrkr8(i)=sv8(i); enddo !converged singular values
+                 do i=nfound+1,nv; wrkr8(i)=0d0; enddo !unconverged singular values
+                else
+                 if(VERBOSE) write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): DGESVDX error ",i11)') info
+                 ierr=11
+                endif
                 call array_free(wrkr8)
                else
                 ierr=12
@@ -4384,16 +4405,23 @@
               if(ierr.eq.0) then
 #ifdef WITH_LAPACK
                call cgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc4,int(lu,kind=4),&
-                           &0d0,0d0,1,int(nv,kind=4),nfound,sv4,lmc4,int(lu,kind=4),&
+                           &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv4,lmc4,int(lu,kind=4),&
                            &rmc4,int(nv,kind=4),wc4,-1,rwrk4,iwork,info)
                if(info.eq.0) then
                 lwork=int(real(wc4(1)))+1
                 ierr=array_alloc(wrkc4,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
                 if(ierr.eq.0) then
                  call cgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc4,int(lu,kind=4),&
-                             &0d0,0d0,1,int(nv,kind=4),nfound,sv4,lmc4,int(lu,kind=4),&
+                             &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv4,lmc4,int(lu,kind=4),&
                              &rmc4,int(nv,kind=4),wrkc4,lwork,rwrk4,iwork,info)
-                 if(info.ne.0) ierr=16
+                 if(info.eq.0) then
+                  wrkc4(1:nv)=>stens%data_cmplx4
+                  do i=1,nfound; wrkc4(i)=cmplx(sv4(i),0.0,kind=4); enddo !converged singular values
+                  do i=nfound+1,nv; wrkc4(i)=(0.0,0.0); enddo !unconverged singular values
+                 else
+                  if(VERBOSE) write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): CGESVDX error ",i11)') info
+                  ierr=16
+                 endif
                  call array_free(wrkc4)
                 else
                  ierr=17
@@ -4428,16 +4456,23 @@
               if(ierr.eq.0) then
 #ifdef WITH_LAPACK
                call zgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc8,int(lu,kind=4),&
-                           &0d0,0d0,1,int(nv,kind=4),nfound,sv8,lmc8,int(lu,kind=4),&
+                           &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv8,lmc8,int(lu,kind=4),&
                            &rmc8,int(nv,kind=4),wc8,-1,rwrk8,iwork,info)
                if(info.eq.0) then
                 lwork=int(real(wc8(1)))+1
                 ierr=array_alloc(wrkc8,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
                 if(ierr.eq.0) then
                  call zgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc8,int(lu,kind=4),&
-                             &0d0,0d0,1,int(nv,kind=4),nfound,sv8,lmc8,int(lu,kind=4),&
+                             &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv8,lmc8,int(lu,kind=4),&
                              &rmc8,int(nv,kind=4),wrkc8,lwork,rwrk8,iwork,info)
-                 if(info.ne.0) ierr=22
+                 if(info.eq.0) then
+                  wrkc8(1:nv)=>stens%data_cmplx8
+                  do i=1,nfound; wrkc8(i)=cmplx(sv8(i),0d0,kind=8); enddo !converged singular values
+                  do i=nfound+1,nv; wrkc8(i)=(0d0,0d0); enddo !unconverged singular values
+                 else
+                  if(VERBOSE) write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): ZGESVDX error ",i11)') info
+                  ierr=22
+                 endif
                  call array_free(wrkc8)
                 else
                  ierr=23
@@ -4472,6 +4507,9 @@
         else
          ierr=31
         endif
+        if(VERBOSE.and.ierr.ne.0) then
+         write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): Error ",i11)') ierr
+        endif
         return
 
         contains
@@ -4481,23 +4519,23 @@
          integer, intent(out):: ier
 
          ier=0
-         if(associated(ltens%data_cmplx8).and.associated(rtens%data_cmplx8).and.associated(dtens%data_cmplx8)) then
+         if(associated(ltens%data_cmplx8).and.associated(rtens%data_cmplx8).and.associated(dtens%data_cmplx8).and.&
+           &associated(stens%data_cmplx8)) then
           dtkd='c8'
-          if(.not.associated(stens%data_real8)) then; dtkd='  '; ier=101; endif
          else
-          if(associated(ltens%data_cmplx4).and.associated(rtens%data_cmplx4).and.associated(dtens%data_cmplx4)) then
+          if(associated(ltens%data_cmplx4).and.associated(rtens%data_cmplx4).and.associated(dtens%data_cmplx4).and.&
+            &associated(stens%data_cmplx4)) then
            dtkd='c4'
-           if(.not.associated(stens%data_real4)) then; dtkd='  '; ier=102; endif
           else
-           if(associated(ltens%data_real8).and.associated(rtens%data_real8).and.associated(dtens%data_real8)) then
+           if(associated(ltens%data_real8).and.associated(rtens%data_real8).and.associated(dtens%data_real8).and.&
+             &associated(stens%data_real8)) then
             dtkd='r8'
-            if(.not.associated(stens%data_real8)) then; dtkd='  '; ier=103; endif
            else
-            if(associated(ltens%data_real4).and.associated(rtens%data_real4).and.associated(dtens%data_real4)) then
+            if(associated(ltens%data_real4).and.associated(rtens%data_real4).and.associated(dtens%data_real4).and.&
+              &associated(stens%data_real4)) then
              dtkd='r4'
-             if(.not.associated(stens%data_real4)) then; dtkd='  '; ier=104; endif
             else
-             ier=105
+             ier=5
             endif
            endif
           endif

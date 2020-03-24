@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2020/01/23
+!REVISION: 2020/03/23
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -1866,5 +1866,17 @@
          endif
          return
         end function cpu_tensor_block_contract
+!----------------------------------------------------------------------------------------------
+        integer(C_INT) function cpu_tensor_block_decompose_svd(dtens_p,ltens_p,rtens_p,stens_p)&
+                                                              &bind(c,name='cpu_tensor_block_decompose_svd')
+         type(C_PTR), value:: dtens_p !inout: tensor argument to be decomposed
+         type(C_PTR), value:: ltens_p !inout: left tensor factor argument
+         type(C_PTR), value:: rtens_p !inout: right tensor factor argument
+         type(C_PTR), value:: stens_p !inout: middle tensor factor argument
+
+         cpu_tensor_block_decompose_svd=0
+         !`Finish
+         return
+        end function cpu_tensor_block_decompose_svd
 
        end module talsh
