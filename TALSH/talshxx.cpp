@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2020/03/07
+REVISION: 2020/03/26
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -432,6 +432,70 @@ int Tensor::copyBody(TensorTask * task_handle,    //out: task handle associated 
    std::cout << "#ERROR(talsh::Tensor::copyBody): talshTensorCopy error " << errc << std::endl; //debug
   assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
  }
+ return errc;
+}
+
+
+int Tensor::decomposeSVD(TensorTask * task_handle,    //out: task handle associated with this operation or nullptr (synchronous)
+                         const std::string & pattern, //in: decomposition pattern string (same as the tensor contraction pattern)
+                         Tensor & left,               //out: left tensor factor
+                         Tensor & right,              //out: right tensor factor
+                         Tensor & middle,             //out: middle tensor factor
+                         const int device_kind,       //in: execution device kind
+                         const int device_id)         //in: execution device id
+{
+ int errc = TALSH_SUCCESS;
+
+ return errc;
+}
+
+
+int Tensor::decomposeSVDL(TensorTask * task_handle,    //out: task handle associated with this operation or nullptr (synchronous)
+                          const std::string & pattern, //in: decomposition pattern string (same as the tensor contraction pattern)
+                          Tensor & left,               //out: left tensor factor
+                          Tensor & right,              //out: right tensor factor
+                          const int device_kind,       //in: execution device kind
+                          const int device_id)         //in: execution device id
+{
+ int errc = TALSH_SUCCESS;
+
+ return errc;
+}
+
+
+int Tensor::decomposeSVDR(TensorTask * task_handle,    //out: task handle associated with this operation or nullptr (synchronous)
+                          const std::string & pattern, //in: decomposition pattern string (same as the tensor contraction pattern)
+                          Tensor & left,               //out: left tensor factor
+                          Tensor & right,              //out: right tensor factor
+                          const int device_kind,       //in: execution device kind
+                          const int device_id)         //in: execution device id
+{
+ int errc = TALSH_SUCCESS;
+
+ return errc;
+}
+
+
+int Tensor::decomposeSVDLR(TensorTask * task_handle,    //out: task handle associated with this operation or nullptr (synchronous)
+                           const std::string & pattern, //in: decomposition pattern string (same as the tensor contraction pattern)
+                           Tensor & left,               //out: left tensor factor
+                           Tensor & right,              //out: right tensor factor
+                           const int device_kind,       //in: execution device kind
+                           const int device_id)         //in: execution device id
+{
+ int errc = TALSH_SUCCESS;
+
+ return errc;
+}
+
+
+int Tensor::orthogonalizeSVD(TensorTask * task_handle,    //out: task handle associated with this operation or nullptr (synchronous)
+                             const std::string & pattern, //in: decomposition pattern string (same as the tensor contraction pattern)
+                             const int device_kind,       //in: execution device kind
+                             const int device_id)         //in: execution device id
+{
+ int errc = TALSH_SUCCESS;
+
  return errc;
 }
 
