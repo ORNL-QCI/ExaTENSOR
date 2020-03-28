@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2020/03/24
+REVISION: 2020/03/28
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5622,8 +5622,18 @@ int talshTensorDecomposeSVDL(const char * cptrn,   //in: C-string: symbolic deco
                              int dev_id,           //in: device id (flat or kind-specific)
                              int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
- //`Finish
- return TALSH_NOT_IMPLEMENTED;
+ int errc,ier;
+
+ talsh_tens_t stens;
+ errc=talshTensorClean(&stens);
+ if(errc == TALSH_SUCCESS){
+  errc=talshTensorDecomposeSVD(cptrn,dtens,ltens,rtens,&stens,dev_id,dev_kind);
+  if(errc == TALSH_SUCCESS){
+   //`Contract stens with ltens
+  }
+  ier=talshTensorDestruct(&stens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+ }
+ return errc;
 }
 
 int talshTensorDecomposeSVDR(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
@@ -5633,8 +5643,18 @@ int talshTensorDecomposeSVDR(const char * cptrn,   //in: C-string: symbolic deco
                              int dev_id,           //in: device id (flat or kind-specific)
                              int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
- //`Finish
- return TALSH_NOT_IMPLEMENTED;
+ int errc,ier;
+
+ talsh_tens_t stens;
+ errc=talshTensorClean(&stens);
+ if(errc == TALSH_SUCCESS){
+  errc=talshTensorDecomposeSVD(cptrn,dtens,ltens,rtens,&stens,dev_id,dev_kind);
+  if(errc == TALSH_SUCCESS){
+   //`Contract stens with rtens
+  }
+  ier=talshTensorDestruct(&stens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+ }
+ return errc;
 }
 
 int talshTensorDecomposeSVDLR(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
@@ -5644,8 +5664,18 @@ int talshTensorDecomposeSVDLR(const char * cptrn,   //in: C-string: symbolic dec
                               int dev_id,           //in: device id (flat or kind-specific)
                               int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
- //`Finish
- return TALSH_NOT_IMPLEMENTED;
+ int errc,ier;
+
+ talsh_tens_t stens;
+ errc=talshTensorClean(&stens);
+ if(errc == TALSH_SUCCESS){
+  errc=talshTensorDecomposeSVD(cptrn,dtens,ltens,rtens,&stens,dev_id,dev_kind);
+  if(errc == TALSH_SUCCESS){
+   //`Contract sqrt(stens) with ltens and rtens
+  }
+  ier=talshTensorDestruct(&stens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+ }
+ return errc;
 }
 
 int talshTensorOrthogonalizeSVD(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
@@ -5653,8 +5683,21 @@ int talshTensorOrthogonalizeSVD(const char * cptrn,   //in: C-string: symbolic d
                                 int dev_id,           //in: device id (flat or kind-specific)
                                 int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
- //`Finish
- return TALSH_NOT_IMPLEMENTED;
+ int errc,ier;
+
+ talsh_tens_t stens,ltens,rtens;
+ errc=talshTensorClean(&stens);
+ if(errc == TALSH_SUCCESS){
+  //`Construct ltens and rtens
+  errc=talshTensorDecomposeSVD(cptrn,dtens,&ltens,&rtens,&stens,dev_id,dev_kind);
+  ier=talshTensorDestruct(&stens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+  if(errc == TALSH_SUCCESS){
+   errc=talshTensorContract(cptrn,dtens,&ltens,&rtens,1.0,0,0,dev_id,dev_kind,COPY_MTT,NOPE);
+  }
+  ier=talshTensorDestruct(&rtens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+  ier=talshTensorDestruct(&ltens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+ }
+ return errc;
 }
 
 double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens)
