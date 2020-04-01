@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/02/24
+!REVISION: 2020/03/31
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -837,32 +837,34 @@
 
         subroutine benchmark_exatensor_cc()
          implicit none
-         integer(INTL), parameter:: SEG_LIMIT=40                           !max segment size
-         !integer(INTD), parameter:: NAT_LEVELS=2                          !number of NAT levels
-         !integer(INTL), parameter:: AO_SPACE_DIM=SEG_LIMIT*18             !dimension of the atomic orbital space
-         !integer(INTL), parameter:: OC_SPACE_DIM=SEG_LIMIT*6              !dimension of the occupied orbital space
-         integer(INTD), parameter:: NAT_LEVELS=1                           !number of NAT levels
-         integer(INTL), parameter:: AO_SPACE_DIM=SEG_LIMIT*9               !dimension of the atomic orbital space
-         integer(INTL), parameter:: OC_SPACE_DIM=SEG_LIMIT*3               !dimension of the occupied orbital space
-         integer(INTL), parameter:: VI_SPACE_DIM=AO_SPACE_DIM-OC_SPACE_DIM !dimension of the virtual orbital space
-         integer(INTD), parameter:: TENSOR_DATA_KIND=EXA_DATA_KIND_C8      !tensor data kind
+         integer(INTL):: SEG_LIMIT=40 !max segment size
+         integer(INTD):: NAT_LEVELS=1 !number of NAT levels (depth of hierarchy)
+         integer(INTD), parameter:: TENSOR_DATA_KIND=EXA_DATA_KIND_C8 !tensor data kind
          complex(8), parameter:: left_val=(1.234d-3,-2.567d-4),right_val=(-9.743d-4,3.576d-3)
-         type(color_symmetry_t):: basis_symmetry(1:AO_SPACE_DIM)
+         type(color_symmetry_t), allocatable:: basis_symmetry(:)
          type(subspace_basis_t):: basis_ao,basis_oc,basis_vi
          class(h_space_t), pointer:: ao_space,oc_space,vi_space
          type(tens_rcrsv_t):: etens,ctens,atens,vtens,stens,ztens
          type(tens_printer_t):: tens_printer
          integer(INTD):: ierr,i,my_rank,comm_size,my_role,hsp(1:MAX_TENSOR_RANK),brf
          integer(INTD):: ao_space_id,oc_space_id,vi_space_id
+         integer(INTL):: AO_SPACE_DIM,VI_SPACE_DIM,OC_SPACE_DIM
          integer(INTL):: l,ssp(1:MAX_TENSOR_RANK),ao_space_root,oc_space_root,vi_space_root
          complex(8):: etens_value
          real(8):: tms,tmf
 
          call MPI_Comm_size(MPI_COMM_WORLD,comm_size,ierr)
          call MPI_Comm_rank(MPI_COMM_WORLD,my_rank,ierr)
+!Read custom benchmark configuration parameters from a file, if provided:
+         AO_SPACE_DIM=SEG_LIMIT*9
+         VI_SPACE_DIM=SEG_LIMIT*6
+         OC_SPACE_DIM=SEG_LIMIT*3
+         open(10,file='exatns_benchmark.conf',form='formatted',status='old',err=10)
+         read(10,*) NAT_LEVELS,SEG_LIMIT,AO_SPACE_DIM,VI_SPACE_DIM,OC_SPACE_DIM
+         close(10)
 !Application registers user-defined tensor methods:
  !Tensor printing method (defaults to screen):
-         if(my_rank.eq.comm_size-1) then
+10       if(my_rank.eq.comm_size-1) then
           write(6,'("Registering a user-defined tensor printing method ... ")',ADVANCE='NO'); flush(6)
          endif
          ierr=exatns_method_register('Print_Tensor',tens_printer)

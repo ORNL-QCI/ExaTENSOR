@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/02/24
+!REVISION: 2020/03/31
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -101,7 +101,7 @@
         integer(INTL), parameter, private:: TAVP_WRK_HOST_BUF_SIZE=TAVP_WRK_MIN_HOST_MEM*(1024_INTL*1024_INTL) !default Host buffer size in bytes per MPI process
         integer(INTL), parameter, private:: TAVP_WRK_MIN_SIZE_IN_BUF=8*(1024_INTL*1024_INTL) !minimal data size (bytes) to consider allocation in Host memory buffer
  !Tensor initialization during creation:
-        logical, parameter, private:: TAVP_WRK_ZERO_ON_CREATE=.FALSE. !if TRUE, tensors will be initialized to zero during creation
+        logical, private:: TAVP_WRK_ZERO_ON_CREATE=.FALSE. !if TRUE, tensors will be initialized to zero during creation (slower)
  !Elementary tensor instruction granularity classification:
         real(8), protected:: TAVP_WRK_FLOPS_HEAVY=1d11  !minimal number of Flops to consider the operation as heavy-cost
         real(8), protected:: TAVP_WRK_FLOPS_MEDIUM=1d9  !minimal number of Flops to consider the operation as medium-cost
@@ -475,6 +475,7 @@
         private test_carma
         public tavp_wrk_reset_output
         public tavp_wrk_reset_logging
+        public tavp_wrk_zero_tensors
  !instr_time_t:
         private InstrTimeClean
         private InstrTimePrintIt
@@ -1033,6 +1034,13 @@
          LOGGING=log_level
          return
         end subroutine tavp_wrk_reset_logging
+!----------------------------------------------------
+        subroutine tavp_wrk_zero_tensors(zero_or_not)
+         implicit none
+         logical, intent(in):: zero_or_not
+         TAVP_WRK_ZERO_ON_CREATE=zero_or_not
+         return
+        end subroutine tavp_wrk_zero_tensors
 ![instr_time_t]=============================
         subroutine InstrTimeClean(this,ierr)
 !Clears all time stamps.

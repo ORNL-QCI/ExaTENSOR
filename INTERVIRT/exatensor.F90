@@ -1,10 +1,10 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2019/11/19
+!REVISION: 2020/03/31
 
-!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -54,7 +54,8 @@
              &EXA_ERR_MEM_ALLOC_FAIL,&
              &EXA_ERR_MEM_FREE_FAIL,&
              &EXA_ERR_BROKEN_OBJ,&
-             &EXA_ERR_UNABLE_COMPLETE
+             &EXA_ERR_UNABLE_COMPLETE,&
+             &EXA_ERR_RSC_EXCEEDED
  !Subspaces:
        public seg_int_t,orthotope_t,symmetry_t,color_symmetry_t,spher_symmetry_t,&
              &basis_func_supp_t,basis_func_gauss_t,basis_func_t,&
@@ -143,7 +144,7 @@
        type(pack_env_t), private:: bytecode_out !outgoing bytecode buffer
        type(pack_env_t), private:: bytecode_in  !incoming bytecode buffer
 !VISIBILITY:
- !External methods/data (called by All before exatns_start()):
+ !External methods/data (called by All before exatns_start):
        public exatns_dim_resolution_setup    !sets up the universal tensor dimension extent resolution function which determines the actual shape of tensor blocks
        public exatns_dim_strength_setup      !sets up the universal tensor dimension strength assessing function and threshold (guides recursive tensor dimension splitting)
        public exatns_dim_strength_thresh_set !sets the tensor dimension strength threshold above which the dimension will split (guides recursive tensor dimension splitting)
@@ -152,10 +153,12 @@
        public exatns_data_register           !registers external (on-node) data (for future references)
        public exatns_data_unregister         !unregisters external data
  !Control:
+       public exatns_ctrl_reset_logging   !resets logging level for TAVP-MNG and TAVP-WRK (called by All before exatns_start)
+       public exatns_ctrl_zero_tensors    !activates mandatory initializaton to zero for all created tensors (called by All before exatns_start)
        public exatns_start                !starts the ExaTENSOR DSVP (called by All)
        public exatns_stop                 !stops the ExaTENSOR DSVP (Driver only)
        public exatns_sync                 !synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions will be completed (Driver only)
-       public exatns_synced               !returns TRUE if all previously issues tensor instructions have completed
+       public exatns_synced               !returns TRUE if all previously issued tensor instructions have completed (Driver only)
        public exatns_process_role         !returns the role of the current MPI process (called by Any)
        public exatns_virtual_depth        !returns the depth of the TAVP-MNG hierarchy (does not include TAVP-WRK level)
        public exatns_status               !returns the status of the ExaTENSOR runtime plus statistics, if needed (Driver only)
@@ -163,7 +166,7 @@
  !Parser/interpreter (Driver only):
        public exatns_interpret            !interprets TAProL code (string of TAProL statements)
        public exatns_symbol_exists        !checks whether a specific identifier is registered (if yes, returns its attributes)
- !Hierarchical vector space (either called by All before exatns_start() or then by Driver only):
+ !Hierarchical vector space (either called by All before exatns_start or then by Driver only):
        public exatns_space_register       !registers a vector space
        public exatns_space_unregister     !unregisters a vector space
        public exatns_space_status         !returns the status of the vector space
@@ -299,7 +302,25 @@
         call data_register%unregister_data(data_name,ierr)
         return
        end function exatns_data_unregister
-![ExaTENSOR Control API]-----------------------------------
+![ExaTENSOR Control API]----------------------------------------------
+       subroutine exatns_ctrl_reset_logging(tavp_mng_log,tavp_wrk_log) !called by all MPI processes
+        implicit none
+        integer(INTD), intent(in):: tavp_mng_log !in: logging level for TAVP-MNG: >=0
+        integer(INTD), intent(in):: tavp_wrk_log !in: logging level for TAVP-WRK: >=0
+
+        call tavp_mng_reset_logging(tavp_mng_log)
+        call tavp_wrk_reset_logging(tavp_wrk_log)
+        return
+       end subroutine exatns_ctrl_reset_logging
+!------------------------------------------------------
+       subroutine exatns_ctrl_zero_tensors(zero_or_not) !called by all MPI processes
+        implicit none
+        logical, intent(in):: zero_or_not !in: whether or not to mandatory initialize tensors to zero during creation
+
+        call tavp_wrk_zero_tensors(zero_or_not)
+        return
+       end subroutine exatns_ctrl_zero_tensors
+!----------------------------------------------------------
        function exatns_start(mpi_communicator) result(ierr) !called by all MPI processes
 !Starts the ExaTENSOR runtime within the given MPI communicator.
 !This function must be called by every MPI process from <mpi_communicator>,

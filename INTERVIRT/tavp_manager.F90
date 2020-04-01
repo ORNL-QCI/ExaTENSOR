@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/02/24
+!REVISION: 2020/03/31
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -437,6 +437,7 @@
  !non-member:
         public tavp_mng_reset_output
         public tavp_mng_reset_logging
+        public tavp_mng_reset_balancer
  !tens_entry_mng_t:
         private TensEntryMngCtor
         private TensEntryMngGetOwnerId
@@ -557,6 +558,14 @@
          LOGGING=log_level
          return
         end subroutine tavp_mng_reset_logging
+!----------------------------------------------------------
+        subroutine tavp_mng_reset_balancer(dynamic_balance)
+         implicit none
+         logical, intent(in):: dynamic_balance !in: whether or not to use dynamic load balancer
+         DISPATCH_BALANCE=dynamic_balance
+         if(DISPATCH_BALANCE) DISPATCH_RANDOM=.FALSE.
+         return
+        end subroutine tavp_mng_reset_balancer
 ![tens_entry_mng_t]========================================
         subroutine TensEntryMngCtor(this,tensor,owner,ierr)
 !Constructs a <tens_entry_mng_t>. Note move semantics for <tensor>!
