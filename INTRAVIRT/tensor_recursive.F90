@@ -1,9 +1,9 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/11/19
+!REVISION: 2020/04/01
 
-!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -365,7 +365,12 @@
         end type tens_descr_t
  !User-defined unary tensor method (initialization/transformation):
         type, abstract, public:: tens_method_uni_t
+         character(:), allocatable, private:: method_name        !method name
          contains
+          procedure, public, non_overridable:: set_name=>TensMethodUniResetName !resets the name of the tensor method
+          procedure, public, non_overridable:: get_name=>TensMethodUniGetName !returns the name of the tensor method
+          procedure, public:: pack=>TensMethodUniPack            !packs the object into a plain byte packet
+          procedure, public:: unpack=>TensMethodUniUnpack        !unpacks the object from a plain byte packet
           procedure(tens_method_uni_i), public, deferred:: apply !applies the user-defined unary tensor method to a tensor
         end type tens_method_uni_t
  !Tensor printing functor:
@@ -469,7 +474,9 @@
           generic, public:: assignment(=)=>TensTransformationAssign
           procedure, public:: is_set=>TensTransformationIsSet               !returns TRUE if the tensor transformation is fully set
           procedure, public:: args_full=>TensTransformationArgsFull         !returns TRUE if the tensor transformation argument has been set
-          procedure, public:: set_method=>TensTransformationSetMethod       !sets the transformation/initialization method (all tensor arguments must have been set already)
+          procedure, private:: TensTransformationSetMethodStatic            !sets the static transformation/initialization method (all tensor arguments must have been set already)
+          procedure, private:: TensTransformationSetMethodDynamic           !sets the dynamic transformation/initialization method (all tensor arguments must have been set already)
+          generic, public:: set_method=>TensTransformationSetMethodStatic,TensTransformationSetMethodDynamic
           procedure, public:: get_method=>TensTransformationGetMethod       !returns the transformation/initialization method
           procedure, public:: unpack=>TensTransformationUnpack              !unpacks the object from a packet
           procedure, public:: pack=>TensTransformationPack                  !packs the object into a packet
@@ -802,6 +809,11 @@
         private TensDescrPrintIt
         private TensDescrCompare
         public tens_descr_dtor
+ !tens_method_uni_t:
+        private TensMethodUniResetName
+        private TensMethodUniGetName
+        private TensMethodUniPack
+        private TensMethodUniUnpack
  !tens_printer_t:
         private TensPrinterResetOutput
         private TensPrinterResetThresh
@@ -857,7 +869,8 @@
         private TensTransformationAssign
         private TensTransformationIsSet
         private TensTransformationArgsFull
-        private TensTransformationSetMethod
+        private TensTransformationSetMethodStatic
+        private TensTransformationSetMethodDynamic
         private TensTransformationGetMethod
         private TensTransformationUnpack
         private TensTransformationPack
@@ -6392,6 +6405,60 @@
          this%rank=-1
          return
         end subroutine tens_descr_dtor
+![tens_method_uni_t]============================================
+        subroutine TensMethodUniResetName(this,method_name,ierr)
+!Resets the name of the tensor method.
+         implicit none
+         class(tens_method_uni_t), intent(inout):: this !inout: unary tensor method
+         character(*), intent(in):: method_name         !in: new tensor method name
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(allocated(this%method_name)) deallocate(this%method_name)
+         if(len_trim(method_name).gt.0) allocate(this%method_name,SOURCE=method_name)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensMethodUniResetName
+!----------------------------------------------------------------------
+        subroutine TensMethodUniGetName(this,method_name,name_len,ierr)
+!Returns the name of the tensor method.
+         implicit none
+         class(tens_method_uni_t), intent(in):: this !in: unary tensor method
+         character(*), intent(inout):: method_name   !out: current tensor method name
+         integer(INTD), intent(out):: name_len       !out: actual length of the tensor method name
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; name_len=len(this%method_name)
+         if(name_len.gt.0) method_name(1:name_len)=this%method_name(1:name_len)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensMethodUniGetName
+!-----------------------------------------------------
+        subroutine TensMethodUniPack(this,packet,ierr)
+!Packs the relevant object state into a plain byte packet.
+!This subroutine is meant to be overriden.
+         implicit none
+         class(tens_method_uni_t), intent(in):: this !in: unary tensor method to pack
+         class(obj_pack_t), intent(inout):: packet   !out: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         if(present(ierr)) ierr=TEREC_SUCCESS
+         return
+        end subroutine TensMethodUniPack
+!-------------------------------------------------------
+        subroutine TensMethodUniUnpack(this,packet,ierr)
+!Unpacks the relevant object state from a plain byte packet.
+!This subroutine is meant to be overriden.
+          implicit none
+          class(tens_method_uni_t), intent(out):: this !out: unpacked unary tensor method (previous state destroyed)
+          class(obj_pack_t), intent(inout):: packet    !in: packet
+          integer(INTD), intent(out), optional:: ierr  !out: error code
+
+          if(present(ierr)) ierr=TEREC_SUCCESS
+          return
+        end subroutine TensMethodUniUnpack
 ![tens_printer_t]=======================================
         subroutine TensPrinterResetOutput(this,dev,ierr)
 !Resets the output device.
@@ -7915,9 +7982,9 @@
          if(present(ierr)) ierr=errc
          return
         end function TensTransformationArgsFull
-!----------------------------------------------------------------------------------------------------
-        subroutine TensTransformationSetMethod(this,ierr,scalar_value,defined,method_name,method_map)
-!Sets up the tensor initialization/transformation method:
+!----------------------------------------------------------------------------------------------------------
+        subroutine TensTransformationSetMethodStatic(this,ierr,scalar_value,defined,method_name,method_map)
+!Sets up the static tensor initialization/transformation method:
 ! a) Simple initialization to a value: <scalar_value>, <defined>=FALSE;
 ! b) Simple scaling by a value: <scalar_value>, <defined>=TRUE;
 ! c) User-defined initialization by an external method: <defined>=FALSE, <method_name>, <method_map>;
@@ -7963,7 +8030,36 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensTransformationSetMethod
+        end subroutine TensTransformationSetMethodStatic
+!---------------------------------------------------------------------------------------
+        subroutine TensTransformationSetMethodDynamic(this,method_instance,ierr,defined)
+!Sets up the dynamic tensor initialization/transformation method:
+! a) User-defined initialization by an external dynamic method: <defined>=FALSE, <method_instace>;
+! b) User-defined in-place transformation by an external dynamic method: <defined>=TRUE, <method_instance>;
+         implicit none
+         class(tens_transformation_t), intent(inout):: this                 !inout: tensor transformation
+         class(tens_method_uni_t), target, intent(in):: method_instance     !in: concrete intance of a registered user-defined tensor method
+         integer(INTD), intent(out), optional:: ierr                        !out: error code
+         logical, intent(in), optional:: defined                            !in: if TRUE, the tensor is assumed defined, otherwise undefined (default)
+         integer(INTD):: errc
+
+         if(this%args_full(errc)) then !all tensor arguments must have been set already
+          if(errc.eq.TEREC_SUCCESS) then
+           this%undefined=.TRUE.; if(present(defined)) this%undefined=(.not.defined)
+           if(allocated(this%definer_name)) deallocate(this%definer_name)
+           if(allocated(method_instance%method_name)) then
+            allocate(this%definer_name,SOURCE=method_instance%method_name)
+            this%definer=>method_instance
+           else
+            errc=TEREC_OBJ_UNDEFINED
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensTransformationSetMethodDynamic
 !-----------------------------------------------------------------------------------------
         subroutine TensTransformationGetMethod(this,defined,scalar_value,method_name,ierr)
 !Returns the tensor transformation method info.

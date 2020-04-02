@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2020/03/31
+!REVISION: 2020/04/01
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -93,7 +93,8 @@
   !Initialize a tensor:
        interface exatns_tensor_init
         module procedure exatns_tensor_init_scalar
-        module procedure exatns_tensor_init_method
+        module procedure exatns_tensor_init_method_static
+        module procedure exatns_tensor_init_method_dynamic
        end interface exatns_tensor_init
   !Traverse a tensor:
        interface exatns_tensor_traverse
@@ -198,7 +199,8 @@
        public exatns_tensor_binary_op     !custom binary tensor operation via a user-defined (external) method: tensor0 = Func(tensor0,tensor1,scalar)
        public exatns_tensor_ternary_op    !custom ternary tensor operation via a user-defined (external) method: tensor0 = Func(tensor0,tensor1,tensor2,scalar)
        private exatns_tensor_init_scalar  !tensor initialization by a scalar
-       private exatns_tensor_init_method  !tensor initialization by a user-defined method
+       private exatns_tensor_init_method_static  !tensor initialization by a static registered user-defined method
+       private exatns_tensor_init_method_dynamic !tensor initialization by a dynamic registered user-defined method
        private exatns_tensor_copy_us
        private exatns_tensor_copy_eu
        private exatns_tensor_fold_us
@@ -1718,20 +1720,20 @@
         endif
         return
        end function exatns_tensor_init_scalar
-!-------------------------------------------------------------------------
-       function exatns_tensor_init_method(tensor,method,sync) result(ierr)
-!Initializes the tensor via a user-defined (registered) method.
+!--------------------------------------------------------------------------------
+       function exatns_tensor_init_method_static(tensor,method,sync) result(ierr)
+!Initializes the tensor via a static user-defined (registered) method.
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
-        character(*), intent(in):: method          !in: registered method name
+        character(*), intent(in):: method          !in: registered (static) method name
         logical, intent(in), optional:: sync       !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
         class(tens_instr_mng_t), pointer:: tens_instr
         type(tens_transformation_t):: tens_init
         integer(INTL):: ip
 
         ierr=EXA_SUCCESS
-        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP = ")',ADVANCE='NO')&
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: INIT TENSOR (by static method): IP = ")',ADVANCE='NO')&
         &time_sys_sec()-start_time_stamp; flush(jo)
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
@@ -1780,7 +1782,73 @@
          endif
         endif
         return
-       end function exatns_tensor_init_method
+       end function exatns_tensor_init_method_static
+!---------------------------------------------------------------------------------
+       function exatns_tensor_init_method_dynamic(tensor,method,sync) result(ierr)
+!Initializes the tensor via a dynamic user-defined (registered) method.
+        implicit none
+        integer(INTD):: ierr                                  !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor            !inout: tensor
+        class(tens_method_uni_t), target, intent(in):: method !in: concrete instance of a registered user-defined tensor transformation method
+        logical, intent(in), optional:: sync                  !in: if FALSE, the operation will run asynchronously, requiring a separate exatns_sync() call later (defaults to TRUE)
+        class(tens_instr_mng_t), pointer:: tens_instr
+        type(tens_transformation_t):: tens_init
+        character(EXA_MAX_METHOD_NAME_LEN):: method_name
+        integer(INTD):: nl
+        integer(INTL):: ip
+
+        ierr=EXA_SUCCESS
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: INIT TENSOR (by dynamic method): IP = ")',ADVANCE='NO')&
+        &time_sys_sec()-start_time_stamp; flush(jo)
+        if(tensor%is_set(ierr)) then
+         if(ierr.eq.TEREC_SUCCESS) then
+!Construct the tensor transformation (initialization) object:
+          call tens_init%set_argument(tensor,ierr)
+          if(ierr.eq.TEREC_SUCCESS) then
+           call tens_init%set_method(method,ierr,defined=.FALSE.)
+           if(ierr.eq.TEREC_SUCCESS) then
+!Construct the tensor instruction:
+            tens_instr=>add_new_instruction(ip,ierr)
+            if(ierr.eq.0) then
+             write(jo,'(i11)') ip !new instruction id number
+             if(DEBUG.gt.0) then
+              call method%get_name(method_name,nl,ierr)
+              call tensor%print_head(dev_id=jo); call printl(jo,' = '//method_name(1:nl))
+             endif
+             flush(jo)
+             call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_init,iid=ip)
+             if(ierr.eq.0) then
+!Issue the tensor instruction to TAVP:
+              call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-7
+             else
+              ierr=-6
+             endif
+            else
+             ierr=-5
+            endif
+            tens_instr=>NULL()
+           else
+            ierr=-4
+           endif
+          else
+           ierr=-3
+          endif
+          call tens_transformation_dtor(tens_init)
+         else
+          ierr=-2
+         endif
+        else
+         ierr=-1
+        endif
+        if(ierr.eq.EXA_SUCCESS) then
+         if(present(sync)) then
+          if(sync) ierr=exatns_sync()
+         else
+          ierr=exatns_sync()
+         endif
+        endif
+        return
+       end function exatns_tensor_init_method_dynamic
 !-----------------------------------------------------------------------
        function exatns_tensor_transform(tensor,method,sync) result(ierr)
 !Transforms the tensor in-place via a user-defined (registered) method.
