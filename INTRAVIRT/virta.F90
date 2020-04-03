@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/02
+!REVISION: 2020/04/03
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -204,8 +204,9 @@
          complex(8), private:: alpha=(0d0,0d0)                        !either an initialization scalar or an alpha prefactor
          logical, private:: undefined=.TRUE.                          !whether or not the tensor is considered undefined at the beginning
          contains
-          procedure, private:: CtrlTensTransCtor                    !ctor
-          generic, public:: ctrl_tens_trans_ctor=>CtrlTensTransCtor
+          procedure, private:: CtrlTensTransCtorStatic              !ctor with a static user-defined method
+          procedure, private:: CtrlTensTransCtorDynamic             !ctor with a dynamic user-defined method
+          generic, public:: ctrl_tens_trans_ctor=>CtrlTensTransCtorStatic,CtrlTensTransCtorDynamic
           procedure, public:: map_method=>CtrlTensTransMapMethod    !maps the defining method name to the actual definer object
           procedure, public:: get_method=>CtrlTensTransGetMethod    !returns the method name and alpha
           procedure, public:: pack=>CtrlTensTransPack               !packs the instruction control field into a plain byte packet
@@ -413,7 +414,8 @@
         public opcode_auxiliary
         public opcode_tensor
  !ctrl_tens_trans_t:
-        private CtrlTensTransCtor
+        private CtrlTensTransCtorStatic
+        private CtrlTensTransCtorDynamic
         private CtrlTensTransMapMethod
         private CtrlTensTransGetMethod
         private CtrlTensTransPack
@@ -753,13 +755,13 @@
          if(present(ierr)) ierr=errc
          return
         end function opcode_tensor
-![ctrl_tens_trans_t]============================================================
-        subroutine CtrlTensTransCtor(this,ierr,scalar_value,defined,method_name)
+![ctrl_tens_trans_t]==================================================================
+        subroutine CtrlTensTransCtorStatic(this,ierr,scalar_value,defined,method_name)
 !CTOR:
 ! a) Simple initialization to a value: <scalar_value>, <defined>=FALSE;
 ! b) Simple scaling by a value: <scalar_value>, <defined>=TRUE;
-! c) User-defined initialization by an external method: <defined>=FALSE, <method_name>;
-! d) User-defined in-place transformation by an external method: <defined>=TRUE, <method_name>.
+! c) User-defined initialization by an external static method: <defined>=FALSE, <method_name>;
+! d) User-defined in-place transformation by an external static method: <defined>=TRUE, <method_name>.
          implicit none
          class(ctrl_tens_trans_t), intent(out):: this     !out: tensor transformation/initialization control field
          integer(INTD), intent(out), optional:: ierr      !out: error code
@@ -784,7 +786,33 @@
          if(errc.eq.0.and.present(defined)) this%undefined=(.not.defined)
          if(present(ierr)) ierr=errc
          return
-        end subroutine CtrlTensTransCtor
+        end subroutine CtrlTensTransCtorStatic
+!---------------------------------------------------------------------
+        subroutine CtrlTensTransCtorDynamic(this,method_instance,ierr)
+!CTOR: The method_instance is a concrete instance of a given external method.
+!Note that the passed concrete method instance must outlive the current object.
+         implicit none
+         class(ctrl_tens_trans_t), intent(out):: this                   !out: tensor transformation/initialization control field
+         class(tens_method_uni_t), target, intent(in):: method_instance !in: concrete instance of a given registered user-defined method
+         integer(INTD), intent(out), optional:: ierr                    !out: error code
+         character(EXA_MAX_METHOD_NAME_LEN):: method_name
+         integer(INTD):: errc,l
+
+         errc=0
+         call method_instance%get_name(method_name,l,errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          if(l.gt.0.and.l.le.EXA_MAX_METHOD_NAME_LEN) then
+           this%method_name=method_name(1:l)
+           this%definer=>method_instance
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensTransCtorDynamic
 !---------------------------------------------------
         subroutine CtrlTensTransMapMethod(this,ierr)
 !Maps the method name to the actual definer object.
@@ -837,11 +865,18 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         call pack_builtin(packet,this%method_name(1:len_trim(this%method_name)),errc)
+         call pack_builtin(packet,this%alpha,errc)
          if(errc.eq.PACK_SUCCESS) then
-          call pack_builtin(packet,this%alpha,errc)
+          call pack_builtin(packet,this%undefined,errc)
           if(errc.eq.PACK_SUCCESS) then
-           call pack_builtin(packet,this%undefined,errc); if(errc.ne.PACK_SUCCESS) errc=-3
+           call pack_builtin(packet,this%method_name(1:len_trim(this%method_name)),errc)
+           if(errc.eq.PACK_SUCCESS) then
+            if(associated(this%definer)) then
+             call this%definer%pack(packet,errc); if(errc.ne.0) errc=-4
+            endif
+           else
+            errc=-3
+           endif
           else
            errc=-2
           endif
@@ -861,19 +896,24 @@
          integer(INTD):: errc
          integer(INTL):: sl
 
-         this%method_name=' '
-         call unpack_builtin(packet,this%method_name,sl,errc)
+         this%method_name=' '; this%definer=>NULL()
+         call unpack_builtin(packet,this%alpha,errc)
          if(errc.eq.PACK_SUCCESS) then
-          if(sl.le.EXA_MAX_METHOD_NAME_LEN) then
-           call unpack_builtin(packet,this%alpha,errc)
+          call unpack_builtin(packet,this%undefined,errc)
+          if(errc.eq.PACK_SUCCESS) then
+           call unpack_builtin(packet,this%method_name,sl,errc)
            if(errc.eq.PACK_SUCCESS) then
-            call unpack_builtin(packet,this%undefined,errc)
-            if(errc.eq.PACK_SUCCESS) then
-             if(sl.gt.0) then
-              call this%map_method(errc); if(errc.ne.0) then; this%method_name=' '; errc=-5; endif
+            if(sl.gt.0) then
+             call this%map_method(errc)
+             if(errc.eq.0) then
+              if(associated(this%definer)) then
+               call this%definer%unpack(packet,errc); if(errc.ne.0) errc=-6
+              else
+               errc=-5
+              endif
+             else
+              errc=-4
              endif
-            else
-             errc=-4
             endif
            else
             errc=-3

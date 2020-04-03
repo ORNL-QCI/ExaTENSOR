@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/01
+!REVISION: 2020/04/03
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -6452,9 +6452,9 @@
 !Unpacks the relevant object state from a plain byte packet.
 !This subroutine is meant to be overriden.
           implicit none
-          class(tens_method_uni_t), intent(out):: this !out: unpacked unary tensor method (previous state destroyed)
-          class(obj_pack_t), intent(inout):: packet    !in: packet
-          integer(INTD), intent(out), optional:: ierr  !out: error code
+          class(tens_method_uni_t), intent(inout):: this !inout: unpacked unary tensor method (previous state destroyed)
+          class(obj_pack_t), intent(inout):: packet      !in: packet
+          integer(INTD), intent(out), optional:: ierr    !out: error code
 
           if(present(ierr)) ierr=TEREC_SUCCESS
           return
@@ -7987,8 +7987,9 @@
 !Sets up the static tensor initialization/transformation method:
 ! a) Simple initialization to a value: <scalar_value>, <defined>=FALSE;
 ! b) Simple scaling by a value: <scalar_value>, <defined>=TRUE;
-! c) User-defined initialization by an external method: <defined>=FALSE, <method_name>, <method_map>;
-! d) User-defined in-place transformation by an external method: <defined>=TRUE, <method_name>, <method_map>;
+! c) User-defined initialization by an external static method: <defined>=FALSE, <method_name>, <method_map>;
+! d) User-defined in-place transformation by an external static method: <defined>=TRUE, <method_name>, <method_map>;
+!Note that the user-defined external method, if provided, should outlive the current object.
          implicit none
          class(tens_transformation_t), intent(inout):: this                 !inout: tensor transformation
          integer(INTD), intent(out), optional:: ierr                        !out: error code
@@ -8036,9 +8037,10 @@
 !Sets up the dynamic tensor initialization/transformation method:
 ! a) User-defined initialization by an external dynamic method: <defined>=FALSE, <method_instace>;
 ! b) User-defined in-place transformation by an external dynamic method: <defined>=TRUE, <method_instance>;
+!Note that the user-defined external method, if provided, should outlive the current object.
          implicit none
          class(tens_transformation_t), intent(inout):: this                 !inout: tensor transformation
-         class(tens_method_uni_t), target, intent(in):: method_instance     !in: concrete intance of a registered user-defined tensor method
+         class(tens_method_uni_t), target, intent(in):: method_instance     !in: concrete instance of a registered user-defined tensor method
          integer(INTD), intent(out), optional:: ierr                        !out: error code
          logical, intent(in), optional:: defined                            !in: if TRUE, the tensor is assumed defined, otherwise undefined (default)
          integer(INTD):: errc
@@ -8049,7 +8051,7 @@
            if(allocated(this%definer_name)) deallocate(this%definer_name)
            if(allocated(method_instance%method_name)) then
             allocate(this%definer_name,SOURCE=method_instance%method_name)
-            this%definer=>method_instance
+            this%definer=>method_instance !this is non-owning pointer (its target must outlive it)
            else
             errc=TEREC_OBJ_UNDEFINED
            endif
@@ -8100,6 +8102,7 @@
          logical:: method_flag
          class(tens_rcrsv_t), pointer:: tens_p
 
+         this%definer=>NULL()
          call unpack_builtin(packet,n,errc)
          if(errc.eq.PACK_SUCCESS) then
           do i=0,n-1
@@ -8108,27 +8111,27 @@
            call tens_p%tens_rcrsv_ctor(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
           enddo
           if(errc.eq.TEREC_SUCCESS) then
-           call unpack_builtin(packet,method_flag,errc)
-           if(errc.eq.PACK_SUCCESS) then
-            if(method_flag) then
-             call unpack_builtin(packet,i,errc)
-             if(errc.eq.PACK_SUCCESS) then
-              if(i.gt.0) then
-               allocate(character(len=i)::this%definer_name)
-               call unpack_builtin(packet,this%definer_name,sl,errc)
-               if(errc.eq.PACK_SUCCESS.and.sl.ne.int(i,INTL)) errc=TEREC_OBJ_CORRUPTED
+           call unpack_builtin(packet,this%alpha,errc)
+           if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%undefined,errc)
+           if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,method_flag,errc)
+           if(errc.eq.PACK_SUCCESS.and.method_flag) then
+            call unpack_builtin(packet,i,errc)
+            if(errc.eq.PACK_SUCCESS) then
+             if(i.gt.0) then
+              allocate(character(len=i)::this%definer_name)
+              call unpack_builtin(packet,this%definer_name,sl,errc)
+              if(errc.eq.PACK_SUCCESS.and.sl.eq.int(i,INTL)) then
+               if(present(method_map)) then
+                this%definer=>method_map(this%definer_name,errc)
+                if(associated(this%definer).and.errc.eq.0) then
+                 call this%definer%unpack(packet,errc)
+                endif
+               endif
               else
-               errc=TEREC_OBJ_CORRUPTED
+               if(errc.eq.PACK_SUCCESS) errc=TEREC_OBJ_CORRUPTED
               endif
-             endif
-            endif
-            if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%alpha,errc)
-            if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%undefined,errc)
-            if(errc.eq.PACK_SUCCESS.and.method_flag) then
-             if(present(method_map)) then
-              this%definer=>method_map(this%definer_name,errc)
              else
-              this%definer=>NULL()
+              errc=TEREC_OBJ_CORRUPTED
              endif
             endif
            endif
@@ -8157,16 +8160,20 @@
              call tens_p%pack(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
             enddo
             if(errc.eq.TEREC_SUCCESS) then
-             method_flag=allocated(this%definer_name)
-             if(method_flag) method_flag=(len_trim(this%definer_name).gt.0)
-             call pack_builtin(packet,method_flag,errc)
-             if(errc.eq.PACK_SUCCESS) then
-              if(method_flag) then
-               i=len(this%definer_name); call pack_builtin(packet,i,errc)
-               if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%definer_name,errc)
+             method_flag=.FALSE.
+             if(allocated(this%definer_name)) then
+              i=len_trim(this%definer_name)
+              method_flag=(i.gt.0)
+             endif
+             call pack_builtin(packet,this%alpha,errc)
+             if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%undefined,errc)
+             if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,method_flag,errc)
+             if(errc.eq.PACK_SUCCESS.and.method_flag) then
+              call pack_builtin(packet,i,errc)
+              if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%definer_name,errc)
+              if(errc.eq.PACK_SUCCESS.and.associated(this%definer)) then
+               call this%definer%pack(packet,errc)
               endif
-              if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%alpha,errc)
-              if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%undefined,errc)
              endif
             endif
            endif
