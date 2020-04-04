@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/03
+!REVISION: 2020/04/04
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -787,14 +787,16 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransCtorStatic
-!---------------------------------------------------------------------
-        subroutine CtrlTensTransCtorDynamic(this,method_instance,ierr)
+!------------------------------------------------------------------------------------------
+        subroutine CtrlTensTransCtorDynamic(this,method_instance,ierr,scalar_value,defined)
 !CTOR: The method_instance is a concrete instance of a given external method.
 !Note that the passed concrete method instance must outlive the current object.
          implicit none
          class(ctrl_tens_trans_t), intent(out):: this                   !out: tensor transformation/initialization control field
          class(tens_method_uni_t), target, intent(in):: method_instance !in: concrete instance of a given registered user-defined method
          integer(INTD), intent(out), optional:: ierr                    !out: error code
+         complex(8), intent(in), optional:: scalar_value                !in: scalar
+         logical, intent(in), optional:: defined                        !in: whether or not the tensor is considered defined at the beginning
          character(EXA_MAX_METHOD_NAME_LEN):: method_name
          integer(INTD):: errc,l
 
@@ -803,13 +805,15 @@
          if(errc.eq.TEREC_SUCCESS) then
           if(l.gt.0.and.l.le.EXA_MAX_METHOD_NAME_LEN) then
            this%method_name=method_name(1:l)
-           this%definer=>method_instance
+           this%definer=>method_instance !non-owning pointer (its target must outlive it)
           else
            errc=-2
           endif
          else
           errc=-1
          endif
+         if(errc.eq.0.and.present(scalar_value)) this%alpha=scalar_value
+         if(errc.eq.0.and.present(defined)) this%undefined=(.not.defined)
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransCtorDynamic
@@ -896,7 +900,7 @@
          integer(INTD):: errc
          integer(INTL):: sl
 
-         this%method_name=' '; this%definer=>NULL()
+         this%definer=>NULL(); this%method_name=' '
          call unpack_builtin(packet,this%alpha,errc)
          if(errc.eq.PACK_SUCCESS) then
           call unpack_builtin(packet,this%undefined,errc)

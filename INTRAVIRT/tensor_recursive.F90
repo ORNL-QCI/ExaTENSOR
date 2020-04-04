@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/03
+!REVISION: 2020/04/04
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -8032,8 +8032,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensTransformationSetMethodStatic
-!---------------------------------------------------------------------------------------
-        subroutine TensTransformationSetMethodDynamic(this,method_instance,ierr,defined)
+!----------------------------------------------------------------------------------------------------
+        subroutine TensTransformationSetMethodDynamic(this,method_instance,ierr,scalar_value,defined)
 !Sets up the dynamic tensor initialization/transformation method:
 ! a) User-defined initialization by an external dynamic method: <defined>=FALSE, <method_instace>;
 ! b) User-defined in-place transformation by an external dynamic method: <defined>=TRUE, <method_instance>;
@@ -8042,11 +8042,13 @@
          class(tens_transformation_t), intent(inout):: this                 !inout: tensor transformation
          class(tens_method_uni_t), target, intent(in):: method_instance     !in: concrete instance of a registered user-defined tensor method
          integer(INTD), intent(out), optional:: ierr                        !out: error code
+         complex(8), intent(in), optional:: scalar_value                    !in: scalar value for simple initialization/scaling
          logical, intent(in), optional:: defined                            !in: if TRUE, the tensor is assumed defined, otherwise undefined (default)
          integer(INTD):: errc
 
          if(this%args_full(errc)) then !all tensor arguments must have been set already
           if(errc.eq.TEREC_SUCCESS) then
+           this%alpha=(0d0,0d0); if(present(scalar_value)) this%alpha=scalar_value
            this%undefined=.TRUE.; if(present(defined)) this%undefined=(.not.defined)
            if(allocated(this%definer_name)) deallocate(this%definer_name)
            if(allocated(method_instance%method_name)) then
@@ -8062,8 +8064,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensTransformationSetMethodDynamic
-!-----------------------------------------------------------------------------------------
-        subroutine TensTransformationGetMethod(this,defined,scalar_value,method_name,ierr)
+!------------------------------------------------------------------------------------------------
+        subroutine TensTransformationGetMethod(this,defined,scalar_value,method_name,ierr,method)
 !Returns the tensor transformation method info.
          implicit none
          class(tens_transformation_t), intent(in):: this      !in: fully set tensor transformation
@@ -8071,14 +8073,17 @@
          complex(8), intent(out):: scalar_value               !out: scalar value for simple initialization/transformation
          character(:), intent(out), allocatable:: method_name !out: external initialization/transformation method name
          integer(INTD), intent(out), optional:: ierr          !out: error code
+         class(tens_method_uni_t), pointer, intent(out), optional:: method !non-owning pointer to the method object
          integer(INTD):: errc
 
+         if(present(method)) method=>NULL()
          if(this%is_set(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
            defined=(.not.this%undefined)
            scalar_value=this%alpha
            if(allocated(this%definer_name)) then
             allocate(method_name,SOURCE=this%definer_name)
+            if(present(method)) method=>this%definer
            endif
           endif
          else
@@ -8103,6 +8108,7 @@
          class(tens_rcrsv_t), pointer:: tens_p
 
          this%definer=>NULL()
+         if(allocated(this%definer_name)) deallocate(this%definer_name)
          call unpack_builtin(packet,n,errc)
          if(errc.eq.PACK_SUCCESS) then
           do i=0,n-1

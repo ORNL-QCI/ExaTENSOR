@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/03/31
+!REVISION: 2020/04/04
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -1538,6 +1538,7 @@
           integer(INTD), intent(out):: jerr
           class(ds_oprnd_t), pointer:: oprnd
           class(ds_instr_ctrl_t), pointer:: instr_ctrl
+          class(tens_method_uni_t), pointer:: trans_method
           class(tens_transformation_t), pointer:: tens_trans
           class(ctrl_tens_trans_t), pointer:: tens_trans_ctrl
           class(tens_rcrsv_t), pointer:: tensor
@@ -1550,12 +1551,16 @@
           select type(op_spec); class is(tens_transformation_t); tens_trans=>op_spec; end select
           if(associated(tens_trans)) then
            if(tens_trans%is_set()) then
-            call tens_trans%get_method(defined,scalar,method_name,jerr)
+            call tens_trans%get_method(defined,scalar,method_name,jerr,trans_method)
             if(jerr.eq.TEREC_SUCCESS) then
              allocate(tens_trans_ctrl,STAT=jerr)
              if(jerr.eq.0) then
               if(allocated(method_name)) then
-               call tens_trans_ctrl%ctrl_tens_trans_ctor(jerr,scalar,defined,method_name)
+               if(associated(trans_method)) then
+                call tens_trans_ctrl%ctrl_tens_trans_ctor(trans_method,jerr,scalar,defined)
+               else
+                call tens_trans_ctrl%ctrl_tens_trans_ctor(jerr,scalar,defined,method_name)
+               endif
               else
                call tens_trans_ctrl%ctrl_tens_trans_ctor(jerr,scalar,defined)
               endif
