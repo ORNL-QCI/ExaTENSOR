@@ -367,7 +367,7 @@
         type, abstract, public:: tens_method_uni_t
          character(:), allocatable, private:: method_name        !method name
          contains
-          procedure, public, non_overridable:: set_name=>TensMethodUniResetName !resets the name of the tensor method
+          procedure, public, non_overridable:: reset_name=>TensMethodUniResetName !resets the name of the tensor method
           procedure, public, non_overridable:: get_name=>TensMethodUniGetName !returns the name of the tensor method
           procedure, public:: pack=>TensMethodUniPack            !packs the object into a plain byte packet
           procedure, public:: unpack=>TensMethodUniUnpack        !unpacks the object from a plain byte packet

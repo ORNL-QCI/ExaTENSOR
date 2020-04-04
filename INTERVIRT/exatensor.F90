@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2020/04/03
+!REVISION: 2020/04/04
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -264,11 +264,11 @@
        end function exatns_dim_strength_thresh_set
 !---------------------------------------------------------------------------------
        function exatns_method_register(method_name,method,method_tag) result(ierr) !called by all MPI processes
-!Registers an external tensor body initialization/update method with ExaTENSOR.
+!Registers an external tensor body initialization/update method with ExaTENSOR under a unique name.
         implicit none
         integer(INTD):: ierr                              !out: error code
         character(*), intent(in):: method_name            !in: symbolic method name
-        class(tens_method_uni_t), intent(in):: method     !in: external tensor body initialization/transformation method
+        class(tens_method_uni_t), intent(inout):: method  !in: external tensor body initialization/transformation method
         integer(INTD), intent(out), optional:: method_tag !out: method tag
         integer(INTD):: tag
 

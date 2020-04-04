@@ -2524,23 +2524,33 @@
 ![method_register_t]---------------------------------------------------------------
         subroutine MethodRegisterRegisterMethod(this,method_name,extrn_method,ierr)
          implicit none
-         class(method_register_t), intent(inout):: this      !inout: method register
-         character(*), intent(in):: method_name              !in: method name
-         class(tens_method_uni_t), intent(in):: extrn_method !in: external unary tensor method (initialization/transformation)
-         integer(INTD), intent(out), optional:: ierr         !out: error code
+         class(method_register_t), intent(inout):: this         !inout: method register
+         character(*), intent(in):: method_name                 !in: method name
+         class(tens_method_uni_t), intent(inout):: extrn_method !in: external unary tensor method (initialization/transformation)
+         integer(INTD), intent(out), optional:: ierr            !out: error code
          integer(INTD):: errc,ier
          type(dictionary_iter_t):: dit
 
+         errc=0
 !$OMP CRITICAL (TAVP_METHOD_REG)
-         errc=dit%init(this%ext_methods)
-         if(errc.eq.GFC_SUCCESS) then
-          errc=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,method_name,extrn_method)
-          if(errc.eq.GFC_NOT_FOUND) then
-           errc=0
+         if(len_trim(method_name).gt.0) then
+          call extrn_method%reset_name(method_name,errc)
+          if(errc.eq.TEREC_SUCCESS) then
+           errc=dit%init(this%ext_methods)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,method_name,extrn_method)
+            if(errc.eq.GFC_NOT_FOUND) then
+             errc=0
+            else
+             if(errc.eq.GFC_FOUND) then; errc=-5; else; errc=-6; endif
+            endif
+            ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-4
+           else
+            errc=-3
+           endif
           else
-           if(errc.eq.GFC_FOUND) then; errc=-3; else; errc=-4; endif
+           errc=-2
           endif
-          ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
          else
           errc=-1
          endif
@@ -2557,6 +2567,7 @@
          integer(INTD):: errc,ier
          type(dictionary_iter_t):: dit
 
+         errc=0
 !$OMP CRITICAL (TAVP_METHOD_REG)
          errc=dit%init(this%ext_methods)
          if(errc.eq.GFC_SUCCESS) then
