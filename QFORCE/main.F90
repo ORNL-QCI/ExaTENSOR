@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/03/31
+!REVISION: 2020/04/05
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -60,17 +60,20 @@
 
 !Client (application) provides user-defined function objects:
 
- !Tensor initialization functor:
+ !Tensor initialization functor (dynamic):
         type, extends(tens_method_uni_t), public:: tens_init_test_t
          complex(8), private:: init_val=(0d0,0d0)
          contains
           procedure, private:: TensInitTestCtorReal
           procedure, private:: TensInitTestCtorComplex
           generic, public:: tens_init_test_ctor=>TensInitTestCtorReal,TensInitTestCtorComplex
+          procedure, public:: reset=>TensInitTestReset
+          procedure, public:: pack=>TensInitTestPack
+          procedure, public:: unpack=>TensInitTestUnpack
           procedure, public:: apply=>TensInitTestApply
         end type tens_init_test_t
 
- !Tensor transformation functor:
+ !Tensor transformation functor (static):
         type, extends(tens_method_uni_t), public:: tens_trans_test_t
          real(8), private:: div_val=1d0
          contains
@@ -93,7 +96,7 @@
          class(tens_init_test_t), intent(out):: this
          real(8), intent(in):: val
 
-         this%init_val=cmplx(val,0d0)
+         this%init_val=cmplx(val,0d0,8)
         end subroutine TensInitTestCtorReal
 
         subroutine TensInitTestCtorComplex(this,val)
@@ -103,6 +106,36 @@
 
          this%init_val=val
         end subroutine TensInitTestCtorComplex
+
+        subroutine TensInitTestReset(this,val)
+         implicit none
+         class(tens_init_test_t), intent(inout):: this
+         complex(8), intent(in):: val
+
+         this%init_val=val
+        end subroutine TensInitTestReset
+
+        subroutine TensInitTestPack(this,packet,ierr)
+         implicit none
+         class(tens_init_test_t), intent(in):: this
+         class(obj_pack_t), intent(inout):: packet
+         integer(INTD), intent(out), optional:: ierr
+
+         call pack_builtin(packet,this%init_val)
+         if(present(ierr)) ierr=0
+         return
+        end subroutine TensInitTestPack
+
+        subroutine TensInitTestUnpack(this,packet,ierr)
+         implicit none
+         class(tens_init_test_t), intent(inout):: this
+         class(obj_pack_t), intent(inout):: packet
+         integer(INTD), intent(out), optional:: ierr
+
+         call unpack_builtin(packet,this%init_val)
+         if(present(ierr)) ierr=0
+         return
+        end subroutine TensInitTestUnpack
 
         function TensInitTestApply(this,tensor,scalar) result(ierr)
          implicit none
@@ -221,7 +254,7 @@
          if(my_rank.eq.comm_size-1) then
           write(6,'("Registering a user-defined tensor initialization method ... ")',ADVANCE='NO'); flush(6)
          endif
-         call init1369%tens_init_test_ctor(13.69d0)
+         call init1369%tens_init_test_ctor(2d0*13.69d0)
          ierr=exatns_method_register('SetTo13.69',init1369)
          if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_method_register() failed!')
          if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
@@ -302,7 +335,7 @@
   !ltens:
            write(6,'("Initializing tensor ltens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_init(ltens,'SetTo13.69')
+           ierr=exatns_tensor_init(ltens,'SetTo13.69') !static initialization method
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
            !ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
@@ -310,7 +343,9 @@
   !rtens:
            write(6,'("Initializing tensor rtens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
-           ierr=exatns_tensor_init(rtens,'SetTo13.69')
+           !ierr=exatns_tensor_init(rtens,'SetTo13.69')
+           call init1369%reset(cmplx((5d-1)*13.69d0,0d0,8))
+           ierr=exatns_tensor_init(rtens,init1369) !dynamic initialization method
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
            !ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()

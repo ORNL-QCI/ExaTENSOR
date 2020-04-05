@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2020/04/04
+!REVISION: 2020/04/05
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -56,6 +56,8 @@
              &EXA_ERR_BROKEN_OBJ,&
              &EXA_ERR_UNABLE_COMPLETE,&
              &EXA_ERR_RSC_EXCEEDED
+ !Utilities:
+       public obj_pack_t,pack_builtin,unpack_builtin
  !Subspaces:
        public seg_int_t,orthotope_t,symmetry_t,color_symmetry_t,spher_symmetry_t,&
              &basis_func_supp_t,basis_func_gauss_t,basis_func_t,&
