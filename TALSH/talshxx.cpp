@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2020/03/28
+REVISION: 2020/04/08
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -533,6 +533,24 @@ int Tensor::orthogonalizeSVD(TensorTask * task_handle,    //out: task handle ass
  talsh_tens_t * dtens = this->getTalshTensorPtr();
  task_handle->clean();
  errc = talshTensorOrthogonalizeSVD(contr_ptrn,dtens,device_id,device_kind);
+ return errc;
+}
+
+
+int Tensor::orthogonalizeMGS(TensorTask * task_handle, //out: task handle associated with this operation or nullptr (synchronous)
+                             const std::vector<unsigned int> & iso_dims, //in: isometric dimension set (cannot be empty)
+                             const int device_kind,    //in: execution device kind
+                             const int device_id)      //in: execution device id
+{
+ int errc = TALSH_SUCCESS;
+ this->completeWriteTask();
+ talsh_tens_t * dtens = this->getTalshTensorPtr();
+ int num_iso_dims = static_cast<int>(iso_dims.size());
+ assert(num_iso_dims > 0);
+ int isodims[num_iso_dims];
+ for(int i = 0; i < num_iso_dims; ++i) isodims[i] = static_cast<int>(iso_dims[i]);
+ task_handle->clean();
+ errc = talshTensorOrthogonalizeMGS(dtens,num_iso_dims,isodims,device_id,device_kind);
  return errc;
 }
 

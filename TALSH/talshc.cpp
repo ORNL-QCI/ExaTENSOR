@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2020/03/28
+REVISION: 2020/04/08
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5698,6 +5698,16 @@ int talshTensorOrthogonalizeSVD(const char * cptrn,   //in: C-string: symbolic d
   ier=talshTensorDestruct(&ltens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
  }
  return errc;
+}
+
+int talshTensorOrthogonalizeMGS(talsh_tens_t * dtens, //inout: on entrance tensor block to be orthogonalized, on exit orthogonalized tensor block
+                                int num_iso_dims,     //in: number of the isometric tensor dimensions
+                                int * iso_dims,       //in: ordered list of the isometric tensor dimensions (tensor dimension numeration starts from 0)
+                                int dev_id,           //in: device id (flat or kind-specific)
+                                int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
+{
+ //`Implement
+ return TALSH_NOT_IMPLEMENTED;
 }
 
 double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens)

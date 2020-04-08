@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2020/03/28
+REVISION: 2020/04/08
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -374,7 +374,8 @@ public:
                    const int device_id = 0);         //in: execution device id
 
  /** Arbitrary tensor decomposition via SVD with the middle tensor
-     absorbed by both left and right tensor factors. Returns an error code (0:success).
+     absorbed by both left and right tensor factors (as the square root of it).
+     Returns an error code (0:success).
      Example of the decomposition of tensor D(a,b,c,d,e):
       D(a,b,c,d,e)=L(d,i,c,j)*M(i,j)*R(e,a,j,b,i)
      This is a hyper-contraction, but the corresponding decomposition pattern
@@ -395,10 +396,21 @@ public:
      This is a hyper-contraction, but the corresponding decomposition pattern
      is still specified as a regular tensor contraction:
       D(a,b,c,d,e)=L(d,i,c,j)*R(e,a,j,b,i)
-     The middle tensor factor is removed,
-     with tensor D redefined according to the above equation. **/
+     The middle tensor factor is removed, with tensor D redefined
+     according to the above equation. **/
  int orthogonalizeSVD(TensorTask * task_handle,         //out: task handle associated with this operation or nullptr (synchronous)
                       const std::string & pattern,      //in: decomposition pattern string (same as the tensor contraction pattern)
+                      const int device_kind = DEV_HOST, //in: execution device kind
+                      const int device_id = 0);         //in: execution device id
+
+ /** Internal tensor orthogonalization via the Modified Gram-Schmidt procedure.
+     The set of tensor dimensions provided in the isometric dimension set argument
+     will form the column space of the corresponding orthogonal matrix,
+     which can either be square or tall rectangular. Thus, the cumulative
+     volume of the complementary tensor dimensions must not exceed the
+     cumulative volume of the isometric dimension set. **/
+ int orthogonalizeMGS(TensorTask * task_handle,         //out: task handle associated with this operation or nullptr (synchronous)
+                      const std::vector<unsigned int> & iso_dims, //in: isometric dimension set (cannot be empty)
                       const int device_kind = DEV_HOST, //in: execution device kind
                       const int device_id = 0);         //in: execution device id
 

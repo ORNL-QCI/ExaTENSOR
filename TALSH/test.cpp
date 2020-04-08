@@ -45,6 +45,7 @@ extern "C"{
 void test_talsh_c(int * ierr);
 void test_talsh_cxx(int * ierr);
 void test_talsh_xl(int * ierr);
+void test_talsh_svd(int * ierr);
 void test_talsh_qc_xl(int * ierr);
 void test_talsh_qc(int * ierr);
 void test_nwchem_c(int * ierr);
@@ -383,6 +384,48 @@ void test_talsh_xl(int * ierr)
   std::cout << " Status = " << done << "; Error " << *ierr << std::endl;
   stens.print(0.0);
   std::cout << " Reference value = " << ((double)(ODIM*VDIM))*((double)(ODIM*VDIM))*(1e-3)*(1e-2) << std::endl;
+ }
+ //Shutdown TAL-SH:
+ talshStats(); //GPU statistics
+ talsh::shutdown();
+ return;
+}
+
+
+void test_talsh_svd(int * ierr)
+{
+ const std::size_t DESKTOP_MEM = 4;  //GB
+ const std::size_t SUMMIT_MEM = 128; //GB
+ const std::size_t HOST_MEM_LIM = DESKTOP_MEM;
+#ifndef NO_GPU
+ const int device = DEV_NVIDIA_GPU;
+#else
+ const int device = DEV_HOST;
+#endif
+ const int device_id = 0; //[0...max] or DEV_DEFAULT (all devices)
+
+ *ierr = 0;
+ //Initialize TAL-SH:
+ std::size_t host_buf_size = std::size_t{1024*1024*1024}*HOST_MEM_LIM;
+ talsh::initialize(&host_buf_size);
+ //Check max buffer/tensor size:
+ if(device != DEV_HOST){
+  std::cout << " Max buffer size on Host             = " << talsh::getDeviceMaxBufferSize(DEV_HOST,0) << std::endl;
+  std::cout << " Max tensor size on Host             = " << talsh::getDeviceMaxTensorSize(DEV_HOST,0) << std::endl;
+ }
+ std::cout << " Max buffer size on execution device = " << talsh::getDeviceMaxBufferSize(device,0) << std::endl;
+ std::cout << " Max tensor size on execution device = " << talsh::getDeviceMaxTensorSize(device,0) << std::endl;
+ //Test body (scoped):
+ {
+  talsh::Tensor dtens({25,20,15,10,5},std::complex<double>{0.0,0.0});
+  talsh::Tensor ltens({15,10,5,20,25},std::complex<double>{0.0,0.0});
+  talsh::Tensor rtens({20,10,10,20},std::complex<double>{0.0,0.0});
+  talsh::Tensor stens({10,20},std::complex<double>{0.0,0.0});
+  const std::string pattern{"D(a,b,c,d,e)=L(c,i,e,j,a)*R(j,d,i,b)"};
+  std::cout << " Decomposing tensor dtens via SVD: " << pattern << ":";
+  *ierr = dtens.decomposeSVD(nullptr,pattern,ltens,rtens,stens,
+                             device_id,device);
+  std::cout << " Status " << *ierr << std::endl;
  }
  //Shutdown TAL-SH:
  talshStats(); //GPU statistics
