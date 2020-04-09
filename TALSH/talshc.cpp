@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2020/04/08
+REVISION: 2020/04/09
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5355,15 +5355,16 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
                             talsh_tens_t * dtens, //in: tensor block to be decomposed
                             talsh_tens_t * ltens, //inout: left tensor factor
                             talsh_tens_t * rtens, //inout: right tensor factor
-                            talsh_tens_t * stens, //out: middle tensor factor (singular values), must be empty on entrance
+                            talsh_tens_t * stens, //out: middle tensor factor (singular values), may be empty on entrance
                             int dev_id,           //in: device id (flat or kind-specific)
                             int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
- int errc,devid,dvn,dvk,cpl,drnk,lrnk,rrnk,srnk,conj_bits,ncd,nlu,nru,i,j;
+ int errc,devid,dvn,dvk,cpl,drnk,lrnk,rrnk,srnk,conj_bits,ncd,nlu,nru,i,j,l;
  int contr_ptrn[MAX_TENSOR_RANK*2],dimg,limg,rimg,simg,dcp,lcp,rcp,scp,dtr,ltr,rtr;
- int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK];
+ int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK],dims[MAX_TENSOR_RANK];
  char perm_sym[512];
  void *dftr,*lftr,*rftr,*sftr;
+ talsh_tens_t vtens,xtens,ytens;
 #ifndef NO_GPU
  tensBlck_t *dctr,*lctr,*rctr,*sctr;
 #endif
@@ -5376,7 +5377,6 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  if(talshTensorIsEmpty(dtens) != NOPE ||
     talshTensorIsEmpty(ltens) != NOPE ||
     talshTensorIsEmpty(rtens) != NOPE) return TALSH_OBJECT_IS_EMPTY;
- if(talshTensorIsEmpty(stens) == NOPE) return TALSH_OBJECT_NOT_EMPTY;
  if(talshTensorIsHealthy(dtens) != YEP ||
     talshTensorIsHealthy(ltens) != YEP ||
     talshTensorIsHealthy(rtens) != YEP) return TALSH_FAILURE;
@@ -5390,6 +5390,17 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  dtr=permutation_trivial(drnk,dprm,1); //base 1
  ltr=permutation_trivial(lrnk,lprm,1); //base 1
  rtr=permutation_trivial(rrnk,rprm,1); //base 1
+ //DEBUG BEGIN
+ printf("#DEBUG(talshTensorDecomposeSVD):");
+ printf("\n Contraction configuration (l,r,c): %d %d %d",nlu,nru,ncd);
+ printf("\n Matricization permutation for dtens (N2O):");
+ for(i=0;i<drnk;++i) printf(" %d",dprm[1+i]);
+ printf("\n Matricization permutation for ltens (O2N):");
+ for(i=0;i<lrnk;++i) printf(" %d",lprm[1+i]);
+ printf("\n Matricization permutation for rtens (O2N):");
+ for(i=0;i<rrnk;++i) printf(" %d",rprm[1+i]);
+ printf("\n#DEBUG END\n");
+ //DEBUG END
  //Determine the execution device (devid:[dvk,dvn]):
  if(dev_kind == DEV_DEFAULT){ //device kind is not specified explicitly
   if(dev_id == DEV_DEFAULT){ //neither specific device nor device kind are specified: Find one
@@ -5410,34 +5421,42 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
    if(talshFlatDevId(dvk,dvn) >= DEV_MAX) return TALSH_INVALID_ARGS;
   }
  }
- //Tensor operation will be executed on device of kind <dvk>.
- errc=TALSH_SUCCESS;
- //Create a copy of the destination tensor:
- 
- //Create a copy of the left tensor factor, if needed:
- if(ltr == 0){ //non-trivial permutation
-  i=0; get_contr_pattern_sym(&lrnk,&rrnk,&i,&(lprm[1]),perm_sym,&j,&errc);
-  if(errc) return TALSH_FAILURE;
-  
- }
- //Create a copy of the right tensor factor, if needed:
- 
- //Create the middle tensor factor:
- 
- //Perform the tensor decomposition via SVD:
- // Choose the tensor body image for each tensor argument:
+ printf("#DEBUG(talshTensorDecomposeSVD): Execution device (kind,id): %d %d\n",dvk,dvn);
+ //Perform the tensor decomposition via SVD on device of kind <dvk>:
+ errc=TALSH_SUCCESS; return errc;
+ // Choose the tensor body image for each original tensor argument:
  dimg=talsh_choose_image_for_device(dtens,COPY_T,&dcp,dvk,dvn);
  limg=talsh_choose_image_for_device(ltens,COPY_M,&lcp,dvk,dvn);
  rimg=talsh_choose_image_for_device(rtens,COPY_M,&rcp,dvk,dvn);
- simg=talsh_choose_image_for_device(stens,COPY_T,&scp,dvk,dvn);
- if(dimg < 0 || limg < 0 || rimg < 0 || simg < 0) return TALSH_FAILURE;
+ if(dimg < 0 || limg < 0 || rimg < 0) return TALSH_FAILURE;
  // Check data kind of each image (must match):
  if(dtens->data_kind[dimg] != ltens->data_kind[limg] ||
     dtens->data_kind[dimg] != rtens->data_kind[rimg] ||
-    dtens->data_kind[dimg] != stens->data_kind[simg] ||
-    ltens->data_kind[limg] != rtens->data_kind[rimg] ||
-    ltens->data_kind[limg] != stens->data_kind[simg] ||
-    rtens->data_kind[rimg] != stens->data_kind[simg]) return TALSH_INVALID_ARGS;
+    ltens->data_kind[limg] != rtens->data_kind[rimg]) return TALSH_FAILURE;
+ // Create the middle tensor factor stens if it is empty:
+ if(talshTensorIsEmpty(stens) != NOPE){
+  //`Determine tensor shape in dims[0:srnk-1]
+  errc=talshTensorConstruct(stens,ltens->data_kind[limg],srnk,dims,talshFlatDevId(dvk,dvn),NULL);
+  if(errc != TALSH_SUCCESS) return errc;
+ }
+ simg=talsh_choose_image_for_device(stens,COPY_T,&scp,dvk,dvn);
+ if(stens->data_kind[simg] != ltens->data_kind[limg]) return TALSH_FAILURE;
+ //Create a copy of the destination tensor on the execution device:
+ errc=talshTensorClean(&vtens); if(errc != TALSH_SUCCESS) return errc;
+ errc=talshTensorConstruct(&vtens,dtens->data_kind[dimg],drnk,dims,talshFlatDevId(dvk,dvn),NULL);
+ if(errc != TALSH_SUCCESS) return errc;
+ i=0; j=0; get_contr_pattern_sym(&drnk,&j,&i,&(dprm[1]),perm_sym,&l,&errc);
+ if(errc) return TALSH_FAILURE;
+ errc=talshTensorCopy(perm_sym,&vtens,dtens,dvn,dvk,COPY_MT);
+ if(errc != TALSH_SUCCESS) return errc;
+ //Create a copy of the left tensor factor, if needed:
+ if(ltr == 0){ //non-trivial permutation
+  i=0; j=0; get_contr_pattern_sym(&lrnk,&j,&i,&(lprm[1]),perm_sym,&l,&errc);
+  if(errc) return TALSH_FAILURE;
+
+ }
+ //Create a copy of the right tensor factor, if needed:
+
  // Schedule tensor operation via the device-kind specific runtime:
  switch(dvk){
   case DEV_HOST:

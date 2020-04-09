@@ -454,7 +454,7 @@ void test_talsh_svd(int * ierr)
   //Perform tensor decomposition via SVD of tensor dtens:
   const std::string pattern{"D(a,b,c,d,e)=L(c,i,e,j,a)*R(j,d,i,b)"};
   std::cout << " Performing tensor decomposition of tensor dtens via SVD: " << pattern << " ... ";
-  //*ierr = dtens.decomposeSVD(nullptr,pattern,ltens,rtens,stens,device,device_id);
+  *ierr = dtens.decomposeSVD(nullptr,pattern,ltens,rtens,stens,device,device_id);
   std::cout << " Status " << *ierr;
   if(*ierr != TALSH_SUCCESS){
    std::cout << ": Failed!" << std::endl;

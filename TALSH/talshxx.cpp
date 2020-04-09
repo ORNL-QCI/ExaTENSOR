@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2020/04/08
+REVISION: 2020/04/09
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -440,7 +440,7 @@ int Tensor::decomposeSVD(TensorTask * task_handle,    //out: task handle associa
                          const std::string & pattern, //in: decomposition pattern string (same as the tensor contraction pattern)
                          Tensor & left,               //out: left tensor factor
                          Tensor & right,              //out: right tensor factor
-                         Tensor & middle,             //out: middle tensor factor (must be empty on entrance)
+                         Tensor & middle,             //out: middle tensor factor (may be empty on entrance)
                          const int device_kind,       //in: execution device kind
                          const int device_id)         //in: execution device id
 {
@@ -453,7 +453,7 @@ int Tensor::decomposeSVD(TensorTask * task_handle,    //out: task handle associa
  talsh_tens_t * ltens = left.getTalshTensorPtr();
  talsh_tens_t * rtens = right.getTalshTensorPtr();
  talsh_tens_t * stens = middle.getTalshTensorPtr();
- task_handle->clean();
+ if(task_handle != nullptr) task_handle->clean();
  errc = talshTensorDecomposeSVD(contr_ptrn,dtens,ltens,rtens,stens,device_id,device_kind);
  return errc;
 }
@@ -474,7 +474,7 @@ int Tensor::decomposeSVDL(TensorTask * task_handle,    //out: task handle associ
  talsh_tens_t * dtens = this->getTalshTensorPtr();
  talsh_tens_t * ltens = left.getTalshTensorPtr();
  talsh_tens_t * rtens = right.getTalshTensorPtr();
- task_handle->clean();
+ if(task_handle != nullptr) task_handle->clean();
  errc = talshTensorDecomposeSVDL(contr_ptrn,dtens,ltens,rtens,device_id,device_kind);
  return errc;
 }
@@ -495,7 +495,7 @@ int Tensor::decomposeSVDR(TensorTask * task_handle,    //out: task handle associ
  talsh_tens_t * dtens = this->getTalshTensorPtr();
  talsh_tens_t * ltens = left.getTalshTensorPtr();
  talsh_tens_t * rtens = right.getTalshTensorPtr();
- task_handle->clean();
+ if(task_handle != nullptr) task_handle->clean();
  errc = talshTensorDecomposeSVDR(contr_ptrn,dtens,ltens,rtens,device_id,device_kind);
  return errc;
 }
@@ -516,7 +516,7 @@ int Tensor::decomposeSVDLR(TensorTask * task_handle,    //out: task handle assoc
  talsh_tens_t * dtens = this->getTalshTensorPtr();
  talsh_tens_t * ltens = left.getTalshTensorPtr();
  talsh_tens_t * rtens = right.getTalshTensorPtr();
- task_handle->clean();
+ if(task_handle != nullptr) task_handle->clean();
  errc = talshTensorDecomposeSVDLR(contr_ptrn,dtens,ltens,rtens,device_id,device_kind);
  return errc;
 }
@@ -531,7 +531,7 @@ int Tensor::orthogonalizeSVD(TensorTask * task_handle,    //out: task handle ass
  this->completeWriteTask();
  const char * contr_ptrn = pattern.c_str();
  talsh_tens_t * dtens = this->getTalshTensorPtr();
- task_handle->clean();
+ if(task_handle != nullptr) task_handle->clean();
  errc = talshTensorOrthogonalizeSVD(contr_ptrn,dtens,device_id,device_kind);
  return errc;
 }
@@ -549,7 +549,7 @@ int Tensor::orthogonalizeMGS(TensorTask * task_handle, //out: task handle associ
  assert(num_iso_dims > 0);
  int isodims[num_iso_dims];
  for(int i = 0; i < num_iso_dims; ++i) isodims[i] = static_cast<int>(iso_dims[i]);
- task_handle->clean();
+ if(task_handle != nullptr) task_handle->clean();
  errc = talshTensorOrthogonalizeMGS(dtens,num_iso_dims,isodims,device_id,device_kind);
  return errc;
 }

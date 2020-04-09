@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2020/04/08
+REVISION: 2020/04/09
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -339,7 +339,7 @@ public:
                   const std::string & pattern,      //in: decomposition pattern string (same as the tensor contraction pattern)
                   Tensor & left,                    //out: left tensor factor
                   Tensor & right,                   //out: right tensor factor
-                  Tensor & middle,                  //out: middle tensor factor (must be empty on entrance)
+                  Tensor & middle,                  //out: middle tensor factor (may be empty on entrance)
                   const int device_kind = DEV_HOST, //in: execution device kind
                   const int device_id = 0);         //in: execution device id
 
