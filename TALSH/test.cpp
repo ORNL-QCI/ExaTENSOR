@@ -417,15 +417,70 @@ void test_talsh_svd(int * ierr)
  std::cout << " Max tensor size on execution device = " << talsh::getDeviceMaxTensorSize(device,0) << std::endl;
  //Test body (scoped):
  {
-  talsh::Tensor dtens({25,20,15,10,5},std::complex<double>{0.0,0.0});
-  talsh::Tensor ltens({15,10,5,20,25},std::complex<double>{0.0,0.0});
-  talsh::Tensor rtens({20,10,10,20},std::complex<double>{0.0,0.0});
-  talsh::Tensor stens({10,20},std::complex<double>{0.0,0.0});
+  //Create tensors on Host:
+  std::cout << " Creating tensors ... ";
+  talsh::Tensor btens({5,10,15,20,25},std::complex<float>{0.0,0.0});
+  talsh::Tensor dtens({25,20,15,10,5},std::complex<float>{0.0,0.0});
+  talsh::Tensor ltens({15,10,5,20,25},std::complex<float>{0.0,0.0});
+  talsh::Tensor rtens({20,10,10,20},std::complex<float>{0.0,0.0});
+  talsh::Tensor stens({10,20},std::complex<float>{0.0,0.0});
+  std::cout << "Success" << std::endl;
+  //Initialize tensor btens to a random value:
+  std::cout << " Initializing tensor btens ... ";
+  std::complex<float> * tens_body;
+  bool success = btens.getDataAccessHost(&tens_body);
+  if(!success){
+   std::cout << "#ERROR: Unable to get access to the body of tensor btens!" << std::endl;
+   *ierr=1; return;
+  }
+  auto vol = btens.getVolume(); if(vol == 0){*ierr=2; return;}
+  for(decltype(vol) i = 0; i < vol; ++i)
+   tens_body[i] = std::complex<float>{static_cast<float>(i)*(1e-4f),-(static_cast<float>(i)*(1e-5f))};
+  std::cout << "Success" << std::endl;
+  double norm1;
+  *ierr = btens.norm1(nullptr,&norm1);
+  std::cout << " 1-norm of tensor btens = " << norm1 << std::endl;
+  //Copy/permute tensor btens into tensor dtens:
+  std::cout << " Copy-permuting tensor btens into dtens ... ";
+  *ierr = dtens.copyBody(nullptr,"D(a,b,c,d,e)=B(e,d,c,b,a)",btens,device,device_id);
+  std::cout << " Status " << *ierr;
+  if(*ierr != TALSH_SUCCESS){
+   std::cout << ": Failed!" << std::endl;
+   *ierr=3; return;
+  }
+  std::cout << ": Success" << std::endl;
+  *ierr = dtens.norm1(nullptr,&norm1);
+  std::cout << " 1-norm of tensor dtens = " << norm1 << std::endl;
+  //Perform tensor decomposition via SVD of tensor dtens:
   const std::string pattern{"D(a,b,c,d,e)=L(c,i,e,j,a)*R(j,d,i,b)"};
-  std::cout << " Decomposing tensor dtens via SVD: " << pattern << ":";
-  *ierr = dtens.decomposeSVD(nullptr,pattern,ltens,rtens,stens,
-                             device_id,device);
-  std::cout << " Status " << *ierr << std::endl;
+  std::cout << " Performing tensor decomposition of tensor dtens via SVD: " << pattern << " ... ";
+  //*ierr = dtens.decomposeSVD(nullptr,pattern,ltens,rtens,stens,device,device_id);
+  std::cout << " Status " << *ierr;
+  if(*ierr != TALSH_SUCCESS){
+   std::cout << ": Failed!" << std::endl;
+   *ierr=4; return;
+  }
+  std::cout << ": Success" << std::endl;
+  //Accumulate tensor dtens into tensor btens with reverse permutation and inverse sign:
+  std::cout << " Accumulating tensor dtens into tensor btens with reverse permutation and inverse sign ... ";
+  *ierr = btens.accumulate(nullptr,"B(a,b,c,d,e)+=D(e,d,c,b,a)",dtens,device,device_id,std::complex<float>{-1.0f,0.0f});
+  std::cout << " Status " << *ierr;
+  if(*ierr != TALSH_SUCCESS){
+   std::cout << ": Failed!" << std::endl;
+   *ierr=5; return;
+  }
+  std::cout << ": Success" << std::endl;
+  //Inspect the norm of tensor btens (must be zero):
+  std::cout << " Syncing tensor btens on Host ... ";
+  success = btens.sync(DEV_HOST,0,nullptr,true);
+  if(!success){
+   std::cout << ": Failed!" << std::endl;
+   *ierr=6; return;
+  }
+  std::cout << ": Success" << std::endl;
+  *ierr = btens.norm1(nullptr,&norm1);
+  std::cout << " 1-norm of tensor btens (must be zero) = " << norm1 << std::endl;
+  if(std::abs(norm1) > 1e-6) *ierr=7;
  }
  //Shutdown TAL-SH:
  talshStats(); //GPU statistics
