@@ -5483,6 +5483,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  //Create a copy of the left tensor factor, if needed:
  ldims=talshTensorDimExtents(ltens,&j); if(j != lrnk) return TALSH_FAILURE;
  if(ltr == 0){ //non-trivial permutation
+  errc=talshTensorClean(&xtens); if(errc != TALSH_SUCCESS) return errc;
   for(i=0;i<lrnk;++i) dims[lprm[1+i]-1]=ldims[i];
   errc=talshTensorConstruct(&xtens,ltens->data_kind[limg],lrnk,dims,talshFlatDevId(dvk,dvn),NULL);
   printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted left tensor xtens with status %d\n",errc);
@@ -5500,6 +5501,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  }
  //Create a copy of the right tensor factor, if needed:
  if(rtr == 0){ //non-trivial permutation
+  errc=talshTensorClean(&ytens); if(errc != TALSH_SUCCESS) return errc;
   for(i=0;i<rrnk;++i) dims[rprm[1+i]-1]=rdims[i];
   errc=talshTensorConstruct(&ytens,rtens->data_kind[rimg],rrnk,dims,talshFlatDevId(dvk,dvn),NULL);
   printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted right tensor ytens with status %d\n",errc);

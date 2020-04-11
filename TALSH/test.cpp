@@ -454,13 +454,15 @@ void test_talsh_svd(int * ierr)
   //Perform tensor decomposition via SVD of tensor dtens:
   const std::string pattern{"D(a,b,c,d,e)=L(c,i,e,j,a)*R(j,d,i,b)"};
   std::cout << " Performing tensor decomposition of tensor dtens via SVD: " << pattern << " ... ";
-  *ierr = dtens.decomposeSVD(nullptr,pattern,ltens,rtens,stens,device,device_id);
+  *ierr = dtens.decomposeSVD(nullptr,pattern,ltens,rtens,stens,DEV_HOST,0);
   std::cout << " Status " << *ierr;
   if(*ierr != TALSH_SUCCESS){
    std::cout << ": Failed!" << std::endl;
    *ierr=4; return;
   }
   std::cout << ": Success" << std::endl;
+  //Reconstruct tensor dtens from its SVD factors:
+  //`Finish
   //Accumulate tensor dtens into tensor btens with reverse permutation and inverse sign:
   std::cout << " Accumulating tensor dtens into tensor btens with reverse permutation and inverse sign ... ";
   *ierr = btens.accumulate(nullptr,"B(a,b,c,d,e)+=D(e,d,c,b,a)",dtens,device,device_id,std::complex<float>{-1.0f,0.0f});

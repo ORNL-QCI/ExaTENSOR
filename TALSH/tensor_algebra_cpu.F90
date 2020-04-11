@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/03/24
+!REVISION: 2020/04/11
 
 !Copyright (C) 2013-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -4268,8 +4268,10 @@
         complex(4), pointer, contiguous:: dmc4(:,:),lmc4(:,:),rmc4(:,:),wrkc4(:)
         complex(8), pointer, contiguous:: dmc8(:,:),lmc8(:,:),rmc8(:,:),wrkc8(:)
         integer, allocatable:: iwork(:)
+        real(8):: time_beg
 
         ierr=0
+        time_beg=thread_wtime()
  !Get tensor ranks:
         drank=dtens%tensor_shape%num_dim
         lrank=ltens%tensor_shape%num_dim
@@ -4307,6 +4309,7 @@
             dmr4(1:lu,1:ru)=>dtens%data_real4
             lmr4(1:lu,1:nv)=>ltens%data_real4
             rmr4(1:nv,1:ru)=>rtens%data_real4
+            sv4=>NULL()
             ierr=array_alloc(sv4,mlr,in_buffer=.TRUE.,fallback=.TRUE.)
             if(ierr.eq.0) then
              allocate(iwork(12*mlr),STAT=ierr)
@@ -4317,6 +4320,7 @@
                           &rmr4,int(nv,kind=4),wr4,-1,iwork,info)
               if(info.eq.0) then
                lwork=int(wr4(1))+1
+               wrkr4=>NULL()
                ierr=array_alloc(wrkr4,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
                if(ierr.eq.0) then
                 call sgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmr4,int(lu,kind=4),&
@@ -4352,6 +4356,7 @@
             dmr8(1:lu,1:ru)=>dtens%data_real8
             lmr8(1:lu,1:nv)=>ltens%data_real8
             rmr8(1:nv,1:ru)=>rtens%data_real8
+            sv8=>NULL()
             ierr=array_alloc(sv8,mlr,in_buffer=.TRUE.,fallback=.TRUE.)
             if(ierr.eq.0) then
              allocate(iwork(12*mlr),STAT=ierr)
@@ -4362,6 +4367,7 @@
                           &rmr8,int(nv,kind=4),wr8,-1,iwork,info)
               if(info.eq.0) then
                lwork=int(wr8(1))+1
+               wrkr8=>NULL()
                ierr=array_alloc(wrkr8,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
                if(ierr.eq.0) then
                 call dgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmr8,int(lu,kind=4),&
@@ -4397,8 +4403,10 @@
             dmc4(1:lu,1:ru)=>dtens%data_cmplx4
             lmc4(1:lu,1:nv)=>ltens%data_cmplx4
             rmc4(1:nv,1:ru)=>rtens%data_cmplx4
+            rwrk4=>NULL()
             ierr=array_alloc(rwrk4,lrwork,in_buffer=.TRUE.,fallback=.TRUE.)
             if(ierr.eq.0) then
+             sv4=>NULL()
              ierr=array_alloc(sv4,mlr,in_buffer=.TRUE.,fallback=.TRUE.)
              if(ierr.eq.0) then
               allocate(iwork(12*mlr),STAT=ierr)
@@ -4409,6 +4417,7 @@
                            &rmc4,int(nv,kind=4),wc4,-1,rwrk4,iwork,info)
                if(info.eq.0) then
                 lwork=int(real(wc4(1)))+1
+                wrkc4=>NULL()
                 ierr=array_alloc(wrkc4,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
                 if(ierr.eq.0) then
                  call cgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc4,int(lu,kind=4),&
@@ -4448,8 +4457,10 @@
             dmc8(1:lu,1:ru)=>dtens%data_cmplx8
             lmc8(1:lu,1:nv)=>ltens%data_cmplx8
             rmc8(1:nv,1:ru)=>rtens%data_cmplx8
+            rwrk8=>NULL()
             ierr=array_alloc(rwrk8,lrwork,in_buffer=.TRUE.,fallback=.TRUE.)
             if(ierr.eq.0) then
+             sv8=>NULL()
              ierr=array_alloc(sv8,mlr,in_buffer=.TRUE.,fallback=.TRUE.)
              if(ierr.eq.0) then
               allocate(iwork(12*mlr),STAT=ierr)
@@ -4460,6 +4471,7 @@
                            &rmc8,int(nv,kind=4),wc8,-1,rwrk8,iwork,info)
                if(info.eq.0) then
                 lwork=int(real(wc8(1)))+1
+                wrkc8=>NULL()
                 ierr=array_alloc(wrkc8,int(lwork,kind=LONGINT),in_buffer=.TRUE.,fallback=.TRUE.)
                 if(ierr.eq.0) then
                  call zgesvdx('V','V','I',int(lu,kind=4),int(ru,kind=4),dmc8,int(lu,kind=4),&
@@ -4510,6 +4522,8 @@
         if(VERBOSE.and.ierr.ne.0) then
          write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): Error ",i11)') ierr
         endif
+        write(CONS_OUT,'("#DEBUG(CP-TAL:tensor_block_decompose_svd): Time (s) = ",F12.6,": Status ",i11)')&
+        &thread_wtime()-time_beg,ierr !debug
         return
 
         contains
