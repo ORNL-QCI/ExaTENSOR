@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2020/04/09
+REVISION: 2020/04/11
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -269,7 +269,8 @@ extern "C"{
  size_t talshTensorSizeAllImages(const talsh_tens_t * tens_block,
                                  int * num_images);
 //  Get tensor dimension extents:
- const int * talshTensorDimExtents(const talsh_tens_t * tens_block, int * rank);
+ const int * talshTensorDimExtents(const talsh_tens_t * tens_block,
+                                   int * rank);
 //  Get the shape of the tensor block:
  int talshTensorShape(const talsh_tens_t * tens_block,
                       talsh_tens_shape_t * tens_shape);

@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2020/04/09
+REVISION: 2020/04/11
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -3662,7 +3662,7 @@ int talshTensorInit(talsh_tens_t * dtens,
    //Mark source images unavailable:
    dtens->avail[0] = NOPE;
    //Schedule tensor operation via the device-kind specific runtime:
-   errc=gpu_tensor_block_init(dctr,val_real,coh_ctrl,cuda_task,dvn); //non-blocking call
+   errc=gpu_tensor_block_init(dctr,val_real,val_imag,coh_ctrl,cuda_task,dvn); //non-blocking call
    dvn=cuda_task_gpu_id(cuda_task);
    if(errc || dvn < 0){ //in case of error, CUDA task has already been finalized (with error) without coherence control
     if(errc == TRY_LATER || errc == DEVICE_UNABLE){
@@ -5359,12 +5359,13 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
                             int dev_id,           //in: device id (flat or kind-specific)
                             int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
- int errc,devid,dvn,dvk,cpl,drnk,lrnk,rrnk,srnk,conj_bits,ncd,nlu,nru,i,j,l;
+ int errc,ier,devid,dvn,dvk,cpl,drnk,lrnk,rrnk,srnk,conj_bits,ncd,nlu,nru,i,j,k,l;
  int contr_ptrn[MAX_TENSOR_RANK*2],dimg,limg,rimg,simg,dcp,lcp,rcp,scp,dtr,ltr,rtr;
  int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK],dims[MAX_TENSOR_RANK];
+ const int *ddims,*ldims,*rdims,*sdims;
  char perm_sym[512];
  void *dftr,*lftr,*rftr,*sftr;
- talsh_tens_t vtens,xtens,ytens;
+ talsh_tens_t xtens,ytens,ztens,*utens,*vtens;
 #ifndef NO_GPU
  tensBlck_t *dctr,*lctr,*rctr,*sctr;
 #endif
@@ -5387,11 +5388,12 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  cpl=lrnk+rrnk;
  get_contr_permutations(0,0,lrnk,rrnk,contr_ptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc);
  if(errc) return TALSH_FAILURE;
+ if(nlu <= 0 || nru <= 0 || ncd <= 0) return TALSH_INVALID_ARGS;
  dtr=permutation_trivial(drnk,dprm,1); //base 1
  ltr=permutation_trivial(lrnk,lprm,1); //base 1
  rtr=permutation_trivial(rrnk,rprm,1); //base 1
  //DEBUG BEGIN
- printf("#DEBUG(talshTensorDecomposeSVD):");
+ printf("\n#DEBUG(talshTensorDecomposeSVD):");
  printf("\n Contraction configuration (l,r,c): %d %d %d",nlu,nru,ncd);
  printf("\n Matricization permutation for dtens (N2O):");
  for(i=0;i<drnk;++i) printf(" %d",dprm[1+i]);
@@ -5423,7 +5425,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  }
  printf("#DEBUG(talshTensorDecomposeSVD): Execution device (kind,id): %d %d\n",dvk,dvn);
  //Perform the tensor decomposition via SVD on device of kind <dvk>:
- errc=TALSH_SUCCESS; return errc;
+ errc=TALSH_SUCCESS;
  // Choose the tensor body image for each original tensor argument:
  dimg=talsh_choose_image_for_device(dtens,COPY_T,&dcp,dvk,dvn);
  limg=talsh_choose_image_for_device(ltens,COPY_M,&lcp,dvk,dvn);
@@ -5434,43 +5436,99 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
     dtens->data_kind[dimg] != rtens->data_kind[rimg] ||
     ltens->data_kind[limg] != rtens->data_kind[rimg]) return TALSH_FAILURE;
  // Create the middle tensor factor stens if it is empty:
- if(talshTensorIsEmpty(stens) != NOPE){
-  //`Determine tensor shape in dims[0:srnk-1]
-  errc=talshTensorConstruct(stens,ltens->data_kind[limg],srnk,dims,talshFlatDevId(dvk,dvn),NULL);
+ rdims=talshTensorDimExtents(rtens,&j); if(j != rrnk) return TALSH_FAILURE;
+ if(talshTensorIsEmpty(stens) == NOPE){
+  sdims=talshTensorDimExtents(stens,&srnk); if(srnk != ncd) return TALSH_INVALID_ARGS;
+  l=0;
+  for(i=0;i<rrnk;++i){ //old position in rtens
+   j=rprm[1+i]-1; //new position in rtens
+   if(j < srnk){ //contracted position
+    dims[j]=rdims[i];
+    if(sdims[j] != rdims[i]) l=1;
+   }
+  }
+  if(l != 0){ //stens needs to be reshaped
+   errc=talshTensorReshape(stens,srnk,dims);
+   printf("#DEBUG(talshTensorDecomposeSVD): Reshaped middle tensor to [");
+   for(i=0;i<srnk;++i) printf(" %d",dims[i]); printf(" ] with status %d\n",errc); //debug
+   if(errc != TALSH_SUCCESS) return errc;
+  }
+ }else{
+  srnk=ncd;
+  for(i=0;i<rrnk;++i){ //determine the shape of stens
+   j=rprm[1+i]-1;
+   if(j < srnk) dims[j]=rdims[i];
+  }
+  errc=talshTensorConstruct(stens,rtens->data_kind[rimg],srnk,dims,talshFlatDevId(dvk,dvn),NULL);
+  printf("#DEBUG(talshTensorDecomposeSVD): Constructed middle tensor stens with status %d\n",errc);
+  if(errc == NOT_CLEAN) errc=TALSH_SUCCESS; //tensor initialization failure is irrelevant here
   if(errc != TALSH_SUCCESS) return errc;
  }
  simg=talsh_choose_image_for_device(stens,COPY_T,&scp,dvk,dvn);
- if(stens->data_kind[simg] != ltens->data_kind[limg]) return TALSH_FAILURE;
+ if(stens->data_kind[simg] != rtens->data_kind[rimg]) return TALSH_INVALID_ARGS;
  //Create a copy of the destination tensor on the execution device:
- errc=talshTensorClean(&vtens); if(errc != TALSH_SUCCESS) return errc;
- errc=talshTensorConstruct(&vtens,dtens->data_kind[dimg],drnk,dims,talshFlatDevId(dvk,dvn),NULL);
+ errc=talshTensorClean(&ztens); if(errc != TALSH_SUCCESS) return errc;
+ ddims=talshTensorDimExtents(dtens,&j); if(j != drnk) return TALSH_FAILURE;
+ for(i=0;i<drnk;++i) dims[i] = ddims[dprm[1+i]-1]; //permuted dimensions of dtens
+ errc=talshTensorConstruct(&ztens,dtens->data_kind[dimg],drnk,dims,talshFlatDevId(dvk,dvn),NULL);
+ printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted destination tensor ztens with status %d\n",errc);
+ if(errc == NOT_CLEAN) errc=TALSH_SUCCESS; //tensor initialization failure is irrelevant here
  if(errc != TALSH_SUCCESS) return errc;
  i=0; j=0; get_contr_pattern_sym(&drnk,&j,&i,&(dprm[1]),perm_sym,&l,&errc);
  if(errc) return TALSH_FAILURE;
- errc=talshTensorCopy(perm_sym,&vtens,dtens,dvn,dvk,COPY_MT);
+ errc=talshTensorCopy(perm_sym,&ztens,dtens,dvn,dvk,COPY_MT);
+ printf("#DEBUG(talshTensorDecomposeSVD): Copied body of permuted destination tensor ztens with status %d\n",errc);
  if(errc != TALSH_SUCCESS) return errc;
+ dimg=talsh_choose_image_for_device(&ztens,COPY_T,&dcp,dvk,dvn);
  //Create a copy of the left tensor factor, if needed:
+ ldims=talshTensorDimExtents(ltens,&j); if(j != lrnk) return TALSH_FAILURE;
  if(ltr == 0){ //non-trivial permutation
+  for(i=0;i<lrnk;++i) dims[lprm[1+i]-1]=ldims[i];
+  errc=talshTensorConstruct(&xtens,ltens->data_kind[limg],lrnk,dims,talshFlatDevId(dvk,dvn),NULL);
+  printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted left tensor xtens with status %d\n",errc);
+  if(errc == NOT_CLEAN) errc=TALSH_SUCCESS; //tensor initialization failure is irrelevant here
+  if(errc != TALSH_SUCCESS) return errc;
   i=0; j=0; get_contr_pattern_sym(&lrnk,&j,&i,&(lprm[1]),perm_sym,&l,&errc);
   if(errc) return TALSH_FAILURE;
-
+  errc=talshTensorCopy(perm_sym,&xtens,ltens,dvn,dvk,COPY_MT);
+  printf("#DEBUG(talshTensorDecomposeSVD): Copied body of permuted left tensor xtens with status %d\n",errc);
+  if(errc != TALSH_SUCCESS) return errc;
+  limg=talsh_choose_image_for_device(&xtens,COPY_T,&dcp,dvk,dvn);
+  utens=&xtens;
+ }else{
+  utens=ltens;
  }
  //Create a copy of the right tensor factor, if needed:
-
+ if(rtr == 0){ //non-trivial permutation
+  for(i=0;i<rrnk;++i) dims[rprm[1+i]-1]=rdims[i];
+  errc=talshTensorConstruct(&ytens,rtens->data_kind[rimg],rrnk,dims,talshFlatDevId(dvk,dvn),NULL);
+  printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted right tensor ytens with status %d\n",errc);
+  if(errc == NOT_CLEAN) errc=TALSH_SUCCESS; //tensor initialization failure is irrelevant here
+  if(errc != TALSH_SUCCESS) return errc;
+  i=0; j=0; get_contr_pattern_sym(&rrnk,&j,&i,&(rprm[1]),perm_sym,&l,&errc);
+  if(errc) return TALSH_FAILURE;
+  errc=talshTensorCopy(perm_sym,&ytens,rtens,dvn,dvk,COPY_MT);
+  printf("#DEBUG(talshTensorDecomposeSVD): Copied body of permuted right tensor ytens with status %d\n",errc);
+  if(errc != TALSH_SUCCESS) return errc;
+  rimg=talsh_choose_image_for_device(&ytens,COPY_T,&dcp,dvk,dvn);
+  vtens=&ytens;
+ }else{
+  vtens=rtens;
+ }
  // Schedule tensor operation via the device-kind specific runtime:
  switch(dvk){
   case DEV_HOST:
    //Associate TAL-SH tensor images with <tensor_block_t> objects:
-   errc=talsh_tensor_f_assoc(dtens,dimg,&dftr);
+   errc=talsh_tensor_f_assoc(&ztens,dimg,&dftr);
    if(errc || dftr == NULL){
     return TALSH_FAILURE;
    }
-   errc=talsh_tensor_f_assoc(ltens,limg,&lftr);
+   errc=talsh_tensor_f_assoc(utens,limg,&lftr);
    if(errc || lftr == NULL){
     errc=talsh_tensor_f_dissoc(dftr);
     return TALSH_FAILURE;
    }
-   errc=talsh_tensor_f_assoc(rtens,rimg,&rftr);
+   errc=talsh_tensor_f_assoc(vtens,rimg,&rftr);
    if(errc || rftr == NULL){
     errc=talsh_tensor_f_dissoc(lftr);
     errc=talsh_tensor_f_dissoc(dftr);
@@ -5485,7 +5543,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
    }
    devid=talshFlatDevId(DEV_HOST,0); //execution device
    //Discard all output images except the source one:
-   errc=talsh_tensor_image_discard_other(ltens,limg); //the only remaining image 0 is the source image
+   errc=talsh_tensor_image_discard_other(utens,limg); //the only remaining image 0 is the source image
    if(errc != TALSH_SUCCESS){
     j=talsh_tensor_f_dissoc(sftr); if(j) errc=TALSH_FAILURE;
     j=talsh_tensor_f_dissoc(rftr); if(j) errc=TALSH_FAILURE;
@@ -5493,7 +5551,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
     j=talsh_tensor_f_dissoc(dftr); if(j) errc=TALSH_FAILURE;
     return errc;
    }
-   errc=talsh_tensor_image_discard_other(rtens,rimg); //the only remaining image 0 is the source image
+   errc=talsh_tensor_image_discard_other(vtens,rimg); //the only remaining image 0 is the source image
    if(errc != TALSH_SUCCESS){
     j=talsh_tensor_f_dissoc(sftr); if(j) errc=TALSH_FAILURE;
     j=talsh_tensor_f_dissoc(rftr); if(j) errc=TALSH_FAILURE;
@@ -5510,40 +5568,40 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
     return errc;
    }
    //Mark source images unavailable:
-   dtens->avail[dimg] = NOPE;
-   ltens->avail[0] = NOPE;
-   rtens->avail[0] = NOPE;
+   ztens.avail[dimg] = NOPE;
+   utens->avail[0] = NOPE;
+   vtens->avail[0] = NOPE;
    stens->avail[0] = NOPE;
    //Schedule tensor operation via the device-kind specific runtime:
    errc=cpu_tensor_block_decompose_svd(dftr,lftr,rftr,sftr); //blocking call
+   printf("#DEBUG(talshTensorDecomposeSVD): Executed SVD on CPU with status %d\n",errc);
    //Dissociate <tensor_block_t> objects:
    j=talsh_tensor_f_dissoc(sftr); if(j) errc=TALSH_FAILURE;
    j=talsh_tensor_f_dissoc(rftr); if(j) errc=TALSH_FAILURE;
    j=talsh_tensor_f_dissoc(lftr); if(j) errc=TALSH_FAILURE;
    j=talsh_tensor_f_dissoc(dftr); if(j) errc=TALSH_FAILURE;
    //Coherence control:
-   dtens->avail[dimg] = YEP;
-   ltens->avail[0] = YEP;
-   rtens->avail[0] = YEP;
+   ztens.avail[dimg] = YEP;
+   utens->avail[0] = YEP;
+   vtens->avail[0] = YEP;
    stens->avail[0] = YEP;
    if(errc){ //task error
     if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
-    return errc;
    }
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
    //Associate TAL-SH tensor images with <tensBlck_t> objects:
-   errc=talsh_tensor_c_assoc(dtens,dimg,&dctr);
+   errc=talsh_tensor_c_assoc(&ztens,dimg,&dctr);
    if(errc || dctr == NULL){
     if(errc != TRY_LATER){return TALSH_FAILURE;}else{return errc;}
    }
-   errc=talsh_tensor_c_assoc(ltens,limg,&lctr);
+   errc=talsh_tensor_c_assoc(utens,limg,&lctr);
    if(errc || lctr == NULL){
     j=talsh_tensor_c_dissoc(dctr);
     if(errc != TRY_LATER){return TALSH_FAILURE;}else{return errc;}
    }
-   errc=talsh_tensor_c_assoc(rtens,rimg,&rctr);
+   errc=talsh_tensor_c_assoc(vtens,rimg,&rctr);
    if(errc || rctr == NULL){
     j=talsh_tensor_c_dissoc(lctr);
     j=talsh_tensor_c_dissoc(dctr);
@@ -5558,7 +5616,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
    }
    devid=talshFlatDevId(dvk,dvn); //execution device
    //Discard all output images except the source one:
-   errc=talsh_tensor_image_discard_other(ltens,limg); //the only remaining image 0 is the source image
+   errc=talsh_tensor_image_discard_other(utens,limg); //the only remaining image 0 is the source image
    if(errc != TALSH_SUCCESS){
     j=talsh_tensor_c_dissoc(sctr); if(j) errc=TALSH_FAILURE;
     j=talsh_tensor_c_dissoc(rctr); if(j) errc=TALSH_FAILURE;
@@ -5566,7 +5624,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
     j=talsh_tensor_c_dissoc(dctr); if(j) errc=TALSH_FAILURE;
     return errc;
    }
-   errc=talsh_tensor_image_discard_other(rtens,rimg); //the only remaining image 0 is the source image
+   errc=talsh_tensor_image_discard_other(vtens,rimg); //the only remaining image 0 is the source image
    if(errc != TALSH_SUCCESS){
     j=talsh_tensor_c_dissoc(sctr); if(j) errc=TALSH_FAILURE;
     j=talsh_tensor_c_dissoc(rctr); if(j) errc=TALSH_FAILURE;
@@ -5583,9 +5641,9 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
     return errc;
    }
    //Mark source images unavailable:
-   dtens->avail[dimg] = NOPE;
-   ltens->avail[0] = NOPE;
-   rtens->avail[0] = NOPE;
+   ztens.avail[dimg] = NOPE;
+   utens->avail[0] = NOPE;
+   vtens->avail[0] = NOPE;
    stens->avail[0] = NOPE;
    //Schedule tensor operation via the device-kind specific runtime:
    errc=gpu_tensor_block_decompose_svd(dctr,lctr,rctr,sctr,dvn);
@@ -5595,13 +5653,12 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
    j=talsh_tensor_c_dissoc(lctr); if(j) errc=TALSH_FAILURE;
    j=talsh_tensor_c_dissoc(dctr); if(j) errc=TALSH_FAILURE;
    //Coherence control:
-   dtens->avail[dimg] = YEP;
-   ltens->avail[0] = YEP;
-   rtens->avail[0] = YEP;
+   ztens.avail[dimg] = YEP;
+   utens->avail[0] = YEP;
+   vtens->avail[0] = YEP;
    stens->avail[0] = YEP;
    if(errc){ //task error
     if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
-    return errc;
    }
 #else
    return TALSH_NOT_AVAILABLE;
@@ -5625,11 +5682,31 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
    return TALSH_FAILURE;
  }
  //Destroy the copy of the destination tensor:
- 
- //Permute the left tensor factor and destroy its copy if needed:
- 
- //Permute the right tensor factor and destroy its copy if needed:
- 
+ ier=talshTensorDestruct(&ztens);
+ if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+ //Back-permute the left tensor factor and destroy its copy if needed:
+ if(ltr == 0){
+  for(i=0;i<lrnk;++i) dims[lprm[1+i]-1]=(i+1); //inverse permutation
+  i=0; j=0; get_contr_pattern_sym(&lrnk,&j,&i,dims,perm_sym,&l,&ier);
+  if(ier != 0 && errc == TALSH_SUCCESS) errc=TALSH_FAILURE;
+  ier=talshTensorCopy(perm_sym,ltens,utens,dvn,dvk,COPY_MT);
+  printf("#DEBUG(talshTensorDecomposeSVD): Copied body of back-permuted left tensor xtens with status %d\n",ier);
+  if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+  ier=talshTensorDestruct(utens); utens=NULL;
+  if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+ }
+ //Back-permute the right tensor factor and destroy its copy if needed:
+ if(rtr == 0){
+  for(i=0;i<rrnk;++i) dims[rprm[1+i]-1]=(i+1); //inverse permutation
+  i=0; j=0; get_contr_pattern_sym(&rrnk,&j,&i,dims,perm_sym,&l,&ier);
+  if(ier != 0 && errc == TALSH_SUCCESS) errc=TALSH_FAILURE;
+  ier=talshTensorCopy(perm_sym,rtens,vtens,dvn,dvk,COPY_MT);
+  printf("#DEBUG(talshTensorDecomposeSVD): Copied body of back-permuted right tensor ytens with status %d\n",ier);
+  if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+  ier=talshTensorDestruct(vtens); vtens=NULL;
+  if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+ }
+ printf("#DEBUG(talshTensorDecomposeSVD): Exit status %d\n",errc);
 #pragma omp flush
  return errc;
 }

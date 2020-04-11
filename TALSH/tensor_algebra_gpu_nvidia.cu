@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2020/03/24
+REVISION: 2020/04/11
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5008,13 +5008,14 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
  if(nclean > 0 && errc == 0) errc=NOT_CLEAN;
  return errc;
 }
-//-------------------------------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 // TENSOR INITIALIZATION (non-blocking):
-__host__ int gpu_tensor_block_init(tensBlck_t *dtens, double val, unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id)
+__host__ int gpu_tensor_block_init(tensBlck_t *dtens, double val_real, double val_imag,
+                                   unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id)
 /**
 dtens(:)=scalar_value
 INPUT:
- # val - initialization value;
+ # (val_real,val_imag) - initialization value;
  # coh_ctrl - one of the COPY_X parameters regulating the data presence for each tensor argument;
  # cuda_task - pointer to an empty (clean) CUDA task;
  # gpu_id - suggested GPU ID on which the operation is to be scheduled (-1: defaults to the optimal one);
@@ -5209,15 +5210,23 @@ NOTES:
   errc=cuda_task_record(cuda_task,coh_ctrl,66); errc=gpu_activate(cur_gpu); return 66;
  }
 #endif
-// Addition kernel:
+// Initialization kernel:
  bx=1+(vol_d-1)/THRDS_ARRAY_INIT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
  switch(dtens->data_kind){
   case R4:
-   fval=(float)val;
+   fval=(float)val_real;
    gpu_array_init__<<<bx,THRDS_ARRAY_INIT,0,*cuda_stream>>>(vol_d,(float*)darg,fval);
    break;
   case R8:
-   gpu_array_init__<<<bx,THRDS_ARRAY_INIT,0,*cuda_stream>>>(vol_d,(double*)darg,val);
+   gpu_array_init__<<<bx,THRDS_ARRAY_INIT,0,*cuda_stream>>>(vol_d,(double*)darg,val_real);
+   break;
+  case C4:
+   gpu_array_init__<<<bx,THRDS_ARRAY_INIT,0,*cuda_stream>>>(vol_d,(talshComplex4*)darg,
+                                                            talshComplex4Set((float)val_real,(float)val_imag));
+   break;
+  case C8:
+   gpu_array_init__<<<bx,THRDS_ARRAY_INIT,0,*cuda_stream>>>(vol_d,(talshComplex8*)darg,
+                                                            talshComplex8Set(val_real,val_imag));
    break;
   default:
    errc=cuda_task_record(cuda_task,coh_ctrl,48); errc=gpu_activate(cur_gpu); return 48;
