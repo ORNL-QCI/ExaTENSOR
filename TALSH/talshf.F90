@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2020/04/11
+!REVISION: 2020/04/12
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -1868,24 +1868,26 @@
          endif
          return
         end function cpu_tensor_block_contract
-!----------------------------------------------------------------------------------------------
-        integer(C_INT) function cpu_tensor_block_decompose_svd(dtens_p,ltens_p,rtens_p,stens_p)&
+!------------------------------------------------------------------------------------------------------
+        integer(C_INT) function cpu_tensor_block_decompose_svd(absorb,dtens_p,ltens_p,rtens_p,stens_p)&
                                                               &bind(c,name='cpu_tensor_block_decompose_svd')
-         type(C_PTR), value:: dtens_p !inout: tensor argument to be decomposed
-         type(C_PTR), value:: ltens_p !inout: left tensor factor argument
-         type(C_PTR), value:: rtens_p !inout: right tensor factor argument
-         type(C_PTR), value:: stens_p !inout: middle tensor factor argument
+         character(C_CHAR), value:: absorb !in: {'N','L','R','S'}
+         type(C_PTR), value:: dtens_p      !inout: tensor argument to be decomposed
+         type(C_PTR), value:: ltens_p      !inout: left tensor factor argument
+         type(C_PTR), value:: rtens_p      !inout: right tensor factor argument
+         type(C_PTR), value:: stens_p      !inout: middle tensor factor argument
          type(tensor_block_t), pointer:: dtp,ltp,rtp,stp
+         character(1):: absrb
          integer:: ierr
 
-         cpu_tensor_block_decompose_svd=0
+         cpu_tensor_block_decompose_svd=0; absrb=absorb
          if(c_associated(dtens_p).and.c_associated(ltens_p).and.c_associated(rtens_p).and.c_associated(stens_p)) then
           call c_f_pointer(dtens_p,dtp)
           call c_f_pointer(ltens_p,ltp)
           call c_f_pointer(rtens_p,rtp)
           call c_f_pointer(stens_p,stp)
           if(associated(dtp).and.associated(ltp).and.associated(rtp).and.associated(stp)) then
-           call tensor_block_decompose_svd(dtp,ltp,rtp,stp,ierr)
+           call tensor_block_decompose_svd(absrb,dtp,ltp,rtp,stp,ierr)
            cpu_tensor_block_decompose_svd=ierr
           else
            cpu_tensor_block_decompose_svd=-2

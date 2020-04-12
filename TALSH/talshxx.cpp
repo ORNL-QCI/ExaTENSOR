@@ -454,7 +454,7 @@ int Tensor::decomposeSVD(TensorTask * task_handle,    //out: task handle associa
  talsh_tens_t * rtens = right.getTalshTensorPtr();
  talsh_tens_t * stens = middle.getTalshTensorPtr();
  if(task_handle != nullptr) task_handle->clean();
- errc = talshTensorDecomposeSVD(contr_ptrn,dtens,ltens,rtens,stens,device_id,device_kind);
+ errc = talshTensorDecomposeSVD(contr_ptrn,dtens,ltens,rtens,stens,'N',device_id,device_kind);
  return errc;
 }
 

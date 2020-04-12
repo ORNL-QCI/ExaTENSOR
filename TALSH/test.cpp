@@ -463,7 +463,11 @@ void test_talsh_svd(int * ierr)
   //Perform tensor decomposition via SVD of tensor dtens:
   const std::string pattern{"D(a,b,c,d,e)=L(c,i,e,j,a)*R(j,d,i,b)"};
   std::cout << " Performing tensor decomposition of tensor dtens via SVD: " << pattern << " ... ";
-  *ierr = dtens.decomposeSVD(nullptr,pattern,ltens,rtens,stens,DEV_HOST,0);
+  if(PRINT_SINGULAR_VALUES){
+   *ierr = dtens.decomposeSVD(nullptr,pattern,ltens,rtens,stens,DEV_HOST,0);
+  }else{
+   *ierr = dtens.decomposeSVDLR(nullptr,pattern,ltens,rtens,DEV_HOST,0);
+  }
   std::cout << " Status " << *ierr;
   if(*ierr != TALSH_SUCCESS){
    std::cout << ": Failed!" << std::endl;
@@ -481,16 +485,23 @@ void test_talsh_svd(int * ierr)
    vol = stens.getVolume(); if(vol == 0){*ierr = 6; return;}
    for(decltype(vol) i = 0; i < vol; ++i) std::cout << i << ": (" << tens_body[i].real() <<
                                                               "," << tens_body[i].imag() << ")\n";
+  }else{
+   //Reconstruct tensor dtens from its SVD factors:
+   std::cout << " Reconstructing tensor dtens from its SVD factors ... ";
+   *ierr = dtens.contractAccumulate(nullptr,pattern,ltens,rtens,device,device_id,std::complex<float>(1.0),false);
+   if(*ierr != TALSH_SUCCESS){
+    std::cout << ": Failed!" << std::endl;
+    *ierr = 7; return;
+   }
+   std::cout << ": Success" << std::endl;
   }
-  //Reconstruct tensor dtens from its SVD factors:
-  //`Finish
   //Accumulate tensor dtens into tensor btens with reverse permutation and inverse sign:
   std::cout << " Accumulating tensor dtens into tensor btens with reverse permutation and inverse sign ... ";
   *ierr = btens.accumulate(nullptr,"B(a,b,c,d,e)+=D(e,d,c,b,a)",dtens,device,device_id,std::complex<float>{-1.0f,0.0f});
   std::cout << " Status " << *ierr;
   if(*ierr != TALSH_SUCCESS){
    std::cout << ": Failed!" << std::endl;
-   *ierr = 7; return;
+   *ierr = 8; return;
   }
   std::cout << ": Success" << std::endl;
   //Inspect the norm of tensor btens (must be zero):
@@ -498,12 +509,21 @@ void test_talsh_svd(int * ierr)
   success = btens.sync(DEV_HOST,0,nullptr,true);
   if(!success){
    std::cout << ": Failed!" << std::endl;
-   *ierr = 8; return;
+   *ierr = 9; return;
   }
   std::cout << ": Success" << std::endl;
   *ierr = btens.norm1(nullptr,&norm1);
   std::cout << " 1-norm of tensor btens (must be zero) = " << norm1 << std::endl;
-  if(std::abs(norm1) > 1e-6) *ierr = 9;
+  success = btens.getDataAccessHost(&tens_body);
+  if(!success){
+   std::cout << "#ERROR: Unable to get access to the body of tensor btens!" << std::endl;
+   *ierr = 10; return;
+  }
+  vol = btens.getVolume(); if(vol == 0){*ierr = 11; return;}
+  float max_elem = 0.0f;
+  for(decltype(vol) i = 0; i < vol; ++i) max_elem = std::max(std::abs(tens_body[i]),max_elem);
+  std::cout << " Inf-norm of tensor btens (must be zero) = " << max_elem << std::endl;
+  if(max_elem > 1e-5) *ierr = 12;
  }
  //Shutdown TAL-SH:
  talsh::printStatistics();

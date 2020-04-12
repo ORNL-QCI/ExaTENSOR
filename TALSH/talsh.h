@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2020/04/11
+REVISION: 2020/04/12
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -533,11 +533,17 @@ extern "C"{
  int talshTensorContractXL_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens,
                             double scale_real, double scale_imag, int dev_id, int dev_kind, int accumulative);
 //  Tensor decomposition via SVD:
+//   Meaning of parameter <absorb>:
+//    'N': No absorption of stens;
+//    'L': stens will be absorbed into ltens;
+//    'R': stens will be absorbed into rtens;
+//    'S': square root of stens will be absorbed into both ltens and rtens;
  int talshTensorDecomposeSVD(const char * cptrn,          //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
                              talsh_tens_t * dtens,        //in: tensor block to be decomposed
                              talsh_tens_t * ltens,        //inout: left tensor factor
                              talsh_tens_t * rtens,        //inout: right tensor factor
-                             talsh_tens_t * stens,        //inout: middle tensor factor (singular values), may be empty on etrance
+                             talsh_tens_t * stens,        //inout: middle tensor factor (singular values), may be empty on entrance
+                             const char absorb = 'N',     //in: whether or not to absorb the middle factor stens into other factors
                              int dev_id = DEV_DEFAULT,    //in: device id (flat or kind-specific)
                              int dev_kind = DEV_DEFAULT); //in: device kind (if present, <dev_id> is kind-specific)
 //  Tensor decomposition via SVD with singular values absorbed into the left factor:

@@ -107,7 +107,7 @@ int cpu_tensor_block_add(const int * contr_ptrn, void * lftr, void * dftr,
                          double scale_real, double scale_imag, int arg_conj);
 int cpu_tensor_block_contract(const int * contr_ptrn, void * lftr, void * rftr, void * dftr,
                               double scale_real, double scale_imag, int arg_conj, int accumulative);
-int cpu_tensor_block_decompose_svd(void * dftr, void * lftr, void * rftr, void * sftr);
+int cpu_tensor_block_decompose_svd(const char absorb, void * dftr, void * lftr, void * rftr, void * sftr);
 // Contraction pattern conversion:
 int talsh_get_contr_ptrn_str2dig(const char * c_str, int * dig_ptrn,
                                  int * drank, int * lrank, int * rrank, int * conj_bits);
@@ -5356,6 +5356,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
                             talsh_tens_t * ltens, //inout: left tensor factor
                             talsh_tens_t * rtens, //inout: right tensor factor
                             talsh_tens_t * stens, //out: middle tensor factor (singular values), may be empty on entrance
+                            const char absorb,    //in: whether or not to absorb the middle tensor factor stens into other factors: {N,L,R,S}
                             int dev_id,           //in: device id (flat or kind-specific)
                             int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
@@ -5575,7 +5576,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
    vtens->avail[0] = NOPE;
    stens->avail[0] = NOPE;
    //Schedule tensor operation via the device-kind specific runtime:
-   errc=cpu_tensor_block_decompose_svd(dftr,lftr,rftr,sftr); //blocking call
+   errc=cpu_tensor_block_decompose_svd(absorb,dftr,lftr,rftr,sftr); //blocking call
    //printf("#DEBUG(talshTensorDecomposeSVD): Executed SVD on CPU with status %d\n",errc);
    //Dissociate <tensor_block_t> objects:
    j=talsh_tensor_f_dissoc(sftr); if(j) errc=TALSH_FAILURE;
@@ -5648,7 +5649,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
    vtens->avail[0] = NOPE;
    stens->avail[0] = NOPE;
    //Schedule tensor operation via the device-kind specific runtime:
-   errc=gpu_tensor_block_decompose_svd(dctr,lctr,rctr,sctr,dvn);
+   errc=gpu_tensor_block_decompose_svd(absorb,dctr,lctr,rctr,sctr,dvn);
    //Dissociate <tensBlck_t> objects:
    j=talsh_tensor_c_dissoc(sctr); if(j) errc=TALSH_FAILURE;
    j=talsh_tensor_c_dissoc(rctr); if(j) errc=TALSH_FAILURE;
@@ -5727,10 +5728,7 @@ int talshTensorDecomposeSVDL(const char * cptrn,   //in: C-string: symbolic deco
  talsh_tens_t stens;
  errc=talshTensorClean(&stens);
  if(errc == TALSH_SUCCESS){
-  errc=talshTensorDecomposeSVD(cptrn,dtens,ltens,rtens,&stens,dev_id,dev_kind);
-  if(errc == TALSH_SUCCESS){
-   //`Contract stens with ltens
-  }
+  errc=talshTensorDecomposeSVD(cptrn,dtens,ltens,rtens,&stens,'L',dev_id,dev_kind);
   ier=talshTensorDestruct(&stens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
  }
  return errc;
@@ -5748,10 +5746,7 @@ int talshTensorDecomposeSVDR(const char * cptrn,   //in: C-string: symbolic deco
  talsh_tens_t stens;
  errc=talshTensorClean(&stens);
  if(errc == TALSH_SUCCESS){
-  errc=talshTensorDecomposeSVD(cptrn,dtens,ltens,rtens,&stens,dev_id,dev_kind);
-  if(errc == TALSH_SUCCESS){
-   //`Contract stens with rtens
-  }
+  errc=talshTensorDecomposeSVD(cptrn,dtens,ltens,rtens,&stens,'R',dev_id,dev_kind);
   ier=talshTensorDestruct(&stens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
  }
  return errc;
@@ -5769,10 +5764,7 @@ int talshTensorDecomposeSVDLR(const char * cptrn,   //in: C-string: symbolic dec
  talsh_tens_t stens;
  errc=talshTensorClean(&stens);
  if(errc == TALSH_SUCCESS){
-  errc=talshTensorDecomposeSVD(cptrn,dtens,ltens,rtens,&stens,dev_id,dev_kind);
-  if(errc == TALSH_SUCCESS){
-   //`Contract sqrt(stens) with ltens and rtens
-  }
+  errc=talshTensorDecomposeSVD(cptrn,dtens,ltens,rtens,&stens,'S',dev_id,dev_kind);
   ier=talshTensorDestruct(&stens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
  }
  return errc;
@@ -5789,7 +5781,7 @@ int talshTensorOrthogonalizeSVD(const char * cptrn,   //in: C-string: symbolic d
  errc=talshTensorClean(&stens);
  if(errc == TALSH_SUCCESS){
   //`Construct ltens and rtens
-  errc=talshTensorDecomposeSVD(cptrn,dtens,&ltens,&rtens,&stens,dev_id,dev_kind);
+  errc=talshTensorDecomposeSVD(cptrn,dtens,&ltens,&rtens,&stens,'N',dev_id,dev_kind);
   ier=talshTensorDestruct(&stens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
   if(errc == TALSH_SUCCESS){
    errc=talshTensorContract(cptrn,dtens,&ltens,&rtens,1.0,0,0,dev_id,dev_kind,COPY_MTT,NOPE);

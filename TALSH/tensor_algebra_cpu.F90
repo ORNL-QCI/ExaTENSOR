@@ -4240,15 +4240,21 @@
 	 end function ord_rest_ok
 
 	end subroutine tensor_block_contract
-!------------------------------------------------------------------------------------
-        subroutine tensor_block_decompose_svd(dtens,ltens,rtens,stens,ierr,data_kind)
+!-------------------------------------------------------------------------------------------
+        subroutine tensor_block_decompose_svd(absorb,dtens,ltens,rtens,stens,ierr,data_kind)
 !This subroutine performs a (partial) SVD decomposition of a given tensor:
 ! dtens(l1,l2,...,lm,r1,r2,...,rn) = ltens(l1,l2,...,lm,s1,s2,...,sk) *
 !                                    stens(s1,s2,...,sk) *
 !                                    rtens^H(s1,s2,...,sk,r1,r2,...,rn)
 !All tensors must have their data stored under the same type/precision.
+!The value of <absorb> regulates the absorption of the singular values:
+! 'N': No absorption;
+! 'L': Singular values will be absorbed into the left tensor <ltens>;
+! 'R': Singular values will be absorbed into the right tensor <rtens>;
+! 'S': Square root of singular values will be absorbed into both the left and right tensor;
 !Note that the original tensor dtens will no longer contain its data on exit!
         implicit none
+        character(1), intent(in):: absorb                   !in: singular value absorption regulator
         type(tensor_block_t), intent(inout), target:: dtens !inout: tensor to be decomposed (destroyed on exit)
         type(tensor_block_t), intent(inout), target:: ltens !out: left singular tensor
         type(tensor_block_t), intent(inout), target:: rtens !out: right singular tensor (conjugated-transposed)
@@ -4257,7 +4263,7 @@
         character(2), intent(in), optional:: data_kind      !in: preferred data kind
         integer:: i,nfound,lwork,info
         integer:: dtb,ltb,rtb,stb,drank,lrank,rrank,srank,lr,rr,cr
-        integer(LONGINT):: lu,ru,nv,mlr,lrwork
+        integer(LONGINT):: lu,ru,nv,mlr,lrwork,l0,l1,lb
         character(2):: dtk
         real(4):: wr4(1)
         real(8):: wr8(1)
@@ -4303,7 +4309,7 @@
            mlr=min(lu,ru)
            lrwork=mlr*(mlr*2+15*mlr) !GESVDX length of RWORK
            !lrwork=max(mlr*mlr*5+mlr*5,mlr*max(lu,ru)*2+mlr*mlr*2+mlr) !GESDD length of RWORK
- !Associate matrices and perform SVD:
+ !Associate matrices and perform (partial) SVD:
            select case(dtk)
            case('r4','R4')
             dmr4(1:lu,1:ru)=>dtens%data_real4
@@ -4506,14 +4512,179 @@
            case default
             ierr=28
            end select
+! Absorb the middle tensor of singular values into other tensor factors, if needed:
+           if(ierr.eq.0) then
+            select case(absorb)
+            case('N') !no absorption
+            case('L') !stens is absorbed into ltens
+             select case(dtk)
+             case('r4','R4')
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,lb) SCHEDULE(GUIDED)
+              do l0=0,nv-1
+               lb=l0*lu
+               do l1=0,lu-1
+                ltens%data_real4(lb+l1)=ltens%data_real4(lb+l1)*stens%data_real4(l0)
+               enddo
+              enddo
+!$OMP END PARALLEL DO
+             case('r8','R8')
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,lb) SCHEDULE(GUIDED)
+              do l0=0,nv-1
+               lb=l0*lu
+               do l1=0,lu-1
+                ltens%data_real8(lb+l1)=ltens%data_real8(lb+l1)*stens%data_real8(l0)
+               enddo
+              enddo
+!$OMP END PARALLEL DO
+             case('c4','C4')
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,lb) SCHEDULE(GUIDED)
+              do l0=0,nv-1
+               lb=l0*lu
+               do l1=0,lu-1
+                ltens%data_cmplx4(lb+l1)=ltens%data_cmplx4(lb+l1)*stens%data_cmplx4(l0)
+               enddo
+              enddo
+!$OMP END PARALLEL DO
+             case('c8','C8')
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,lb) SCHEDULE(GUIDED)
+              do l0=0,nv-1
+               lb=l0*lu
+               do l1=0,lu-1
+                ltens%data_cmplx8(lb+l1)=ltens%data_cmplx8(lb+l1)*stens%data_cmplx8(l0)
+               enddo
+              enddo
+!$OMP END PARALLEL DO
+             end select
+            case('R') !stens is absorbed into rtens
+             select case(dtk)
+             case('r4','R4')
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,lb) SCHEDULE(GUIDED)
+              do l0=0,ru-1
+               lb=l0*nv
+               do l1=0,nv-1
+                rtens%data_real4(lb+l1)=rtens%data_real4(lb+l1)*stens%data_real4(l1)
+               enddo
+              enddo
+!$OMP END PARALLEL DO
+             case('r8','R8')
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,lb) SCHEDULE(GUIDED)
+              do l0=0,ru-1
+               lb=l0*nv
+               do l1=0,nv-1
+                rtens%data_real8(lb+l1)=rtens%data_real8(lb+l1)*stens%data_real8(l1)
+               enddo
+              enddo
+!$OMP END PARALLEL DO
+             case('c4','C4')
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,lb) SCHEDULE(GUIDED)
+              do l0=0,ru-1
+               lb=l0*nv
+               do l1=0,nv-1
+                rtens%data_cmplx4(lb+l1)=rtens%data_cmplx4(lb+l1)*stens%data_cmplx4(l1)
+               enddo
+              enddo
+!$OMP END PARALLEL DO
+             case('c8','C8')
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,lb) SCHEDULE(GUIDED)
+              do l0=0,ru-1
+               lb=l0*nv
+               do l1=0,nv-1
+                rtens%data_cmplx8(lb+l1)=rtens%data_cmplx8(lb+l1)*stens%data_cmplx8(l1)
+               enddo
+              enddo
+!$OMP END PARALLEL DO
+             end select
+            case('S') !sqrt(stens) is absorbed into both ltens and rtens
+             select case(dtk)
+             case('r4','R4')
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,lb)
+!$OMP DO SCHEDULE(GUIDED)
+              do l0=0,nv-1
+               lb=l0*lu
+               do l1=0,lu-1
+                ltens%data_real4(lb+l1)=ltens%data_real4(lb+l1)*sqrt(stens%data_real4(l0))
+               enddo
+              enddo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(GUIDED)
+              do l0=0,ru-1
+               lb=l0*nv
+               do l1=0,nv-1
+                rtens%data_real4(lb+l1)=rtens%data_real4(lb+l1)*sqrt(stens%data_real4(l1))
+               enddo
+              enddo
+!$OMP END DO
+!$OMP END PARALLEL
+             case('r8','R8')
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,lb)
+!$OMP DO SCHEDULE(GUIDED)
+              do l0=0,nv-1
+               lb=l0*lu
+               do l1=0,lu-1
+                ltens%data_real8(lb+l1)=ltens%data_real8(lb+l1)*sqrt(stens%data_real8(l0))
+               enddo
+              enddo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(GUIDED)
+              do l0=0,ru-1
+               lb=l0*nv
+               do l1=0,nv-1
+                rtens%data_real8(lb+l1)=rtens%data_real8(lb+l1)*sqrt(stens%data_real8(l1))
+               enddo
+              enddo
+!$OMP END DO
+!$OMP END PARALLEL
+             case('c4','C4')
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,lb)
+!$OMP DO SCHEDULE(GUIDED)
+              do l0=0,nv-1
+               lb=l0*lu
+               do l1=0,lu-1
+                ltens%data_cmplx4(lb+l1)=ltens%data_cmplx4(lb+l1)*sqrt(real(stens%data_cmplx4(l0),4))
+               enddo
+              enddo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(GUIDED)
+              do l0=0,ru-1
+               lb=l0*nv
+               do l1=0,nv-1
+                rtens%data_cmplx4(lb+l1)=rtens%data_cmplx4(lb+l1)*sqrt(real(stens%data_cmplx4(l1),4))
+               enddo
+              enddo
+!$OMP END DO
+!$OMP END PARALLEL
+             case('c8','C8')
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,lb)
+!$OMP DO SCHEDULE(GUIDED)
+              do l0=0,nv-1
+               lb=l0*lu
+               do l1=0,lu-1
+                ltens%data_cmplx8(lb+l1)=ltens%data_cmplx8(lb+l1)*sqrt(real(stens%data_cmplx8(l0),8))
+               enddo
+              enddo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(GUIDED)
+              do l0=0,ru-1
+               lb=l0*nv
+               do l1=0,nv-1
+                rtens%data_cmplx8(lb+l1)=rtens%data_cmplx8(lb+l1)*sqrt(real(stens%data_cmplx8(l1),8))
+               enddo
+              enddo
+!$OMP END DO
+!$OMP END PARALLEL
+             end select
+            case default
+             ierr=29
+            end select
+           endif
           else
-           ierr=29
+           ierr=30
           endif
          else
-          ierr=30
+          ierr=31
          endif
         else
-         ierr=31
+         ierr=32
         endif
         if(VERBOSE.and.ierr.ne.0) then
          write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): Error ",i11)') ierr
