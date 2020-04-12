@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2020/04/11
+REVISION: 2020/04/12
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5393,15 +5393,15 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  ltr=permutation_trivial(lrnk,lprm,1); //base 1
  rtr=permutation_trivial(rrnk,rprm,1); //base 1
  //DEBUG BEGIN
- printf("\n#DEBUG(talshTensorDecomposeSVD):");
- printf("\n Contraction configuration (l,r,c): %d %d %d",nlu,nru,ncd);
- printf("\n Matricization permutation for dtens (N2O):");
- for(i=0;i<drnk;++i) printf(" %d",dprm[1+i]);
- printf("\n Matricization permutation for ltens (O2N):");
- for(i=0;i<lrnk;++i) printf(" %d",lprm[1+i]);
- printf("\n Matricization permutation for rtens (O2N):");
- for(i=0;i<rrnk;++i) printf(" %d",rprm[1+i]);
- printf("\n#DEBUG END\n");
+ //printf("\n#DEBUG(talshTensorDecomposeSVD):");
+ //printf("\n Contraction configuration (l,r,c): %d %d %d",nlu,nru,ncd);
+ //printf("\n Matricization permutation for dtens (N2O):");
+ //for(i=0;i<drnk;++i) printf(" %d",dprm[1+i]);
+ //printf("\n Matricization permutation for ltens (O2N):");
+ //for(i=0;i<lrnk;++i) printf(" %d",lprm[1+i]);
+ //printf("\n Matricization permutation for rtens (O2N):");
+ //for(i=0;i<rrnk;++i) printf(" %d",rprm[1+i]);
+ //printf("\n#DEBUG END\n");
  //DEBUG END
  //Determine the execution device (devid:[dvk,dvn]):
  if(dev_kind == DEV_DEFAULT){ //device kind is not specified explicitly
@@ -5423,7 +5423,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
    if(talshFlatDevId(dvk,dvn) >= DEV_MAX) return TALSH_INVALID_ARGS;
   }
  }
- printf("#DEBUG(talshTensorDecomposeSVD): Execution device (kind,id): %d %d\n",dvk,dvn);
+ //printf("#DEBUG(talshTensorDecomposeSVD): Execution device (kind,id): %d %d\n",dvk,dvn);
  //Perform the tensor decomposition via SVD on device of kind <dvk>:
  errc=TALSH_SUCCESS;
  // Choose the tensor body image for each original tensor argument:
@@ -5449,8 +5449,8 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
   }
   if(l != 0){ //stens needs to be reshaped
    errc=talshTensorReshape(stens,srnk,dims);
-   printf("#DEBUG(talshTensorDecomposeSVD): Reshaped middle tensor to [");
-   for(i=0;i<srnk;++i) printf(" %d",dims[i]); printf(" ] with status %d\n",errc); //debug
+   //printf("#DEBUG(talshTensorDecomposeSVD): Reshaped middle tensor to [");
+   //for(i=0;i<srnk;++i) printf(" %d",dims[i]); printf(" ] with status %d\n",errc); //debug
    if(errc != TALSH_SUCCESS) return errc;
   }
  }else{
@@ -5460,7 +5460,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
    if(j < srnk) dims[j]=rdims[i];
   }
   errc=talshTensorConstruct(stens,rtens->data_kind[rimg],srnk,dims,talshFlatDevId(dvk,dvn),NULL);
-  printf("#DEBUG(talshTensorDecomposeSVD): Constructed middle tensor stens with status %d\n",errc);
+  //printf("#DEBUG(talshTensorDecomposeSVD): Constructed middle tensor stens with status %d\n",errc);
   if(errc == NOT_CLEAN) errc=TALSH_SUCCESS; //tensor initialization failure is irrelevant here
   if(errc != TALSH_SUCCESS) return errc;
  }
@@ -5471,13 +5471,13 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  ddims=talshTensorDimExtents(dtens,&j); if(j != drnk) return TALSH_FAILURE;
  for(i=0;i<drnk;++i) dims[i] = ddims[dprm[1+i]-1]; //permuted dimensions of dtens
  errc=talshTensorConstruct(&ztens,dtens->data_kind[dimg],drnk,dims,talshFlatDevId(dvk,dvn),NULL);
- printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted destination tensor ztens with status %d\n",errc);
+ //printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted destination tensor ztens with status %d\n",errc);
  if(errc == NOT_CLEAN) errc=TALSH_SUCCESS; //tensor initialization failure is irrelevant here
  if(errc != TALSH_SUCCESS) return errc;
  i=0; j=0; get_contr_pattern_sym(&drnk,&j,&i,&(dprm[1]),perm_sym,&l,&errc);
  if(errc) return TALSH_FAILURE;
  errc=talshTensorCopy(perm_sym,&ztens,dtens,dvn,dvk,COPY_MT);
- printf("#DEBUG(talshTensorDecomposeSVD): Copied body of permuted destination tensor ztens with status %d\n",errc);
+ //printf("#DEBUG(talshTensorDecomposeSVD): Copied body of permuted destination tensor ztens with status %d\n",errc);
  if(errc != TALSH_SUCCESS) return errc;
  dimg=talsh_choose_image_for_device(&ztens,COPY_T,&dcp,dvk,dvn);
  //Create a copy of the left tensor factor, if needed:
@@ -5486,13 +5486,13 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
   errc=talshTensorClean(&xtens); if(errc != TALSH_SUCCESS) return errc;
   for(i=0;i<lrnk;++i) dims[lprm[1+i]-1]=ldims[i];
   errc=talshTensorConstruct(&xtens,ltens->data_kind[limg],lrnk,dims,talshFlatDevId(dvk,dvn),NULL);
-  printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted left tensor xtens with status %d\n",errc);
+  //printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted left tensor xtens with status %d\n",errc);
   if(errc == NOT_CLEAN) errc=TALSH_SUCCESS; //tensor initialization failure is irrelevant here
   if(errc != TALSH_SUCCESS) return errc;
   i=0; j=0; get_contr_pattern_sym(&lrnk,&j,&i,&(lprm[1]),perm_sym,&l,&errc);
   if(errc) return TALSH_FAILURE;
   errc=talshTensorCopy(perm_sym,&xtens,ltens,dvn,dvk,COPY_MT);
-  printf("#DEBUG(talshTensorDecomposeSVD): Copied body of permuted left tensor xtens with status %d\n",errc);
+  //printf("#DEBUG(talshTensorDecomposeSVD): Copied body of permuted left tensor xtens with status %d\n",errc);
   if(errc != TALSH_SUCCESS) return errc;
   limg=talsh_choose_image_for_device(&xtens,COPY_T,&dcp,dvk,dvn);
   utens=&xtens;
@@ -5504,13 +5504,13 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
   errc=talshTensorClean(&ytens); if(errc != TALSH_SUCCESS) return errc;
   for(i=0;i<rrnk;++i) dims[rprm[1+i]-1]=rdims[i];
   errc=talshTensorConstruct(&ytens,rtens->data_kind[rimg],rrnk,dims,talshFlatDevId(dvk,dvn),NULL);
-  printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted right tensor ytens with status %d\n",errc);
+  //printf("#DEBUG(talshTensorDecomposeSVD): Constructed permuted right tensor ytens with status %d\n",errc);
   if(errc == NOT_CLEAN) errc=TALSH_SUCCESS; //tensor initialization failure is irrelevant here
   if(errc != TALSH_SUCCESS) return errc;
   i=0; j=0; get_contr_pattern_sym(&rrnk,&j,&i,&(rprm[1]),perm_sym,&l,&errc);
   if(errc) return TALSH_FAILURE;
   errc=talshTensorCopy(perm_sym,&ytens,rtens,dvn,dvk,COPY_MT);
-  printf("#DEBUG(talshTensorDecomposeSVD): Copied body of permuted right tensor ytens with status %d\n",errc);
+  //printf("#DEBUG(talshTensorDecomposeSVD): Copied body of permuted right tensor ytens with status %d\n",errc);
   if(errc != TALSH_SUCCESS) return errc;
   rimg=talsh_choose_image_for_device(&ytens,COPY_T,&dcp,dvk,dvn);
   vtens=&ytens;
@@ -5576,7 +5576,7 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
    stens->avail[0] = NOPE;
    //Schedule tensor operation via the device-kind specific runtime:
    errc=cpu_tensor_block_decompose_svd(dftr,lftr,rftr,sftr); //blocking call
-   printf("#DEBUG(talshTensorDecomposeSVD): Executed SVD on CPU with status %d\n",errc);
+   //printf("#DEBUG(talshTensorDecomposeSVD): Executed SVD on CPU with status %d\n",errc);
    //Dissociate <tensor_block_t> objects:
    j=talsh_tensor_f_dissoc(sftr); if(j) errc=TALSH_FAILURE;
    j=talsh_tensor_f_dissoc(rftr); if(j) errc=TALSH_FAILURE;
@@ -5691,24 +5691,26 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
   for(i=0;i<lrnk;++i) dims[lprm[1+i]-1]=(i+1); //inverse permutation
   i=0; j=0; get_contr_pattern_sym(&lrnk,&j,&i,dims,perm_sym,&l,&ier);
   if(ier != 0 && errc == TALSH_SUCCESS) errc=TALSH_FAILURE;
-  ier=talshTensorCopy(perm_sym,ltens,utens,dvn,dvk,COPY_MT);
-  printf("#DEBUG(talshTensorDecomposeSVD): Copied body of back-permuted left tensor xtens with status %d\n",ier);
+  ier=talshTensorCopy(perm_sym,ltens,&xtens,dvn,dvk,COPY_MT);
+  //printf("#DEBUG(talshTensorDecomposeSVD): Copied body of back-permuted left tensor xtens with status %d\n",ier);
   if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
-  ier=talshTensorDestruct(utens); utens=NULL;
+  ier=talshTensorDestruct(&xtens);
   if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
  }
+ utens=NULL;
  //Back-permute the right tensor factor and destroy its copy if needed:
  if(rtr == 0){
   for(i=0;i<rrnk;++i) dims[rprm[1+i]-1]=(i+1); //inverse permutation
   i=0; j=0; get_contr_pattern_sym(&rrnk,&j,&i,dims,perm_sym,&l,&ier);
   if(ier != 0 && errc == TALSH_SUCCESS) errc=TALSH_FAILURE;
-  ier=talshTensorCopy(perm_sym,rtens,vtens,dvn,dvk,COPY_MT);
-  printf("#DEBUG(talshTensorDecomposeSVD): Copied body of back-permuted right tensor ytens with status %d\n",ier);
+  ier=talshTensorCopy(perm_sym,rtens,&ytens,dvn,dvk,COPY_MT);
+  //printf("#DEBUG(talshTensorDecomposeSVD): Copied body of back-permuted right tensor ytens with status %d\n",ier);
   if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
-  ier=talshTensorDestruct(vtens); vtens=NULL;
+  ier=talshTensorDestruct(&ytens);
   if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
  }
- printf("#DEBUG(talshTensorDecomposeSVD): Exit status %d\n",errc);
+ vtens=NULL;
+ //printf("#DEBUG(talshTensorDecomposeSVD): Exit status %d\n",errc);
 #pragma omp flush
  return errc;
 }

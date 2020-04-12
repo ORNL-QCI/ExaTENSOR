@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2020/04/09
+REVISION: 2020/04/12
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -614,6 +614,18 @@ bool enableFastMath(int device_kind, int device_id)
 }
 
 
+void startMemManagerLog()
+{
+ return talshMemManagerLogStart();
+}
+
+
+void finishMemManagerLog()
+{
+ return talshMemManagerLogFinish();
+}
+
+
 void startTensorOpLog()
 {
  return talshTensorOpLogStart();
@@ -623,6 +635,13 @@ void startTensorOpLog()
 void finishTensorOpLog()
 {
  return talshTensorOpLogFinish();
+}
+
+
+void printStatistics()
+{
+ auto errc = talshStats();
+ return;
 }
 
 } //namespace talsh

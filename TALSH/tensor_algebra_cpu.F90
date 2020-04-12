@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/11
+!REVISION: 2020/04/12
 
 !Copyright (C) 2013-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -4327,9 +4327,8 @@
                             &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv4,lmr4,int(lu,kind=4),&
                             &rmr4,int(nv,kind=4),wrkr4,lwork,iwork,info)
                 if(info.eq.0) then
-                 wrkr4(1:nv)=>stens%data_real4
-                 do i=1,nfound; wrkr4(i)=sv4(i); enddo !converged singular values
-                 do i=nfound+1,nv; wrkr4(i)=0.0; enddo !unconverged singular values
+                 do i=1,nfound; stens%data_real4(i-1)=sv4(i); enddo !converged singular values
+                 do i=nfound+1,nv; stens%data_real4(i-1)=0.0; enddo !unconverged singular values
                 else
                  if(VERBOSE) write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): SGESVDX error ",i11)') info
                  ierr=6
@@ -4374,9 +4373,8 @@
                             &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv8,lmr8,int(lu,kind=4),&
                             &rmr8,int(nv,kind=4),wrkr8,lwork,iwork,info)
                 if(info.eq.0) then
-                 wrkr8(1:nv)=>stens%data_real8
-                 do i=1,nfound; wrkr8(i)=sv8(i); enddo !converged singular values
-                 do i=nfound+1,nv; wrkr8(i)=0d0; enddo !unconverged singular values
+                 do i=1,nfound; stens%data_real8(i-1)=sv8(i); enddo !converged singular values
+                 do i=nfound+1,nv; stens%data_real8(i-1)=0d0; enddo !unconverged singular values
                 else
                  if(VERBOSE) write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): DGESVDX error ",i11)') info
                  ierr=11
@@ -4424,9 +4422,8 @@
                              &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv4,lmc4,int(lu,kind=4),&
                              &rmc4,int(nv,kind=4),wrkc4,lwork,rwrk4,iwork,info)
                  if(info.eq.0) then
-                  wrkc4(1:nv)=>stens%data_cmplx4
-                  do i=1,nfound; wrkc4(i)=cmplx(sv4(i),0.0,kind=4); enddo !converged singular values
-                  do i=nfound+1,nv; wrkc4(i)=(0.0,0.0); enddo !unconverged singular values
+                  do i=1,nfound; stens%data_cmplx4(i-1)=cmplx(sv4(i),0.0,kind=4); enddo !converged singular values
+                  do i=nfound+1,nv; stens%data_cmplx4(i-1)=(0.0,0.0); enddo !unconverged singular values
                  else
                   if(VERBOSE) write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): CGESVDX error ",i11)') info
                   ierr=16
@@ -4478,9 +4475,8 @@
                              &0d0,0d0,1,int(min(nv,mlr),kind=4),nfound,sv8,lmc8,int(lu,kind=4),&
                              &rmc8,int(nv,kind=4),wrkc8,lwork,rwrk8,iwork,info)
                  if(info.eq.0) then
-                  wrkc8(1:nv)=>stens%data_cmplx8
-                  do i=1,nfound; wrkc8(i)=cmplx(sv8(i),0d0,kind=8); enddo !converged singular values
-                  do i=nfound+1,nv; wrkc8(i)=(0d0,0d0); enddo !unconverged singular values
+                  do i=1,nfound; stens%data_cmplx8(i-1)=cmplx(sv8(i),0d0,kind=8); enddo !converged singular values
+                  do i=nfound+1,nv; stens%data_cmplx8(i-1)=(0d0,0d0); enddo !unconverged singular values
                  else
                   if(VERBOSE) write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): ZGESVDX error ",i11)') info
                   ierr=22
@@ -4522,8 +4518,8 @@
         if(VERBOSE.and.ierr.ne.0) then
          write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): Error ",i11)') ierr
         endif
-        write(CONS_OUT,'("#DEBUG(CP-TAL:tensor_block_decompose_svd): Time (s) = ",F12.6,": Status ",i11)')&
-        &thread_wtime()-time_beg,ierr !debug
+        !write(CONS_OUT,'("#DEBUG(CP-TAL:tensor_block_decompose_svd): Time (s) = ",F12.6,": Status ",i11)')&
+        !&thread_wtime()-time_beg,ierr !debug
         return
 
         contains
