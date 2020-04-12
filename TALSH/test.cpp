@@ -449,6 +449,9 @@ void test_talsh_svd(int * ierr)
   double norm1;
   *ierr = btens.norm1(nullptr,&norm1);
   std::cout << " 1-norm of tensor btens = " << norm1 << std::endl;
+  for(decltype(vol) i = 0; i < vol; ++i) tens_body[i] /= norm1;
+  *ierr = btens.norm1(nullptr,&norm1);
+  std::cout << " Normalized 1-norm of tensor btens = " << norm1 << std::endl;
   //Copy/permute tensor btens into tensor dtens:
   std::cout << " Copy-permuting tensor btens into dtens ... ";
   *ierr = dtens.copyBody(nullptr,"D(a,b,c,d,e)=B(e,d,c,b,a)",btens,device,device_id);
@@ -523,7 +526,7 @@ void test_talsh_svd(int * ierr)
   float max_elem = 0.0f;
   for(decltype(vol) i = 0; i < vol; ++i) max_elem = std::max(std::abs(tens_body[i]),max_elem);
   std::cout << " Inf-norm of tensor btens (must be zero) = " << max_elem << std::endl;
-  if(max_elem > 1e-5) *ierr = 12;
+  if(max_elem > 1e-6) *ierr = 12;
  }
  //Shutdown TAL-SH:
  talsh::printStatistics();
