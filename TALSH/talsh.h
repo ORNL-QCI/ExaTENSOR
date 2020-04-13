@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API header.
-REVISION: 2020/04/12
+REVISION: 2020/04/13
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -568,7 +568,9 @@ extern "C"{
                                int dev_id = DEV_DEFAULT,    //in: device id (flat or kind-specific)
                                int dev_kind = DEV_DEFAULT); //in: device kind (if present, <dev_id> is kind-specific)
 //  Tensor orthogonalization via SVD (D=LR+ with singular values reset to unity):
- int talshTensorOrthogonalizeSVD(const char * cptrn,          //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
+//   The symbolic tensor decomposition (contraction) pattern must only have one contracted index,
+//   its dimension being equal to the minimum of the left and right uncontracted dimension volumes:
+ int talshTensorOrthogonalizeSVD(const char * cptrn,          //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,a)*R(b,d,i)"
                                  talsh_tens_t * dtens,        //inout: on entrance tensor block to be orthogonalized, on exit orthogonalized tensor block
                                  int dev_id = DEV_DEFAULT,    //in: device id (flat or kind-specific)
                                  int dev_kind = DEV_DEFAULT); //in: device kind (if present, <dev_id> is kind-specific)

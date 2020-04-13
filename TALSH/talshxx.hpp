@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2020/04/12
+REVISION: 2020/04/13
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -389,15 +389,18 @@ public:
                     const int device_kind = DEV_HOST, //in: execution device kind
                     const int device_id = 0);         //in: execution device id
 
- /** Internal tensor orthogonalization via SVD with the middle tensor removed.
+ /** Internal tensor orthogonalization via SVD and discarding the middle tensor.
      Returns an error code (0:success).
      Example of the decomposition of tensor D(a,b,c,d,e):
-      D(a,b,c,d,e)=L(d,i,c,j)*M(i,j)*R(e,a,j,b,i)
+      D(a,b,c,d,e)=L(d,i,c)*M(i)*R(e,a,b,i)
      This is a hyper-contraction, but the corresponding decomposition pattern
      is still specified as a regular tensor contraction:
-      D(a,b,c,d,e)=L(d,i,c,j)*R(e,a,j,b,i)
-     The middle tensor factor is removed, with tensor D redefined
-     according to the above equation. **/
+      D(a,b,c,d,e)=L(d,i,c)*R(e,a,b,i)
+     The middle tensor factor is discarded, with tensor D redefined according
+     to the above equation. The symbolic tensor decomposition (contraction)
+     pattern must only have one contracted index, its dimension being equal
+     to the minimum of the left and right uncontracted dimension volumes,
+     e.g. in the shown case min(vol(d,c),vol(e,a,b)). **/
  int orthogonalizeSVD(TensorTask * task_handle,         //out: task handle associated with this operation or nullptr (synchronous)
                       const std::string & pattern,      //in: decomposition pattern string (same as the tensor contraction pattern)
                       const int device_kind = DEV_HOST, //in: execution device kind

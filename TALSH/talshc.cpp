@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2020/04/12
+REVISION: 2020/04/13
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -787,7 +787,7 @@ int talshDeviceBusyLeast(int dev_kind) //in: device kind (defaults to any kind)
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  switch(dev_kind){
   case DEV_NULL:
-   return talshFlatDevId(DEV_HOST,0); //`if device kind not specified, return CPU Host for simplicity
+   return talshFlatDevId(DEV_HOST,0);
   case DEV_HOST:
    return talshFlatDevId(DEV_HOST,0);
   case DEV_NVIDIA_GPU:
@@ -3294,7 +3294,7 @@ int talshTensorPlace(talsh_tens_t * tens,
    image_avail=i;
    dn=talshKindDevId(tens->dev_rsc[i].dev_id,&dk);
    if(dn < 0){tsk->task_error=105; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
-   if(dk == dvk){image_id=i; if(dn == dvn) break;} //`Unless exact match, the last device of the given kind will always be selected
+   if(dk == dvk){image_id=i; if(dn == dvn) break;}
    if(dk == DEV_HOST) host_image=i;
   }
  }
@@ -5770,34 +5770,95 @@ int talshTensorDecomposeSVDLR(const char * cptrn,   //in: C-string: symbolic dec
  return errc;
 }
 
-int talshTensorOrthogonalizeSVD(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,j,a)*R(b,j,d,i)"
+int talshTensorOrthogonalizeSVD(const char * cptrn,   //in: C-string: symbolic decomposition pattern, e.g. "D(a,b,c,d)=L(c,i,a)*R(b,d,i)"
                                 talsh_tens_t * dtens, //inout: on entrance tensor block to be orthogonalized, on exit orthogonalized tensor block
                                 int dev_id,           //in: device id (flat or kind-specific)
                                 int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
- int errc,ier;
-
+ int contr_ptrn[MAX_TENSOR_RANK*2],ldims[MAX_TENSOR_RANK],rdims[MAX_TENSOR_RANK];
+ int drnk,lrnk,rrnk,conj_bits,lc,rc,ier,errc,i;
+ const int *ddims;
+ size_t lv,rv;
  talsh_tens_t stens,ltens,rtens;
+
+ //Check function arguments:
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(cptrn == NULL || dtens == NULL) return TALSH_INVALID_ARGS;
+ //Create an empty middle tensor factor stens:
  errc=talshTensorClean(&stens);
  if(errc == TALSH_SUCCESS){
-  //`Construct ltens and rtens
-  errc=talshTensorDecomposeSVD(cptrn,dtens,&ltens,&rtens,&stens,'N',dev_id,dev_kind);
-  ier=talshTensorDestruct(&stens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
-  if(errc == TALSH_SUCCESS){
-   errc=talshTensorContract(cptrn,dtens,&ltens,&rtens,1.0,0,0,dev_id,dev_kind,COPY_MTT,NOPE);
+  //Parse the index correspondence pattern:
+  errc=talsh_get_contr_ptrn_str2dig(cptrn,contr_ptrn,&drnk,&lrnk,&rrnk,&conj_bits);
+  if(errc) return TALSH_INVALID_ARGS;
+  if(drnk <= 0 || lrnk <= 0 || rrnk <= 0) return TALSH_INVALID_ARGS;
+  //Construct the left and right tensor factors:
+  ddims=talshTensorDimExtents(dtens,&i); if(i != drnk) return TALSH_FAILURE;
+  lc=lrnk; rc=rrnk; lv=1; rv=1;
+  for(i=0;i<lrnk;++i){
+   if(contr_ptrn[i] > 0){ //uncontracted index
+    ldims[i]=ddims[contr_ptrn[i]-1];
+    lv*=ldims[i];
+    if((int)lv <= 0) return TALSH_INTEGER_OVERFLOW;
+   }else{ //contracted index (must be only one)
+    if(lc == lrnk){
+     lc=i;
+    }else{
+     errc=TALSH_INVALID_ARGS; break;
+    }
+   }
   }
-  ier=talshTensorDestruct(&rtens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
-  ier=talshTensorDestruct(&ltens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+  if(errc == TALSH_SUCCESS){
+   if(lc == lrnk) return TALSH_INVALID_ARGS;
+   ldims[lc]=(int)lv;
+   for(i=0;i<rrnk;++i){
+    if(contr_ptrn[lrnk+i] > 0){ //uncontracted index
+     rdims[i]=ddims[contr_ptrn[lrnk+i]-1];
+     rv*=rdims[i];
+     if((int)rv <= 0) return TALSH_INTEGER_OVERFLOW;
+    }else{ //contracted index (must be only one)
+     if(rc == rrnk){
+      rc=i;
+     }else{
+      errc=TALSH_INVALID_ARGS; break;
+     }
+    }
+   }
+   if(errc == TALSH_SUCCESS){
+    if(rc == rrnk) return TALSH_INVALID_ARGS;
+    rdims[rc]=(int)rv;
+    errc=talshTensorConstruct(&ltens,dtens->data_kind[0],lrnk,ldims);
+    if(errc == NOT_CLEAN) errc=TALSH_SUCCESS;
+    if(errc == TALSH_SUCCESS){
+     errc=talshTensorConstruct(&rtens,dtens->data_kind[0],rrnk,rdims);
+     if(errc == NOT_CLEAN) errc=TALSH_SUCCESS;
+     if(errc == TALSH_SUCCESS){
+      //Perform the SVD based tensor decomposition:
+      errc=talshTensorDecomposeSVD(cptrn,dtens,&ltens,&rtens,&stens,'N',dev_id,dev_kind);
+      //Discard/destroy the middle tensor factor:
+      ier=talshTensorDestruct(&stens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+      //Reconstruct an isometry in the original tensor dtens:
+      if(errc == TALSH_SUCCESS){
+       errc=talshTensorContract(cptrn,dtens,&ltens,&rtens,1.0,0,0,dev_id,dev_kind,COPY_MTT,NOPE);
+      }
+      ier=talshTensorDestruct(&rtens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+     }
+     ier=talshTensorDestruct(&ltens); if(ier != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=ier;
+    }
+   }
+  }
  }
  return errc;
 }
 
 int talshTensorOrthogonalizeMGS(talsh_tens_t * dtens, //inout: on entrance tensor block to be orthogonalized, on exit orthogonalized tensor block
-                                int num_iso_dims,     //in: number of the isometric tensor dimensions
+                                int num_iso_dims,     //in: number of the isometric tensor dimensions (>0)
                                 int * iso_dims,       //in: ordered list of the isometric tensor dimensions (tensor dimension numeration starts from 0)
                                 int dev_id,           //in: device id (flat or kind-specific)
                                 int dev_kind)         //in: device kind (if present, <dev_id> is kind-specific)
 {
+ //Check function arguments:
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(dtens == NULL || iso_dims == NULL || num_iso_dims <= 0) return TALSH_INVALID_ARGS;
  //`Implement
  return TALSH_NOT_IMPLEMENTED;
 }
