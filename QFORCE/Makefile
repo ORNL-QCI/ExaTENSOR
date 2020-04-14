@@ -368,6 +368,7 @@ OBJS = ./OBJ/main.o ./OBJ/qforce.o
 
 $(NAME): $(OBJS) $(MY_LIB)
 	$(FCOMP) $(OBJS) $(MY_LIB) $(LFLAGS) -o $(NAME).x
+	echo "-lexatensor $(LFLAGS)" > ../link.txt
 
 ./OBJ/qforce.o: qforce.F90 ../INTERVIRT/OBJ/exatensor.o ../UTILITY/OBJ/dil_basic.o
 	mkdir -p ./OBJ

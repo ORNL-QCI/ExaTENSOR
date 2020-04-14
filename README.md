@@ -3,14 +3,14 @@ distributed HPC systems equipped with multicore CPU and NVIDIA GPU.
 The hierarchical task-based parallel runtime of ExaTENSOR
 is based on the virtual tensor algebra processor architecture,
 i.e. a software processor specialized to numerical tensor algebra
-workloads on heterogeneous HPC systems (multicore/KNL + NVIDIA GPU).
+workloads on heterogeneous HPC systems (multicore/KNL or NVIDIA GPU).
 
 (Details can be found here: https://doi.org/10.1002/qua.25926)
 
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
 
-Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
 
 LICENSE: GNU Lesser General Public License v.3
 
@@ -24,8 +24,8 @@ PROGRAMMING MODEL: OOP FORTRAN 2003+, C/C++11, OpenMP 3+, MPI 3+, CUDA.
 
 SUPPORTED COMPILERS: GNU 8.x.y, Intel 18.x.y, IBM XL 16.1.x.
 
-LIBRARY DEPENDENCIES: MPI-3 (OpenMPI/3.1.0 or MPICH/3.2.1 tested);
-                      CPU BLAS (optional: ATLAS, MKL, ACML, ESSL);
+LIBRARY DEPENDENCIES: MPI-3 (OpenMPI/4.0.3+ or MPICH/3.2.1+);
+                      CPU BLAS (optional: ATLAS, OpenBLAS, MKL, ACML, ESSL, LibSci);
                       cuBLAS (optional);
                       cuTT (optional);
                       cuTensor (optional).
@@ -98,13 +98,9 @@ RUN: An example script run.sh shows how to run ExaTENSOR for a test case (Qforce
      taking into account the number of MPI processes per node, oversubscription, etc.
      The test should normally take less than a minute to run.
 
+LINKING WITH OTHER APPS: See link.txt after building ExaTENSOR.
+
 KNOWN ISSUES:
-     (a) So far the most stable openmpi version is 3.1.0. Other openmpi versions
-         have issues with the THREAD_MULTIPLE support of passive-target one-sided
-         MPI communication over dynamic MPI windows. The IBM Spectrum-MPI derivative
-         of openmpi is stable.
-     (b) So far the MPICH/3.2.1 implementation is the recommended one.
-         Cray-MPICH derivative of MPICH sometimes hangs in MPI_Win_unlock() and MPI_Win_flush().
-     (c) GNU 9.1 gfortran introduced a regression resulting in an Internal Compiler Error
+     (a) GNU 9.1 gfortran introduced a regression resulting in an Internal Compiler Error
          due to inability to generate finalization wrappers for tens_signature_t and
          tens_shape_t derived types in INTRAVIRT/tensor_recursive.F90.
