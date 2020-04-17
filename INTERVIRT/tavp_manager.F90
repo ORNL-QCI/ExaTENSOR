@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/04
+!REVISION: 2020/04/17
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -1433,9 +1433,13 @@
 !Construct the instruction:
            select case(op_code)
            case(TAVP_INSTR_NOOP)
-           case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_DUMP_CACHE)
+           case(TAVP_INSTR_CTRL_RESUME,&
+               &TAVP_INSTR_CTRL_STOP,&
+               &TAVP_INSTR_CTRL_DUMP_CACHE,&
+               &TAVP_INSTR_CTRL_FLUSH)
             call construct_instr_ctrl(errc); if(errc.ne.0) errc=-11
-           case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
+           case(TAVP_INSTR_TENS_CREATE,&
+               &TAVP_INSTR_TENS_DESTROY)
             call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-10
            case(TAVP_INSTR_TENS_INIT)
             call construct_instr_tens_transform(errc); if(errc.ne.0) errc=-9
@@ -1729,9 +1733,13 @@
 !Pack the instruction body:
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
-                 case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_DUMP_CACHE)
+                 case(TAVP_INSTR_CTRL_RESUME,&
+                     &TAVP_INSTR_CTRL_STOP,&
+                     &TAVP_INSTR_CTRL_DUMP_CACHE,&
+                     &TAVP_INSTR_CTRL_FLUSH)
                   call encode_instr_ctrl(errc); if(errc.ne.0) errc=-13
-                 case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
+                 case(TAVP_INSTR_TENS_CREATE,&
+                     &TAVP_INSTR_TENS_DESTROY)
                   call encode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-12
                  case(TAVP_INSTR_TENS_INIT)
                   call encode_instr_tens_transform(errc); if(errc.ne.0) errc=-11
@@ -2794,8 +2802,12 @@
                 if(errc.eq.0) then
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
-                 case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_DUMP_CACHE)
-                 case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
+                 case(TAVP_INSTR_CTRL_RESUME,&
+                     &TAVP_INSTR_CTRL_STOP,&
+                     &TAVP_INSTR_CTRL_DUMP_CACHE,&
+                     &TAVP_INSTR_CTRL_FLUSH)
+                 case(TAVP_INSTR_TENS_CREATE,&
+                     &TAVP_INSTR_TENS_DESTROY)
                   call decode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-13
                  case(TAVP_INSTR_TENS_INIT)
                   call decode_instr_tens_transform(errc); if(errc.ne.0) errc=-12
@@ -6095,7 +6107,7 @@
              ier=tavp%cdecoder%load_port(0,this%ctrl_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-41; exit wloop; endif
              ier=this%iqueue%move_elem(this%ctrl_list)
              stopping=.TRUE.
-            case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_DUMP_CACHE)
+            case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_DUMP_CACHE,TAVP_INSTR_CTRL_FLUSH)
              call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-40; exit wloop; endif
              ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif

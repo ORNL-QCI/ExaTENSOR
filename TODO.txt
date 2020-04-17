@@ -57,14 +57,14 @@ UNRESOLVED ISSUES:
              one-sided communications, the corresponding windows need to be unlocked.
  2019/06/21: TENSOR CREATE may hit the memory limit block, in which case TAVP-WRK should either
              report an error and quit or pass the TRY_LATER code up-level to its TAVP-MNG manager.
+
+
+RESOLVED:
  2019/06/21: When running CPU-only, Dispatcher will run through the entire queue to the end,
              executing blocking issue calls, but without passing completed instructions further
              to Communicator until the end of the queue is reached. In general, DSVU should pass
              processed instructions to the next DSVU instantaneously, without waiting until all
              current instructions have been processed and end of queue is reached.
-
-
-RESOLVED:
  2019/03/06: TAL-SH: cuTensor integration: Add pattern converter and finish integration in NV-TAL.
  2019/03/06: talshTensorContractXL() function: All tensors are initially placed on Host. Blocking.
  2019/03/06: TAL-SH coherence control issue: Logic for output tensors is wrong in some cases, should be:

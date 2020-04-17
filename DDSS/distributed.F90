@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/02/24 (started 2015/03/18)
+!REVISION: 2020/04/17 (started 2015/03/18)
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -887,12 +887,8 @@
         do i=lbound(this%RankWins,1),ubound(this%RankWins,1)
          rnk=this%RankWins(i)%Rank; win=this%RankWins(i)%Window
          if(rnk.ge.0) then !active entry
-          if(this%RankWins(i)%RefCount.gt.0.or.LAZY_LOCKING) call MPI_Win_flush(rnk,win,errc)
-          if(errc.eq.0) then
-           call this%delete(i,errc); if(errc.ne.0) then; errc=1; exit; endif
-          else
-           errc=2; exit
-          endif
+          if(this%RankWins(i)%LockType.ne.NO_LOCK) call MPI_Win_flush(rnk,win,errc)
+          if(errc.ne.0) then; errc=1; exit; endif
          endif
         enddo
         if(present(ierr)) ierr=errc

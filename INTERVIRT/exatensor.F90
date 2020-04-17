@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2020/04/05
+!REVISION: 2020/04/17
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -171,6 +171,7 @@
        public exatns_process_role         !returns the role of the current MPI process (called by Any)
        public exatns_virtual_depth        !returns the depth of the TAVP-MNG hierarchy (does not include TAVP-WRK level)
        public exatns_status               !returns the status of the ExaTENSOR runtime plus statistics, if needed (Driver only)
+       public exatns_flush_communication  !flushes all unfinished MPI communications (Driver only)
        public exatns_dump_cache           !dumps the tensor cache content for each TAVP into its log file (Driver only, debug)
  !Parser/interpreter (Driver only):
        public exatns_interpret            !interprets TAProL code (string of TAProL statements)
@@ -932,6 +933,34 @@
         ierr=EXA_SUCCESS; sts=exatns_rt_status
         return
        end function exatns_status
+!--------------------------------------------------------
+       function exatns_flush_communication() result(ierr)
+!Flushes all unfinished MPI communications.
+        implicit none
+        integer(INTD):: ierr !out: error code
+        integer(INTD):: errc
+        integer(INTL):: ip
+        class(tens_instr_mng_t), pointer:: tens_instr
+
+        ierr=EXA_SUCCESS
+        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: FLUSH COMMUNICATIONS: IP = ")',ADVANCE='NO')&
+        &time_sys_sec()-start_time_stamp; flush(jo)
+        tens_instr=>add_new_instruction(ip,ierr)
+        if(ierr.eq.0) then
+         write(jo,'(i11)') ip; flush(jo) !new instruction id number
+         call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_FLUSH,ierr,iid=ip)
+         if(ierr.eq.0) then
+          call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-4
+          call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-3
+         else
+          ierr=-2
+         endif
+         tens_instr=>NULL()
+        else
+         ierr=-1
+        endif
+        return
+       end function exatns_flush_communication
 !-----------------------------------------------
        function exatns_dump_cache() result(ierr) !DEBUG only
 !Dumps the tensor cache content for each TAVP into its log file.
