@@ -1909,53 +1909,57 @@
         integer(INTL):: ip
 
         ierr=exatns_flush_communication()
-        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by static method): IP = ")',ADVANCE='NO')&
-        &time_sys_sec()-start_time_stamp; flush(jo)
-        if(tensor%is_set(ierr)) then
-         if(ierr.eq.TEREC_SUCCESS) then
-!Construct the tensor transformation object:
-          call tens_trans%set_argument(tensor,ierr)
+        if(ierr.eq.EXA_SUCCESS) then
+         write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by static method): IP = ")',ADVANCE='NO')&
+         &time_sys_sec()-start_time_stamp; flush(jo)
+         if(tensor%is_set(ierr)) then
           if(ierr.eq.TEREC_SUCCESS) then
-           call tens_trans%set_method(ierr,defined=.TRUE.,method_name=method,method_map=method_map_f)
+!Construct the tensor transformation object:
+           call tens_trans%set_argument(tensor,ierr)
            if(ierr.eq.TEREC_SUCCESS) then
+            call tens_trans%set_method(ierr,defined=.TRUE.,method_name=method,method_map=method_map_f)
+            if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor instruction:
-            tens_instr=>add_new_instruction(ip,ierr)
-            if(ierr.eq.0) then
-             write(jo,'(i11)') ip !new instruction id number
-             if(DEBUG.gt.0) then
-              call tensor%print_head(dev_id=jo); call printl(jo,' += '//method(1:len_trim(method)))
-             endif
-             flush(jo)
-             call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_trans,iid=ip)
+             tens_instr=>add_new_instruction(ip,ierr)
              if(ierr.eq.0) then
+              write(jo,'(i11)') ip !new instruction id number
+              if(DEBUG.gt.0) then
+               call tensor%print_head(dev_id=jo); call printl(jo,' += '//method(1:len_trim(method)))
+              endif
+              flush(jo)
+              call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_trans,iid=ip)
+              if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
-              call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-7
+               call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-8
+              else
+               ierr=-7
+              endif
              else
               ierr=-6
              endif
+             tens_instr=>NULL()
             else
              ierr=-5
             endif
-            tens_instr=>NULL()
            else
             ierr=-4
            endif
+           call tens_transformation_dtor(tens_trans)
           else
            ierr=-3
           endif
-          call tens_transformation_dtor(tens_trans)
          else
           ierr=-2
          endif
+         if(ierr.eq.EXA_SUCCESS) then
+          if(present(sync)) then
+           if(sync) ierr=exatns_sync()
+          else
+           ierr=exatns_sync()
+          endif
+         endif
         else
          ierr=-1
-        endif
-        if(ierr.eq.EXA_SUCCESS) then
-         if(present(sync)) then
-          if(sync) ierr=exatns_sync()
-         else
-          ierr=exatns_sync()
-         endif
         endif
         return
        end function exatns_tensor_transform_method_static
@@ -1974,54 +1978,58 @@
         integer(INTL):: ip
 
         ierr=exatns_flush_communication()
-        write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by dynamic method): IP = ")',ADVANCE='NO')&
-        &time_sys_sec()-start_time_stamp; flush(jo)
-        if(tensor%is_set(ierr)) then
-         if(ierr.eq.TEREC_SUCCESS) then
-!Construct the tensor transformation object:
-          call tens_trans%set_argument(tensor,ierr)
+        if(ierr.eq.EXA_SUCCESS) then
+         write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by dynamic method): IP = ")',ADVANCE='NO')&
+         &time_sys_sec()-start_time_stamp; flush(jo)
+         if(tensor%is_set(ierr)) then
           if(ierr.eq.TEREC_SUCCESS) then
-           call tens_trans%set_method(method,ierr,defined=.TRUE.)
+!Construct the tensor transformation object:
+           call tens_trans%set_argument(tensor,ierr)
            if(ierr.eq.TEREC_SUCCESS) then
+            call tens_trans%set_method(method,ierr,defined=.TRUE.)
+            if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor instruction:
-            tens_instr=>add_new_instruction(ip,ierr)
-            if(ierr.eq.0) then
-             write(jo,'(i11)') ip !new instruction id number
-             if(DEBUG.gt.0) then
-              call method%get_name(method_name,nl,ierr)
-              call tensor%print_head(dev_id=jo); call printl(jo,' += '//method_name(1:nl))
-             endif
-             flush(jo)
-             call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_trans,iid=ip)
+             tens_instr=>add_new_instruction(ip,ierr)
              if(ierr.eq.0) then
+              write(jo,'(i11)') ip !new instruction id number
+              if(DEBUG.gt.0) then
+               call method%get_name(method_name,nl,ierr)
+               call tensor%print_head(dev_id=jo); call printl(jo,' += '//method_name(1:nl))
+              endif
+              flush(jo)
+              call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_trans,iid=ip)
+              if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
-              call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-7
+               call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-8
+              else
+               ierr=-7
+              endif
              else
               ierr=-6
              endif
+             tens_instr=>NULL()
             else
              ierr=-5
             endif
-            tens_instr=>NULL()
            else
             ierr=-4
            endif
+           call tens_transformation_dtor(tens_trans)
           else
            ierr=-3
           endif
-          call tens_transformation_dtor(tens_trans)
          else
           ierr=-2
          endif
+         if(ierr.eq.EXA_SUCCESS) then
+          if(present(sync)) then
+           if(sync) ierr=exatns_sync()
+          else
+           ierr=exatns_sync()
+          endif
+         endif
         else
          ierr=-1
-        endif
-        if(ierr.eq.EXA_SUCCESS) then
-         if(present(sync)) then
-          if(sync) ierr=exatns_sync()
-         else
-          ierr=exatns_sync()
-         endif
         endif
         return
        end function exatns_tensor_transform_method_dynamic
