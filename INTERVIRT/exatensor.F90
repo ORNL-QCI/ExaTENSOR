@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2020/04/17
+!REVISION: 2020/04/18
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -196,8 +196,8 @@
        private exatns_tensor_create_tensor!creates an empty tensor (order-1 and higher tensors)
  !Tensor operations (Driver only):
        public exatns_tensor_init          !initializes a tensor to a real/complex value or invokes a user-defined initialization method
-       public exatns_tensor_transform     !executes a user-defined transformation (or action) on a tensor in-place
-       public exatns_tensor_traverse      !traverses a tensor with a user-defined action (for example, printing)
+       public exatns_tensor_transform     !executes a user-defined transformation (action) method on a tensor in-place
+       public exatns_tensor_traverse      !traverses a tensor with a user-defined action method (for example, printing)
        public exatns_tensor_copy          !copies the content of one tensor into another tensor, allowing for permutation, slicing, or insertion
        public exatns_tensor_fold          !produces a new tensor by folding multiple tensor dimensions into a single one
        public exatns_tensor_unfold        !produces a new tensor by unfolding a tensor dimension into multiple dimensions
@@ -938,7 +938,6 @@
 !Flushes all unfinished MPI communications.
         implicit none
         integer(INTD):: ierr !out: error code
-        integer(INTD):: errc
         integer(INTL):: ip
         class(tens_instr_mng_t), pointer:: tens_instr
 
@@ -950,8 +949,17 @@
          write(jo,'(i11)') ip; flush(jo) !new instruction id number
          call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_FLUSH,ierr,iid=ip)
          if(ierr.eq.0) then
-          call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-4
-          call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-3
+          call issue_new_instruction(tens_instr,ierr)
+          if(ierr.eq.0) then
+           ierr=exatns_sync()
+           if(ierr.eq.EXA_SUCCESS) then
+            call tens_instr%set_status(DS_INSTR_RETIRED,ierr); if(ierr.ne.DSVP_SUCCESS) ierr=-5
+           else
+            ierr=-4
+           endif
+          else
+           ierr=-3
+          endif
          else
           ierr=-2
          endif
@@ -1900,7 +1908,7 @@
         type(tens_transformation_t):: tens_trans
         integer(INTL):: ip
 
-        ierr=EXA_SUCCESS
+        ierr=exatns_flush_communication()
         write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by static method): IP = ")',ADVANCE='NO')&
         &time_sys_sec()-start_time_stamp; flush(jo)
         if(tensor%is_set(ierr)) then
@@ -1965,7 +1973,7 @@
         integer(INTD):: nl
         integer(INTL):: ip
 
-        ierr=EXA_SUCCESS
+        ierr=exatns_flush_communication()
         write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: TRANSFORM TENSOR (by dynamic method): IP = ")',ADVANCE='NO')&
         &time_sys_sec()-start_time_stamp; flush(jo)
         if(tensor%is_set(ierr)) then
