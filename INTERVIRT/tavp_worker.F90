@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/17
+!REVISION: 2020/04/18
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -115,7 +115,7 @@
  !Resourcer:
         real(8), private:: MAX_RESOURCER_ACTIVE_MEM_FRAC=7d-1 !fraction of Host RAM after which regular resourcing queue blocks and only deferred queue stays active
         integer(INTD), private:: MAX_RESOURCER_INTAKE=512 !max number of instructions in Resourcer's main queue
-        integer(INTD), private:: MAX_RESOURCER_INSTR=64   !max number of instructions during a single new resource allocation phase before passing resourced instructions to Communicator
+        integer(INTD), private:: MAX_RESOURCER_INSTR=24   !max number of instructions during a single new resource allocation phase before passing resourced instructions to Communicator
         real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3  !max time spent in a single new resource allocation phase
         real(8), private:: MAX_RESOURCER_WAIT_TIME=30d0   !max waiting time (sec) upon which Resourcer will start complaining if no instructions are issued
  !Communicator:
