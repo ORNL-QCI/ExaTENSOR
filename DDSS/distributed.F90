@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/17 (started 2015/03/18)
+!REVISION: 2020/04/19 (started 2015/03/18)
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -124,7 +124,7 @@
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
         logical, parameter, private:: LAZY_LOCKING=.TRUE.                 !lazy MPI window locking
-        logical, parameter, private:: TEST_AND_FLUSH=.FALSE.              !MPI_Test() will call MPI_Win_flush() on completion when entry reference count becomes 0 (not necessary)
+        logical, parameter, private:: TEST_AND_FLUSH=.FALSE.              !MPI_Test() will call MPI_Win_flush() on completion when entry reference count becomes 0 (not always necessary)
         logical, parameter, private:: NO_FLUSH_AFTER_READ_EPOCH=.TRUE.    !if TRUE, there will be no MPI_Win_flush() after the read epoch, thus mandating external synchronization
         logical, parameter, private:: NO_FLUSH_AFTER_WRITE_EPOCH=.FALSE.  !if TRUE, there will be no MPI_Win_flush() after the write epoch, thus mandating external synchronization
         integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27    !max number of elements in a single MPI message (larger to be split)
@@ -2035,7 +2035,7 @@
             if(errc.eq.0) then
              if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
               if(LAZY_LOCKING) then
-               if(TEST_AND_FLUSH) then
+               if(TEST_AND_FLUSH.or.(rw_entry%LockType*WRITE_SIGN.gt.0)) then !remote accumulates require flush
                 if(DEBUG.ge.1) then
                  write(jo,'("#DEBUG(distributed:DataDescr.TestData)[",i5,":",i3,"]: WIN_FLUSH(.test): ")',ADVANCE='NO')&
                  &impir,thread_id
@@ -2165,7 +2165,7 @@
             if(errc.eq.0) then
              if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
               if(LAZY_LOCKING) then
-               if(TEST_AND_FLUSH) then
+               if(TEST_AND_FLUSH.or.(rw_entry%LockType*WRITE_SIGN.gt.0)) then !remote accumulates require flush
                 if(DEBUG.ge.1) then
                  write(jo,'("#DEBUG(distributed:DataDescr.WaitData)[",i5,":",i3,"]: WIN_FLUSH(.wait): ")',ADVANCE='NO')&
                  &impir,thread_id
