@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/18
+!REVISION: 2020/04/20
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -132,11 +132,11 @@
  !Dispatcher:
         logical, private:: DISPATCH_WAIT_ALL=.TRUE.             !activates MPI_Waitall() in synchronizing instruction dispatch to lower-level TAVPs
         logical, private:: DISPATCH_RANDOM=.FALSE.              !activates random dispatch for affinity-less tensor instructions
-        logical, private:: DISPATCH_BALANCE=.TRUE.              !activates load-balanced dispatch for affinity-less tensor instructions (DISPATCH_RANDOM must be off)
+        logical, private:: DISPATCH_BALANCE=.FALSE.             !activates load-balanced dispatch for affinity-less tensor instructions (DISPATCH_RANDOM must be off)
         real(8), private:: DISPATCH_BALANCE_BIAS=32d0           !bias for the balancing function
         real(8), private:: DISPATCH_BALANCE_KURT=3d-1           !inverse kurtosis for the balancing function
-        integer(INTD), private:: MAX_ISSUE_INSTR=48             !max number of tensor instructions in the bytecode issued to a child node
-        integer(INTD), private:: MIN_ISSUE_INSTR=12             !min number of tensor instructions being currently processed by a child node
+        integer(INTD), private:: MAX_ISSUE_INSTR=256            !max number of tensor instructions in the bytecode issued to a child node
+        integer(INTD), private:: MIN_ISSUE_INSTR=128            !min number of tensor instructions being currently processed by a child node
  !Collector:
         integer(INTD), private:: MAX_COLLECT_INSTR=8192         !max number of active tensor (sub-)instructions in the collection phase
  !Retirer:
