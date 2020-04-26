@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/20
+!REVISION: 2020/04/26
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5328,10 +5328,10 @@
          integer(INTD), intent(out), optional:: alt_channel !out: alternative dispatch channel (can be the same as the primary channel)
          integer(INTD):: errc,i,opcode,num_args
          class(ds_oprnd_t), pointer:: tens_oprnd
-         integer(INTD):: owner_ids(0:MAX_TENSOR_OPERANDS-1)
+         integer(INTD):: owner_ids(0:MAX_TENSOR_OPERANDS-1),alt_ch
          class(DataDescr_t), pointer:: descr
 
-         channel=-1; alt_channel=-1 !negative value means undefined
+         channel=-1; alt_ch=-1 !negative value means undefined
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            opcode=tens_instr%get_code(errc)
@@ -5380,7 +5380,7 @@
              endif
  !Decide which dispatch channel to map the instruction to:
              if(errc.eq.0.and.num_args.gt.0) then
-              channel=map_by_arg_order(alt_channel,errc); if(errc.ne.0) errc=-5
+              channel=map_by_arg_order(alt_ch,errc); if(errc.ne.0) errc=-5
              endif
             else
              errc=-4
@@ -5394,6 +5394,7 @@
          else
           errc=-1
          endif
+         if(present(alt_channel)) alt_channel=alt_ch
          if(present(ierr)) ierr=errc
          return
 
@@ -5441,9 +5442,13 @@
              bal=1d0/&
              &(1d0+exp(-DISPATCH_BALANCE_KURT*(real(this%dispatch_count(chnl)-this%dispatch_count(alt),8)-DISPATCH_BALANCE_BIAS)))
              if(rnd.lt.bal) chnl=alt
+            else
+             alt=chnl
             endif
            elseif(opcode.eq.TAVP_INSTR_TENS_DESTROY) then !tensor destruction must occur at their persistent location
             alt=chnl
+           else
+            if(.not.DISPATCH_BALANCE) alt=chnl
            endif
           endif
           return
