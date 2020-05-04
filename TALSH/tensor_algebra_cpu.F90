@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/12
+!REVISION: 2020/05/04
 
 !Copyright (C) 2013-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -4261,6 +4261,9 @@
         type(tensor_block_t), intent(inout), target:: stens !out: singular value tensor
         integer, intent(inout):: ierr                       !out: error code
         character(2), intent(in), optional:: data_kind      !in: preferred data kind
+        !---------------------------------------------
+        logical, parameter:: PRINT_INFO=.FALSE.
+        !----------------------------
         integer:: i,nfound,lwork,info
         integer:: dtb,ltb,rtb,stb,drank,lrank,rrank,srank,lr,rr,cr
         integer(LONGINT):: lu,ru,nv,mlr,lrwork,l0,l1,lb
@@ -4274,9 +4277,20 @@
         complex(4), pointer, contiguous:: dmc4(:,:),lmc4(:,:),rmc4(:,:),wrkc4(:)
         complex(8), pointer, contiguous:: dmc8(:,:),lmc8(:,:),rmc8(:,:),wrkc8(:)
         integer, allocatable:: iwork(:)
-        real(8):: time_beg
+        real(8):: time_beg,val
 
         ierr=0
+        if(PRINT_INFO) then
+         write(CONS_OUT,'("#DEBUG(CP-TAL:tensor_block_decompose_svd): Initial tensor 2-norms:")')
+         val=tensor_block_norm2(dtens,info)
+         write(CONS_OUT,'(" D tensor: ",D25.14)') val
+         val=tensor_block_norm2(ltens,info)
+         write(CONS_OUT,'(" L tensor: ",D25.14)') val
+         val=tensor_block_norm2(rtens,info)
+         write(CONS_OUT,'(" R tensor: ",D25.14)') val
+         val=tensor_block_norm2(stens,info)
+         write(CONS_OUT,'(" S tensor: ",D25.14)') val
+        endif
         time_beg=thread_wtime()
  !Get tensor ranks:
         drank=dtens%tensor_shape%num_dim
@@ -4309,6 +4323,7 @@
            mlr=min(lu,ru)
            lrwork=mlr*(mlr*2+15*mlr) !GESVDX length of RWORK
            !lrwork=max(mlr*mlr*5+mlr*5,mlr*max(lu,ru)*2+mlr*mlr*2+mlr) !GESDD length of RWORK
+           if(PRINT_INFO) write(CONS_OUT,'(" Matrix dimensions:",i13,1x,i13,1x,i13)') lu,ru,nv
  !Associate matrices and perform (partial) SVD:
            select case(dtk)
            case('r4','R4')
@@ -4514,6 +4529,17 @@
            end select
 ! Absorb the middle tensor of singular values into other tensor factors, if needed:
            if(ierr.eq.0) then
+            if(PRINT_INFO) then
+             write(CONS_OUT,'("#DEBUG(CP-TAL:tensor_block_decompose_svd): Intermediate tensor 2-norms:")')
+             val=tensor_block_norm2(dtens,info)
+             write(CONS_OUT,'(" D tensor: ",D25.14)') val
+             val=tensor_block_norm2(ltens,info)
+             write(CONS_OUT,'(" L tensor: ",D25.14)') val
+             val=tensor_block_norm2(rtens,info)
+             write(CONS_OUT,'(" R tensor: ",D25.14)') val
+             val=tensor_block_norm2(stens,info)
+             write(CONS_OUT,'(" S tensor: ",D25.14)') val
+            endif
             select case(absorb)
             case('N') !no absorption
             case('L') !stens is absorbed into ltens
@@ -4676,6 +4702,17 @@
             case default
              ierr=29
             end select
+            if(PRINT_INFO) then
+             write(CONS_OUT,'("#DEBUG(CP-TAL:tensor_block_decompose_svd): Final tensor 2-norms:")')
+             val=tensor_block_norm2(dtens,info)
+             write(CONS_OUT,'(" D tensor: ",D25.14)') val
+             val=tensor_block_norm2(ltens,info)
+             write(CONS_OUT,'(" L tensor: ",D25.14)') val
+             val=tensor_block_norm2(rtens,info)
+             write(CONS_OUT,'(" R tensor: ",D25.14)') val
+             val=tensor_block_norm2(stens,info)
+             write(CONS_OUT,'(" S tensor: ",D25.14)') val
+            endif
            endif
           else
            ierr=30
@@ -4689,8 +4726,10 @@
         if(VERBOSE.and.ierr.ne.0) then
          write(CONS_OUT,'("#ERROR(CP-TAL:tensor_block_decompose_svd): Error ",i11)') ierr
         endif
-        !write(CONS_OUT,'("#DEBUG(CP-TAL:tensor_block_decompose_svd): Time (s) = ",F12.6,": Status ",i11)')&
-        !&thread_wtime()-time_beg,ierr !debug
+        if(PRINT_INFO) then
+         write(CONS_OUT,'("#DEBUG(CP-TAL:tensor_block_decompose_svd): Time (s) = ",F12.6,": Status ",i11)')&
+         &thread_wtime()-time_beg,ierr
+        endif
         return
 
         contains
