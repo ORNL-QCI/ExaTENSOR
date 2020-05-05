@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2020/04/18
+!REVISION: 2020/05/05
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -354,6 +354,8 @@
         integer(INT_MPI):: errc,num_procs,my_rank
         type(tens_scalar_get_t):: retrieve_scalar
         type(tens_tensor_get_t):: retrieve_tensor
+        type(tens_printer_t):: print_tensor
+        !type(tens_max_get_t):: get_tensor_max
 
         ierr=EXA_SUCCESS
 !Check whether the ExaTENSOR runtime is currently OFF:
@@ -450,16 +452,22 @@
         else
          call dil_process_finish(errc); ierr=-13; return
         endif
+!Register tensor printing functor:
+        errc=exatns_method_register('_PrintTensor_',print_tensor)
+        if(errc.ne.EXA_SUCCESS) then; call dil_process_finish(errc); ierr=-14; return; endif
+!Register tensor max/argmax functor:
+        !errc=exatns_method_register('_TensorMax_',get_tensor_max)
+        if(errc.ne.EXA_SUCCESS) then; call dil_process_finish(errc); ierr=-15; return; endif
 !Sync all MPI processes before configuring and launching TAVPs:
-        call dil_global_comm_barrier(errc); if(errc.ne.0) then; call dil_process_finish(errc); ierr=-14; return; endif
+        call dil_global_comm_barrier(errc); if(errc.ne.0) then; call dil_process_finish(errc); ierr=-16; return; endif
 !Mark the ExaTENSOR runtime active:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_ON,EXA_SUCCESS,num_procs,0_INTL)
 !Live TAVP life (only Driver returns immediately):
         ierr=EXA_SUCCESS
         if(process_role.eq.EXA_DRIVER) then
-         ierr=instr_log%init(instructions); if(ierr.ne.GFC_SUCCESS) ierr=-15
-         call bytecode_out%reserve_mem(ierr); if(ierr.ne.0) ierr=-16
-         call bytecode_in%reserve_mem(ierr); if(ierr.ne.0) ierr=-17
+         ierr=instr_log%init(instructions); if(ierr.ne.GFC_SUCCESS) ierr=-17
+         call bytecode_out%reserve_mem(ierr); if(ierr.ne.0) ierr=-18
+         call bytecode_in%reserve_mem(ierr); if(ierr.ne.0) ierr=-19
          if(ierr.eq.0) start_time_stamp=time_sys_sec()
          return !Driver process returns immediately, it will later call exatns_stop()
         elseif(process_role.eq.EXA_MANAGER) then
@@ -487,6 +495,8 @@
          call tavp%destroy(errc); deallocate(tavp)
         endif
 !Unregister internal methods:
+        !errc=exatns_method_unregister('_TensorMax_')
+        errc=exatns_method_unregister('_PrintTensor_')
         errc=exatns_method_unregister('_RetrieveTensor_')
         errc=exatns_method_unregister('_RetrieveScalar_')
 !Sync everyone:
@@ -494,19 +504,19 @@
         write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
              &dil_global_process_id(),dil_global_comm_size(),ierr
         call dil_global_comm_barrier(errc)
-        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-18; endif
+        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-20; endif
 !Free role specific MPI communicators:
         if(drv_mng_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-19
+         call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-21
         endif
         if(mng_wrk_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-20
+         call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-22
         endif
         if(role_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-21
+         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-23
         endif
 !Finish the MPI process:
-        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-22
+        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-24
         return
 
         contains
@@ -762,6 +772,8 @@
 !Mark the ExaTENSOR runtime is off:
           exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0,ip+1_INTL)
 !Unregister internal methods:
+          !errc=exatns_method_unregister('_TensorMax_')
+          errc=exatns_method_unregister('_PrintTensor_')
           errc=exatns_method_unregister('_RetrieveTensor_')
           errc=exatns_method_unregister('_RetrieveScalar_')
 !Sync with others globally:
