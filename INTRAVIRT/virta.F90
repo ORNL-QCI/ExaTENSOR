@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/17
+!REVISION: 2020/05/07
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -125,6 +125,7 @@
         integer(INT_MPI), parameter, public:: TAVP_REPLICA_TAG=4  !MPI message containing instructions for data replication
         integer(INT_MPI), parameter, public:: TAVP_SCALAR_TAG=5   !MPI message containing a scalar
         integer(INT_MPI), parameter, public:: TAVP_TENSOR_TAG=6   !MPI message containing tensor data
+        integer(INT_MPI), parameter, public:: TAVP_MLNDX_TAG=7    !MPI message containing multi-index
  !TAVP instruction error codes [-1:-100]:
         integer(INTD), parameter, public:: TAVP_ERR_GEN_FAILURE=-1     !unspecified generic failure
         integer(INTD), parameter, public:: TAVP_ERR_BTC_BAD=-2         !bad instruction bytecode
@@ -313,20 +314,36 @@
         end type tens_cache_t
  !Scalar retrieval functor:
         type, extends(tens_method_uni_t), public:: tens_scalar_get_t
-         integer(INTD), private:: receive_comm=MPI_COMM_NULL           !MPI communicator of the scalar receiver
-         integer(INTD), private:: receive_rank=-1                      !MPI rank of the scalar receiver
+         integer(INTD), private:: receive_comm=MPI_COMM_NULL            !MPI communicator of the scalar receiver
+         integer(INTD), private:: receive_rank=-1                       !MPI rank of the scalar receiver
          contains
-          procedure, public:: tens_scalar_get_ctor=>TensScalarGetCtor  !ctor
-          procedure, public:: apply=>TensScalarGetApply                !passes the scalar to the receiver MPI process
+          procedure, public:: tens_scalar_get_ctor=>TensScalarGetCtor   !ctor
+          procedure, public:: apply=>TensScalarGetApply                 !passes the scalar to the receiver MPI process
         end type tens_scalar_get_t
  !Tensor retrieval functor:
         type, extends(tens_method_uni_t), public:: tens_tensor_get_t
-         integer(INTD), private:: receive_comm=MPI_COMM_NULL           !MPI communicator of the tensor receiver
-         integer(INTD), private:: receive_rank=-1                      !MPI rank of the tensor receiver
+         integer(INTD), private:: receive_comm=MPI_COMM_NULL            !MPI communicator of the tensor receiver
+         integer(INTD), private:: receive_rank=-1                       !MPI rank of the tensor receiver
          contains
-          procedure, public:: tens_tensor_get_ctor=>TensTensorGetCtor  !ctor
-          procedure, public:: apply=>TensTensorGetApply                !passes the tensor to the receiver MPI process
+          procedure, public:: tens_tensor_get_ctor=>TensTensorGetCtor   !ctor
+          procedure, public:: apply=>TensTensorGetApply                 !passes the tensor to the receiver MPI process
         end type tens_tensor_get_t
+ !Tensor element retrieval functor:
+!        type, extends(tens_method_uni_t), public:: tens_element_get_t
+!         integer(INTD), private:: receive_comm=MPI_COMM_NULL            !MPI communicator of the tensor element receiver
+!         integer(INTD), private:: receive_rank=-1                       !MPI rank of the tensor element receiver
+!         contains
+!          procedure, public:: tens_element_get_ctor=>TensElementGetCtor !ctor
+!          procedure, public:: apply=>TensElementGetApply                !passes the tensor element to the receiver MPI process
+!        end type tens_element_get_t
+ !Tensor argmax/max functor:
+        type, extends(tens_method_uni_t), public:: tens_max_get_t
+         integer(INTD), private:: receive_comm=MPI_COMM_NULL            !MPI communicator of the tensor argmax/max receiver
+         integer(INTD), private:: receive_rank=-1                       !MPI rank of the tensor argmax/max receiver
+         contains
+          procedure, public:: tens_max_get_ctor=>TensMaxGetCtor         !ctor
+          procedure, public:: apply=>TensMaxGetApply                    !passes the tensor argmax/max to the receiver MPI process
+        end type tens_max_get_t
  !External data register:
         type, public:: data_register_t
          type(dictionary_t), private:: ext_data                           !string --> tens_data_t{talsh_tens_data_t}
@@ -490,6 +507,12 @@
  !tens_tensor_get_t:
         private TensTensorGetCtor
         private TensTensorGetApply
+ !tens_element_get_t:
+!        private TensElementGetCtor
+!        private TensElementGetApply
+ !tens_max_get_t:
+        private TensMaxGetCtor
+        private TensMaxGetApply
  !data_register_t:
         private DataRegisterRegisterData
         private DataRegisterUnregisterData
@@ -2411,6 +2434,248 @@
           end subroutine send_tensor_data
 
         end function TensTensorGetApply
+![tens_max_get_t]=====================================
+        subroutine TensMaxGetCtor(this,comm,rank,ierr)
+         implicit none
+         class(tens_max_get_t), intent(out):: this    !out: tensor argmax/max getting functor
+         integer(INTD), intent(in):: comm             !MPI communicator of the receiving MPI process
+         integer(INTD), intent(in):: rank             !MPI rank of the receiving MPI process
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(comm.ne.MPI_COMM_NULL.and.rank.ge.0) then
+          this%receive_comm=comm
+          this%receive_rank=rank
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensMaxGetCtor
+!----------------------------------------------------------------
+        function TensMaxGetApply(this,tensor,scalar) result(ierr)
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(tens_max_get_t), intent(in):: this     !in: tensor argmax/max getting functor
+         class(tens_rcrsv_t), intent(inout):: tensor  !in: tensor
+         complex(8), intent(inout), optional:: scalar !in: scalar (not used here)
+         integer(INTD):: data_kind,n
+         integer(INTL):: vol
+         logical:: laid,locd
+         type(C_PTR):: body_p
+         class(tens_layout_t), pointer:: layout
+
+         ierr=0
+         if(this%receive_comm.ne.MPI_COMM_NULL) then
+          if(tensor%is_set(ierr,num_dims=n,layed=laid,located=locd)) then
+           if(ierr.eq.TEREC_SUCCESS) then
+            if(n.ge.0) then
+             if(laid.and.locd) then
+              data_kind=tensor%get_data_type(ierr)
+              if(ierr.eq.TEREC_SUCCESS) then
+               layout=>tensor%get_layout(ierr)
+               if(ierr.eq.TEREC_SUCCESS.and.associated(layout)) then
+                vol=layout%get_volume()
+                body_p=tensor%get_body_ptr(ierr)
+                if(ierr.eq.TEREC_SUCCESS) then
+                 call send_tensor_data(ierr); if(ierr.ne.0) ierr=-9
+                else
+                 ierr=-8
+                endif
+               else
+                ierr=-7
+               endif
+              else
+               ierr=-6
+              endif
+             else
+              ierr=-5
+             endif
+            else
+             ierr=-4
+            endif
+           else
+            ierr=-3
+           endif
+          else
+           ierr=-2
+          endif
+         else
+          ierr=-1
+         endif
+         return
+
+         contains
+
+          subroutine send_tensor_data(jerr)
+           integer(INTD), intent(out):: jerr
+           real(4), pointer, contiguous:: r4p(:)
+           real(8), pointer, contiguous:: r8p(:)
+           complex(4), pointer, contiguous:: c4p(:)
+           complex(8), pointer, contiguous:: c8p(:)
+           real(4):: elem_r4t(0:CPTAL_MAX_THREADS-1),elem_r4
+           real(8):: elem_r8t(0:CPTAL_MAX_THREADS-1),elem_r8
+           complex(4):: elem_c4t(0:CPTAL_MAX_THREADS-1),elem_c4
+           complex(8):: elem_c8t(0:CPTAL_MAX_THREADS-1),elem_c8
+           integer(INTL):: mlndx(1:MAX_TENSOR_RANK),lmt(0:CPTAL_MAX_THREADS-1),lm,l
+           integer(INTD):: nthreads,thn
+
+           jerr=0
+           nthreads=omp_get_max_threads()
+           select case(data_kind)
+           case(R4)
+            call c_f_pointer(body_p,r4p,(/vol/))
+            lmt(0:nthreads-1)=0; elem_r4t(0:nthreads-1)=0.0
+            lm=1; elem_r4=r4p(lm)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thn,l) FIRSTPRIVATE(lm,elem_r4)
+            thn=omp_get_thread_num()
+!$OMP DO SCHEDULE(GUIDED)
+            do l=1,vol
+             if(r4p(l).gt.elem_r4) then
+              lm=l; elem_r4=r4p(lm)
+             endif
+            enddo
+!$OMP END DO
+            lmt(thn)=lm; elem_r4t(thn)=elem_r4
+!$OMP END PARALLEL
+            lm=0; do l=1,nthreads-1; if(elem_r4t(l).gt.elem_r4t(lm)) lm=l; enddo
+            call get_element_mlndx(lmt(lm)-1,mlndx,jerr)
+            if(jerr.eq.0) then
+             elem_c8=cmplx(real(elem_r4t(lm),8),0d0,8)
+             call MPI_Ssend(elem_c8,int(1,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,jerr)
+             if(jerr.eq.MPI_SUCCESS) then
+              if(n.gt.0) then
+               call MPI_Ssend(mlndx,int(n,INT_MPI),MPI_INTEGER8,this%receive_rank,TAVP_MLNDX_TAG,this%receive_comm,jerr)
+               if(jerr.ne.MPI_SUCCESS) jerr=-13
+              endif
+             else
+              jerr=-12
+             endif
+            else
+             jerr=-11
+            endif
+           case(R8)
+            call c_f_pointer(body_p,r8p,(/vol/))
+            lmt(0:nthreads-1)=0; elem_r8t(0:nthreads-1)=0d0
+            lm=1; elem_r8=r8p(lm)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thn,l) FIRSTPRIVATE(lm,elem_r8)
+            thn=omp_get_thread_num()
+!$OMP DO SCHEDULE(GUIDED)
+            do l=1,vol
+             if(r8p(l).gt.elem_r8) then
+              lm=l; elem_r8=r8p(lm)
+             endif
+            enddo
+!$OMP END DO
+            lmt(thn)=lm; elem_r8t(thn)=elem_r8
+!$OMP END PARALLEL
+            lm=0; do l=1,nthreads-1; if(elem_r8t(l).gt.elem_r8t(lm)) lm=l; enddo
+            call get_element_mlndx(lmt(lm)-1,mlndx,jerr)
+            if(jerr.eq.0) then
+             elem_c8=cmplx(elem_r8t(lm),0d0,8)
+             call MPI_Ssend(elem_c8,int(1,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,jerr)
+             if(jerr.eq.MPI_SUCCESS) then
+              if(n.gt.0) then
+               call MPI_Ssend(mlndx,int(n,INT_MPI),MPI_INTEGER8,this%receive_rank,TAVP_MLNDX_TAG,this%receive_comm,jerr)
+               if(jerr.ne.MPI_SUCCESS) jerr=-10
+              endif
+             else
+              jerr=-9
+             endif
+            else
+             jerr=-8
+            endif
+           case(C4)
+            call c_f_pointer(body_p,c4p,(/vol/))
+            lmt(0:nthreads-1)=0; elem_c4t(0:nthreads-1)=(0.0,0.0)
+            lm=1; elem_c4=c4p(lm)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thn,l) FIRSTPRIVATE(lm,elem_c4)
+            thn=omp_get_thread_num()
+!$OMP DO SCHEDULE(GUIDED)
+            do l=1,vol
+             if(abs(c4p(l)).gt.abs(elem_c4)) then
+              lm=l; elem_c4=c4p(lm)
+             endif
+            enddo
+!$OMP END DO
+            lmt(thn)=lm; elem_c4t(thn)=elem_c4
+!$OMP END PARALLEL
+            lm=0; do l=1,nthreads-1; if(abs(elem_c4t(l)).gt.abs(elem_c4t(lm))) lm=l; enddo
+            call get_element_mlndx(lmt(lm)-1,mlndx,jerr)
+            if(jerr.eq.0) then
+             elem_c8=elem_c4t(lm)
+             call MPI_Ssend(elem_c8,int(1,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,jerr)
+             if(jerr.eq.MPI_SUCCESS) then
+              if(n.gt.0) then
+               call MPI_Ssend(mlndx,int(n,INT_MPI),MPI_INTEGER8,this%receive_rank,TAVP_MLNDX_TAG,this%receive_comm,jerr)
+               if(jerr.ne.MPI_SUCCESS) jerr=-7
+              endif
+             else
+              jerr=-6
+             endif
+            else
+             jerr=-5
+            endif
+           case(C8)
+            call c_f_pointer(body_p,c8p,(/vol/))
+            lmt(0:nthreads-1)=0; elem_c8t(0:nthreads-1)=(0d0,0d0)
+            lm=1; elem_c8=c8p(lm)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(thn,l) FIRSTPRIVATE(lm,elem_c8)
+            thn=omp_get_thread_num()
+!$OMP DO SCHEDULE(GUIDED)
+            do l=1,vol
+             if(abs(c8p(l)).gt.abs(elem_c8)) then
+              lm=l; elem_c8=c8p(lm)
+             endif
+            enddo
+!$OMP END DO
+            lmt(thn)=lm; elem_c8t(thn)=elem_c8
+!$OMP END PARALLEL
+            lm=0; do l=1,nthreads-1; if(abs(elem_c8t(l)).gt.abs(elem_c8t(lm))) lm=l; enddo
+            call get_element_mlndx(lmt(lm)-1,mlndx,jerr)
+            if(jerr.eq.0) then
+             elem_c8=elem_c8t(lm)
+             call MPI_Ssend(elem_c8,int(1,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,jerr)
+             if(jerr.eq.MPI_SUCCESS) then
+              if(n.gt.0) then
+               call MPI_Ssend(mlndx,int(n,INT_MPI),MPI_INTEGER8,this%receive_rank,TAVP_MLNDX_TAG,this%receive_comm,jerr)
+               if(jerr.ne.MPI_SUCCESS) jerr=-4
+              endif
+             else
+              jerr=-3
+             endif
+            else
+             jerr=-2
+            endif
+           case default
+            jerr=-1
+           end select
+           return
+          end subroutine send_tensor_data
+
+          subroutine get_element_mlndx(offst,mlndx,jerr)
+           integer(INTL), intent(in):: offst         !in: linear offset (0 based)
+           integer(INTL), intent(inout):: mlndx(1:*) !out: multi-index
+           integer(INTD), intent(out):: jerr         !out: error code
+           type(tens_dense_t):: tens_dense
+           integer(INTL):: loff
+           integer(INTD):: i
+
+           jerr=0
+           tens_dense=tensor%get_dense_adapter(jerr)
+           if(jerr.eq.TEREC_SUCCESS.and.tens_dense%num_dims.gt.0) then
+            loff=offst
+            do i=1,tens_dense%num_dims
+             mlndx(i)=mod(loff,tens_dense%dims(i))
+             loff=loff/tens_dense%dims(i)
+            enddo
+            mlndx(1:tens_dense%num_dims)=mlndx(1:tens_dense%num_dims)+tens_dense%bases(1:tens_dense%num_dims)
+           endif
+           return
+          end subroutine get_element_mlndx
+
+        end function TensMaxGetApply
 ![data_register_t]=========================================================
         subroutine DataRegisterRegisterData(this,data_name,extrn_data,ierr)
          implicit none

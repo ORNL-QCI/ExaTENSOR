@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/04
+!REVISION: 2020/05/07
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -337,7 +337,7 @@
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
           procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
           procedure, public:: get_descriptor=>TensRcrsvGetDescriptor !returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location
-          procedure, public:: get_dense_adapter=>TensRcrsvGetDenseAdapter !returns tens_dense_t for locally stored tensors (for compatibility)
+          procedure, public:: get_dense_adapter=>TensRcrsvGetDenseAdapter !returns tens_dense_t for locally stored tensors with column-wise dense storage layout (for compatibility)
           procedure, public:: conforms_to=>TensRcrsvConformsTo       !returns TRUE if the tensor space/subspace multi-indices are equal to those from another tensor
           procedure, private:: TensRcrsvSplitList                    !splits the tensor into subtensors (a list of either subtensors or just their headers)
           procedure, private:: TensRcrsvSplitVector                  !splits the tensor into subtensors (a vector of either subtensors or just their headers)
@@ -5436,20 +5436,30 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,n,unres
          logical:: shpd,locd,symd
+         class(tens_layout_t), pointer:: tens_layout
 
          if(this%is_set(errc,num_dims=n,shaped=shpd,unresolved=unres,located=locd,symmetric=symd)) then
           if(errc.eq.TEREC_SUCCESS) then
            if(shpd.and.(unres.eq.0).and.locd.and.(.not.symd)) then
-            tens_dense%body_ptr=this%get_body_ptr(errc)
-            if(errc.eq.TEREC_SUCCESS) then
-             tens_dense%data_kind=this%get_data_type(errc)
-             if(errc.eq.TEREC_SUCCESS) then
-              if(n.gt.0) then
-               call this%get_bases(tens_dense%bases,n,errc)
-               if(errc.eq.TEREC_SUCCESS) call this%get_dims(tens_dense%dims,n,errc)
+            tens_layout=>this%get_layout(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(tens_layout)) then
+             if(tens_layout%get_layout_kind().eq.TEREC_LAY_FDIMS) then
+              tens_dense%body_ptr=this%get_body_ptr(errc)
+              if(errc.eq.TEREC_SUCCESS) then
+               tens_dense%data_kind=this%get_data_type(errc)
+               if(errc.eq.TEREC_SUCCESS) then
+                if(n.gt.0) then
+                 call this%get_bases(tens_dense%bases,n,errc)
+                 if(errc.eq.TEREC_SUCCESS) call this%get_dims(tens_dense%dims,n,errc)
+                endif
+                if(errc.eq.TEREC_SUCCESS) tens_dense%num_dims=n
+               endif
               endif
-              if(errc.eq.TEREC_SUCCESS) tens_dense%num_dims=n
+             else
+              errc=TEREC_INVALID_ARGS
              endif
+            else
+             if(errc.eq.TEREC_SUCCESS) errc=TEREC_OBJ_CORRUPTED
             endif
            else
             errc=TEREC_INVALID_REQUEST

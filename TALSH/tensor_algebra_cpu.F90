@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/04
+!REVISION: 2020/05/07
 
 !Copyright (C) 2013-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -76,7 +76,7 @@
  !Global:
         integer, parameter, public:: MAX_SHAPE_STR_LEN=1024   !max allowed length for a tensor shape specification string (TSSS)
         integer, parameter, public:: LONGINT=INTL             !long integer size in bytes
-        integer, parameter, private:: MAX_THREADS=1024        !max allowed number of threads in this module
+        integer, parameter, public:: CPTAL_MAX_THREADS=1024   !max allowed number of threads in this module
         integer, private:: MEM_ALLOC_POLICY=MEM_ALLOC_TMP_BUF !memory allocation policy
         logical, private:: MEM_ALLOC_FALLBACK=.TRUE.          !memory allocation fallback to the regular allocator
         logical, private:: ZERO_UNINITIALIZED_OUTPUT=.TRUE.   !initialize uninitialized output tensors to zero in tensor contractions
@@ -88,9 +88,9 @@
         logical, private:: DISABLE_BLAS=.TRUE.   !if .TRUE. and BLAS is accessible, BLAS calls will be replaced by my own routines
 #endif
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: MAX_SHAPE_STR_LEN,LONGINT,MAX_THREADS,MEM_ALLOC_POLICY,MEM_ALLOC_FALLBACK
+!DIR$ ATTRIBUTES OFFLOAD:mic:: MAX_SHAPE_STR_LEN,LONGINT,CPTAL_MAX_THREADS,MEM_ALLOC_POLICY,MEM_ALLOC_FALLBACK
 !DIR$ ATTRIBUTES OFFLOAD:mic:: DATA_KIND_SYNC,TRANS_SHMEM,DISABLE_BLAS
-!DIR$ ATTRIBUTES ALIGN:128:: MAX_SHAPE_STR_LEN,LONGINT,MAX_THREADS,MEM_ALLOC_POLICY,MEM_ALLOC_FALLBACK
+!DIR$ ATTRIBUTES ALIGN:128:: MAX_SHAPE_STR_LEN,LONGINT,CPTAL_MAX_THREADS,MEM_ALLOC_POLICY,MEM_ALLOC_FALLBACK
 !DIR$ ATTRIBUTES ALIGN:128:: DATA_KIND_SYNC,TRANS_SHMEM,DISABLE_BLAS
 #endif
  !Numerical:
@@ -6493,7 +6493,7 @@
 	real(real_kind), intent(in), optional:: alpha
 	real(real_kind), intent(in), optional:: beta
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	real(real_kind) alf,bet
 	real(8) time_beg
 #ifndef NO_PHI
@@ -6572,7 +6572,7 @@
 	real(real_kind), intent(in), optional:: alpha
 	real(real_kind), intent(in), optional:: beta
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	real(real_kind) alf,bet
 	real(8) time_beg
 #ifndef NO_PHI
@@ -6651,7 +6651,7 @@
 	complex(real_kind), intent(in), optional:: alpha
 	complex(real_kind), intent(in), optional:: beta
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	complex(real_kind) alf,bet
 	real(8) time_beg
 #ifndef NO_PHI
@@ -6730,7 +6730,7 @@
 	complex(real_kind), intent(in), optional:: alpha
 	complex(real_kind), intent(in), optional:: beta
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	complex(real_kind) alf,bet
 	real(8) time_beg
 #ifndef NO_PHI
@@ -6809,7 +6809,7 @@
 	real(real_kind), intent(in), optional:: alpha
 	real(real_kind), intent(in), optional:: beta
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	real(real_kind) alf,bet
 	real(8) time_beg
 #ifndef NO_PHI
@@ -6888,7 +6888,7 @@
 	real(real_kind), intent(in), optional:: alpha
 	real(real_kind), intent(in), optional:: beta
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	real(real_kind) alf,bet
 	real(8) time_beg
 #ifndef NO_PHI
@@ -6967,7 +6967,7 @@
 	complex(real_kind), intent(in), optional:: alpha
 	complex(real_kind), intent(in), optional:: beta
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	complex(real_kind) alf,bet
 	real(8) time_beg
 #ifndef NO_PHI
@@ -7046,7 +7046,7 @@
 	complex(real_kind), intent(in), optional:: alpha
 	complex(real_kind), intent(in), optional:: beta
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	complex(real_kind) alf,bet
 	real(8) time_beg
 #ifndef NO_PHI
@@ -7132,7 +7132,7 @@
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,k1,k2,ks,kf,split_in,split_out
 	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num)
-	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out,vol_min,vol_ext
 	logical trivial
 	real(8) time_beg,tm
@@ -7376,7 +7376,7 @@
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,k1,k2,ks,kf,split_in,split_out
 	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num)
-	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out,vol_min,vol_ext
 	logical trivial
 	real(8) time_beg,tm
@@ -7622,7 +7622,7 @@
 	logical, intent(in), optional:: conjug
 	integer i,j,k,l,m,n,k1,k2,ks,kf,split_in,split_out
 	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num)
-	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out,vol_min,vol_ext
 	logical trivial,conj
 	real(8) time_beg,tm
@@ -7899,7 +7899,7 @@
 	logical, intent(in), optional:: conjug
 	integer i,j,k,l,m,n,k1,k2,ks,kf,split_in,split_out
 	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num)
-	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:CPTAL_MAX_THREADS) !`Is segs(:) threadsafe?
 	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out,vol_min,vol_ext
 	logical trivial,conj
 	real(8) time_beg,tm
@@ -9839,7 +9839,7 @@
 	real(real_kind), intent(inout):: val_out
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in)
-	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:MAX_THREADS),ls,lc,l_in,l0 !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:CPTAL_MAX_THREADS),ls,lc,l_in,l0 !`Is segs(:) threadsafe?
 	real(real_kind) val_tr
 	real(8) time_beg
 #ifndef NO_PHI
@@ -9948,7 +9948,7 @@
 	real(real_kind), intent(inout):: val_out
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in)
-	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:MAX_THREADS),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:CPTAL_MAX_THREADS),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
 	real(real_kind) val_tr
 	real(8) time_beg
 #ifndef NO_PHI
@@ -10057,7 +10057,7 @@
 	complex(real_kind), intent(inout):: val_out
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in)
-	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:MAX_THREADS),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:CPTAL_MAX_THREADS),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
 	complex(real_kind) val_tr
 	real(8) time_beg
 #ifndef NO_PHI
@@ -10166,7 +10166,7 @@
 	complex(real_kind), intent(inout):: val_out
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in)
-	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:MAX_THREADS),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:CPTAL_MAX_THREADS),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
 	complex(real_kind) val_tr
 	real(8) time_beg
 #ifndef NO_PHI
@@ -10276,7 +10276,7 @@
 	real(real_kind), intent(inout):: tens_out(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in),ip(1:rank_out)
-	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:MAX_THREADS)  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:CPTAL_MAX_THREADS)  !`Is segs(:) threadsafe?
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
 	real(real_kind) val_tr
 	real(8) time_beg
@@ -10435,7 +10435,7 @@
 	real(real_kind), intent(inout):: tens_out(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in),ip(1:rank_out)
-	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:MAX_THREADS)  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:CPTAL_MAX_THREADS)  !`Is segs(:) threadsafe?
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
 	real(real_kind) val_tr
 	real(8) time_beg
@@ -10594,7 +10594,7 @@
 	complex(real_kind), intent(inout):: tens_out(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in),ip(1:rank_out)
-	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:MAX_THREADS)  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:CPTAL_MAX_THREADS)  !`Is segs(:) threadsafe?
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
         complex(real_kind) val_tr
 	real(8) time_beg
@@ -10753,7 +10753,7 @@
 	complex(real_kind), intent(inout):: tens_out(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in),ip(1:rank_out)
-	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:MAX_THREADS)  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:CPTAL_MAX_THREADS)  !`Is segs(:) threadsafe?
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
         complex(real_kind) val_tr
 	real(8) time_beg

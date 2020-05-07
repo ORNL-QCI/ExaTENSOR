@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/05
+!REVISION: 2020/05/07
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -218,6 +218,7 @@
          type(talsh_tens_t):: local_tensor
          integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role,hsp(1:MAX_TENSOR_RANK)
          integer(INTL):: l,ao_space_root,ssp(1:MAX_TENSOR_RANK),dvol
+         integer(INTL), allocatable:: mlndx(:)
          complex(8):: etens_value
          real(8):: tms,tmf,dnorm
 
@@ -403,6 +404,15 @@
            !ierr=exatns_dump_cache()
            !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
            !write(6,'("Tensor cache dumped")')
+ !Find the max element in tensor dtens:
+           write(6,'("Finding the max element in tensor dtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_max(dtens,etens_value,mlndx)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_max() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: Value = (",D21.14,1x,D21.14,"):",F16.4," sec")') etens_value,tmf-tms
+           if(allocated(mlndx)) write(6,'("Multi-index of the max value:",32(1x,i6))') mlndx(:)
+           flush(6)
  !Print scalar etens:
            write(6,'("Printing scalar etens ... ")'); flush(6)
            tms=MPI_Wtime()
