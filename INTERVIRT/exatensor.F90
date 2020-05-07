@@ -2059,36 +2059,69 @@
         type(tens_rcrsv_t), intent(inout):: tensor         !in: full tensor or a slice of it
         complex(8), intent(out):: max_value                !out: max value
         integer(INTL), intent(out), allocatable:: mlndx(:) !out: location of the max value (multi-index)
+        real(8), parameter:: SYNC_INTERVAL=1d-3 !ExaTENSOR runtime synchronization interval (sec)
+        complex(8):: mxv
         integer(INTD):: n
-        integer(INT_MPI):: stats(MPI_STATUS_SIZE),req
+        integer(INTL):: mlx(1:MAX_TENSOR_RANK)
+        integer(INT_MPI):: stats(MPI_STATUS_SIZE),req0,req1,src_proc
+        logical:: over,outstanding,completed
 
         ierr=EXA_SUCCESS; max_value=(0d0,0d0)
         if(tensor%is_set(ierr,num_dims=n)) then
          if(ierr.eq.TEREC_SUCCESS) then
-          call MPI_Irecv(max_value,1,MPI_COMPLEX16,MPI_ANY_SOURCE,TAVP_SCALAR_TAG,GLOBAL_MPI_COMM,req,ierr)
-          if(ierr.eq.MPI_SUCCESS) then
-           ierr=exatns_tensor_traverse(tensor,'_TensorMax_',sync=.FALSE.)
-           if(ierr.eq.EXA_SUCCESS) then
-            call MPI_Wait(req,stats,ierr)
+          mxv=(0d0,0d0)
+          if(n.gt.0) then
+           allocate(mlndx(1:n))
+           mlndx(1:n)=0
+          endif
+          ierr=exatns_tensor_traverse(tensor,'_TensorMax_',sync=.FALSE.)
+          outstanding=.FALSE.; over=(ierr.ne.EXA_SUCCESS)
+          do while(.not.over)
+           if(.not.outstanding) call MPI_Irecv(mxv,1,MPI_COMPLEX16,MPI_ANY_SOURCE,TAVP_SCALAR_TAG,GLOBAL_MPI_COMM,req0,ierr)
+           if(ierr.eq.MPI_SUCCESS) then
+            outstanding=.TRUE.
+            !write(CONS_OUT,'("#DEBUG(exatns_tensor_max): Driver is waiting for max value from any process ...")')
+            call MPI_Test(req0,completed,stats,ierr)
             if(ierr.eq.MPI_SUCCESS) then
-             if(n.gt.0) then
-              allocate(mlndx(1:n))
-              mlndx(1:n)=0
-              call MPI_Irecv(mlndx,n,MPI_INTEGER8,MPI_ANY_SOURCE,TAVP_MLNDX_TAG,GLOBAL_MPI_COMM,req,ierr)
-              if(ierr.eq.MPI_SUCCESS) then
-               call MPI_Wait(req,stats,ierr)
-               if(ierr.ne.MPI_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+             if(completed) then
+              outstanding=.FALSE.
+              src_proc=stats(MPI_SOURCE)
+              !write(CONS_OUT,'("#DEBUG(exatns_tensor_max): Driver received max value from process ",i8)') src_proc
+              if(n.gt.0) then
+               call MPI_Irecv(mlx,n,MPI_INTEGER8,src_proc,TAVP_MLNDX_TAG,GLOBAL_MPI_COMM,req1,ierr)
+               if(ierr.eq.MPI_SUCCESS) then
+                call MPI_Wait(req1,stats,ierr)
+                if(ierr.eq.MPI_SUCCESS) then
+                 !write(CONS_OUT,'("#DEBUG(exatns_tensor_max): Driver received multi-index from process ",i8)') src_proc
+                 if(abs(mxv).ge.abs(max_value)) then
+                  max_value=mxv; mlndx(1:n)=mlx(1:n)
+                 endif
+                else
+                 ierr=EXA_ERR_UNABLE_COMPLETE
+                endif
+               else
+                ierr=EXA_ERR_UNABLE_COMPLETE
+               endif
               else
-               ierr=EXA_ERR_UNABLE_COMPLETE
+               if(abs(mxv).ge.abs(max_value)) max_value=mxv
               endif
              endif
             else
              ierr=EXA_ERR_UNABLE_COMPLETE
             endif
-            n=exatns_sync(); if(ierr.eq.EXA_SUCCESS) ierr=n
+           else
+            ierr=EXA_ERR_UNABLE_COMPLETE
            endif
-          else
-           ierr=EXA_ERR_UNABLE_COMPLETE
+           if(ierr.eq.EXA_SUCCESS) then
+            ierr=exatns_sync(SYNC_INTERVAL)
+            over=((ierr.ne.EXA_SUCCESS).or.exatns_synced())
+           else
+            over=.TRUE.
+           endif
+          enddo
+          if(outstanding) then
+           call MPI_Cancel(req0,ierr)
+           if(ierr.ne.MPI_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
           endif
          else
           ierr=EXA_ERR_UNABLE_COMPLETE

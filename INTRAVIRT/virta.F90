@@ -2545,9 +2545,14 @@
              elem_c8=cmplx(real(elem_r4t(lm),8),0d0,8)
              call MPI_Ssend(elem_c8,int(1,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,jerr)
              if(jerr.eq.MPI_SUCCESS) then
+              !write(CONS_OUT,'("#DEBUG(tens_max_get_t.apply)[",i8,"]: Sent max value to Driver")') impir
               if(n.gt.0) then
                call MPI_Ssend(mlndx,int(n,INT_MPI),MPI_INTEGER8,this%receive_rank,TAVP_MLNDX_TAG,this%receive_comm,jerr)
-               if(jerr.ne.MPI_SUCCESS) jerr=-13
+               if(jerr.eq.MPI_SUCCESS) then
+                !write(CONS_OUT,'("#DEBUG(tens_max_get_t.apply)[",i8,"]: Sent multi-index to Driver")') impir
+               else
+                jerr=-13
+               endif
               endif
              else
               jerr=-12
@@ -2576,9 +2581,14 @@
              elem_c8=cmplx(elem_r8t(lm),0d0,8)
              call MPI_Ssend(elem_c8,int(1,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,jerr)
              if(jerr.eq.MPI_SUCCESS) then
+              !write(CONS_OUT,'("#DEBUG(tens_max_get_t.apply)[",i8,"]: Sent max value to Driver")') impir
               if(n.gt.0) then
                call MPI_Ssend(mlndx,int(n,INT_MPI),MPI_INTEGER8,this%receive_rank,TAVP_MLNDX_TAG,this%receive_comm,jerr)
-               if(jerr.ne.MPI_SUCCESS) jerr=-10
+               if(jerr.eq.MPI_SUCCESS) then
+                !write(CONS_OUT,'("#DEBUG(tens_max_get_t.apply)[",i8,"]: Sent multi-index to Driver")') impir
+               else
+                jerr=-10
+               endif
               endif
              else
               jerr=-9
@@ -2607,9 +2617,14 @@
              elem_c8=elem_c4t(lm)
              call MPI_Ssend(elem_c8,int(1,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,jerr)
              if(jerr.eq.MPI_SUCCESS) then
+              !write(CONS_OUT,'("#DEBUG(tens_max_get_t.apply)[",i8,"]: Sent max value to Driver")') impir
               if(n.gt.0) then
                call MPI_Ssend(mlndx,int(n,INT_MPI),MPI_INTEGER8,this%receive_rank,TAVP_MLNDX_TAG,this%receive_comm,jerr)
-               if(jerr.ne.MPI_SUCCESS) jerr=-7
+               if(jerr.eq.MPI_SUCCESS) then
+                !write(CONS_OUT,'("#DEBUG(tens_max_get_t.apply)[",i8,"]: Sent multi-index to Driver")') impir
+               else
+                jerr=-7
+               endif
               endif
              else
               jerr=-6
@@ -2638,9 +2653,14 @@
              elem_c8=elem_c8t(lm)
              call MPI_Ssend(elem_c8,int(1,INT_MPI),MPI_COMPLEX16,this%receive_rank,TAVP_SCALAR_TAG,this%receive_comm,jerr)
              if(jerr.eq.MPI_SUCCESS) then
+              !write(CONS_OUT,'("#DEBUG(tens_max_get_t.apply)[",i8,"]: Sent max value to Driver")') impir
               if(n.gt.0) then
                call MPI_Ssend(mlndx,int(n,INT_MPI),MPI_INTEGER8,this%receive_rank,TAVP_MLNDX_TAG,this%receive_comm,jerr)
-               if(jerr.ne.MPI_SUCCESS) jerr=-4
+               if(jerr.eq.MPI_SUCCESS) then
+                !write(CONS_OUT,'("#DEBUG(tens_max_get_t.apply)[",i8,"]: Sent multi-index to Driver")') impir
+               else
+                jerr=-4
+               endif
               endif
              else
               jerr=-3
