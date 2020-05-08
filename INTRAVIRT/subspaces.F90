@@ -1,10 +1,10 @@
 !ExaTENSOR: Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/11/19
+!REVISION: 2020/05/08
 
-!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -260,6 +260,7 @@
         end type h_index_t
  !Hierarchical vector space representation:
         type, public:: h_space_t
+         integer(INTD), private:: space_id=-1                 !unique space id (registered ID): must be non-negative, -1 means undefined
          integer(INTL), private:: space_dim=0                 !dimension of the vector space
          integer(INTL), private:: num_subspaces=0             !number of subspaces defined in the vector space: [0..space_dim-1] are original basis functions, [space_dim..num_subspaces-1] are their aggregates
          type(vec_tree_t), private:: subspaces                !subspaces defined in the vector space: [0..space_dim-1] are original basis functions, [space_dim..num_subspaces-1] are their aggregates
@@ -269,6 +270,8 @@
           procedure, private:: HSpaceCtorSimple                         !constructs a simple hierarchical representation of a vector space (ctor)
           generic, public:: h_space_ctor=>HSpaceCtorSimple              !ctors
           procedure, public:: is_set=>HSpaceIsSet                       !returns TRUE if the hierarchical vector space is set
+          procedure, public:: reset_id=>HSpaceResetId                   !resets the registered space id
+          procedure, public:: get_id=>HSpaceGetId                       !returns the registered space id (negative means undefined)
           procedure, public:: get_space_dim=>HSpaceGetSpaceDim          !returns the dimension of the vector space
           procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces  !returns the total number of defined subspaces in the vector space
           procedure, public:: get_root_id=>HSpaceGetRootId              !returns the id of the full space (root of the subspace aggregation tree)
@@ -399,6 +402,8 @@
  !h_space_t:
         private HSpaceCtorSimple
         private HSpaceIsSet
+        private HSpaceResetId
+        private HSpaceGetId
         private HSpaceGetSpaceDim
         private HSpaceGetNumSubspaces
         private HSpaceGetRootId
@@ -2389,6 +2394,34 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceIsSet
+!---------------------------------------------------
+        subroutine HSpaceResetId(this,space_id,ierr)
+!Resets the registered space id.
+         implicit none
+         class(h_space_t), intent(inout):: this      !inout: hierarchical vector space representation
+         integer(INTD), intent(in):: space_id        !in: new space id
+         integer(INTD), intent(out), optional:: ierr !out: eror code
+         integer(INTD):: errc
+
+         errc=0
+         this%space_id=space_id
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine HSpaceResetId
+!-------------------------------------------------------
+        function HSpaceGetId(this,ierr) result(space_id)
+!Returns the registered space id.
+         implicit none
+         integer(INTD):: space_id                    !out: registered space id
+         class(h_space_t), intent(in):: this         !in: hierarchical vector space representation
+         integer(INTD), intent(out), optional:: ierr !out: eror code
+         integer(INTD):: errc
+
+         errc=0
+         space_id=this%space_id
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceGetId
 !--------------------------------------------------------
         function HSpaceGetSpaceDim(this,ierr) result(res)
 !Returns the dimension of the vector space.
@@ -2909,7 +2942,7 @@
           errc=vt_it%delete_all()
           errc=vt_it%release()
          endif
-         this%num_subspaces=0; this%space_dim=0
+         this%num_subspaces=0; this%space_dim=0; this%space_id=-1
          return
         end subroutine h_space_dtor
 !----------------------------------------

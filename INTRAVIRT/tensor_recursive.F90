@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/07
+!REVISION: 2020/05/08
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -148,6 +148,7 @@
           generic, public:: tens_signature_ctor=>TensSignatureCtor,TensSignatureCtorUnpack
           procedure, public:: pack=>TensSignaturePack               !packs the object into a packet
           procedure, public:: is_set=>TensSignatureIsSet            !returns .TRUE. if the tensor signature is set
+          procedure, public:: reset_subspaces=>TensSignatureResetSubspaces !resets subspace Ids
           procedure, public:: get_name=>TensSignatureGetName        !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensSignatureGetRank        !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensSignatureGetSpec        !returns the tensor subspace multi-index (specification)
@@ -308,8 +309,10 @@
           procedure, private:: TensRcrsvCtorSigna                    !ctor by tensor signature and optionally tensor shape
           procedure, private:: TensRcrsvCtorHead                     !ctor by tensor header
           procedure, private:: TensRcrsvCtorCopy                     !copy ctor
+          procedure, private:: TensRcrsvCtorSlice                    !slice ctor
           procedure, private:: TensRcrsvCtorUnpack                   !ctor by unpacking
-          generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead,TensRcrsvCtorCopy,TensRcrsvCtorUnpack
+          generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead,&
+                                            &TensRcrsvCtorCopy,TensRcrsvCtorSlice,TensRcrsvCtorUnpack
           generic, public:: assignment(=)=>TensRcrsvCtorCopy         !copy assignment
           procedure, public:: pack=>TensRcrsvPack                    !packs the object into a packet
           procedure, public:: is_set=>TensRcrsvIsSet                 !returns TRUE if the tensor is set (signature defined) plus other info
@@ -653,6 +656,7 @@
         private TensSignatureCtorUnpack
         private TensSignaturePack
         private TensSignatureIsSet
+        private TensSignatureResetSubspaces
         private TensSignatureRename
         private TensSignatureGetName
         private TensSignatureGetRank
@@ -762,6 +766,7 @@
         private TensRcrsvCtorSigna
         private TensRcrsvCtorHead
         private TensRcrsvCtorCopy
+        private TensRcrsvCtorSlice
         private TensRcrsvCtorUnpack
         private TensRcrsvPack
         private TensRcrsvIsSet
@@ -1325,6 +1330,7 @@
          class(h_space_t), pointer, intent(out), optional:: hspace_p !out: pointer to the just registered empty hierarchical vector space (for further construction)
          integer(INTD):: errc
          type(h_space_t), target:: hspace_empty
+         class(h_space_t), pointer:: hsptr
          class(*), pointer:: up
 
          errc=TEREC_SUCCESS
@@ -1337,25 +1343,28 @@
            if(errc.eq.GFC_NOT_FOUND) then
             errc=this%hspaces_it%append(hspace_empty)
             if(errc.eq.GFC_SUCCESS) then
-             if(present(hspace_p)) then
-              hspace_p=>NULL()
-              up=>this%hspaces_it%element_value(int(hspace_id,INTL),errc)
-              if(errc.eq.GFC_SUCCESS.and.associated(up)) then
-               select type(up); class is(h_space_t); hspace_p=>up; end select
-               if(.not.associated(hspace_p)) errc=TEREC_ERROR
+             hsptr=>NULL()
+             up=>this%hspaces_it%element_value(int(hspace_id,INTL),errc)
+             if(errc.eq.GFC_SUCCESS.and.associated(up)) then
+              select type(up); class is(h_space_t); hsptr=>up; end select
+              if(associated(hsptr)) then
+               call hsptr%reset_id(hspace_id)
+               if(present(hspace_p)) hspace_p=>hsptr
               else
-               if(errc.eq.GFC_SUCCESS) then
-                errc=TEREC_ERROR
-               else
-                if(DEBUG.gt.0) then
-                 write(CONS_OUT,'("#ERROR(hspace_register_t.register_space): vector_iter_t.element_value() error ",i11)') errc !debug
-                 flush(CONS_OUT)
-                endif
+               errc=TEREC_ERROR
+              endif
+             else
+              if(errc.eq.GFC_SUCCESS) then
+               errc=TEREC_ERROR
+              else
+               if(VERBOSE) then
+                write(CONS_OUT,'("#ERROR(hspace_register_t.register_space): vector_iter_t.element_value() error ",i11)') errc !debug
+                flush(CONS_OUT)
                endif
               endif
              endif
             else
-             if(DEBUG.gt.0) then
+             if(VERBOSE) then
               write(CONS_OUT,'("#ERROR(hspace_register_t.register_space): vector_iter_t.append() error ",i11)') errc !debug
               flush(CONS_OUT)
              endif
@@ -1364,14 +1373,14 @@
             if(errc.eq.GFC_FOUND) then !space already exists
              errc=TEREC_INVALID_REQUEST
             else
-             if(DEBUG.gt.0) then
+             if(VERBOSE) then
               write(CONS_OUT,'("#ERROR(hspace_register_t.register_space): dictionary_iter_t.search() error ",i11)') errc !debug
               flush(CONS_OUT)
              endif
             endif
            endif
           else
-           if(DEBUG.gt.0) then
+           if(VERBOSE) then
             write(CONS_OUT,'("#ERROR(hspace_register_t.register_space): vector_iter_t.get_length() error ",i11)') errc !debug
             flush(CONS_OUT)
            endif
@@ -1761,6 +1770,31 @@
          if(present(ierr)) ierr=errc
          return
         end function TensSignatureIsSet
+!------------------------------------------------------------------
+        subroutine TensSignatureResetSubspaces(this,subspaces,ierr)
+!Resets subspace Ids.
+         implicit none
+         class(tens_signature_t), intent(inout):: this !inout: tensor signature
+         integer(INTL), intent(in):: subspaces(1:)     !in: new subspace Ids
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(size(subspaces).eq.this%num_dims) then
+            if(this%num_dims.gt.0) then
+             this%space_idx(1:this%num_dims)=subspaces(1:this%num_dims)
+            endif
+           else
+            errc=TEREC_INVALID_ARGS
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensSignatureResetSubspaces
 !--------------------------------------------------------------------
         subroutine TensSignatureGetName(this,tens_name,name_len,ierr)
 !Returns the alphanumeric_ name of the tensor.
@@ -4724,6 +4758,34 @@
          endif
          return
         end subroutine TensRcrsvCtorCopy
+!----------------------------------------------------------------
+        subroutine TensRcrsvCtorSlice(this,source,subspaces,ierr)
+!Constructs a tensor as a slice of some existing tensor.
+         implicit none
+         class(tens_rcrsv_t), intent(out):: this     !out: tensor
+         class(tens_rcrsv_t), intent(in):: source    !in: source tensor
+         integer(INTL), intent(in):: subspaces(1:)   !in: subspace Ids defining the slice
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,n
+         type(tens_header_t):: header
+         logical:: laid
+
+         if(source%is_set(errc,num_dims=n,layed=laid)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(size(subspaces).eq.n) then
+            header=source%header
+            call header%signature%reset_subspaces(subspaces,errc)
+            if(errc.eq.TEREC_SUCCESS) call this%tens_rcrsv_ctor(header,errc)
+           else
+            errc=TEREC_INVALID_ARGS
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvCtorSlice
 !-------------------------------------------------------
         subroutine TensRcrsvCtorUnpack(this,packet,ierr)
 !Unpacks the object from a packet.
