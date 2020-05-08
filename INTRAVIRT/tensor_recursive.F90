@@ -630,7 +630,8 @@
         public cmp_tens_headers                !comparator for tensor headers
         public cmp_tens_descriptors            !comparator for tensor descriptors
         public tens_rcrsv_dim_resolve_default  !default universal tensor dimension extent resolver (sets default tensor dimension resolution)
-        public tens_rcrsv_dim_strength_default !default universal tensor dimension strength estimator
+        public tens_rcrsv_dim_strength_default !default universal tensor dimension strength estimator (all tensor dimensions are strong and split)
+        public tens_rcrsv_dim_strength_leveled !leveled universal tensor dimension strength estimator (tensor dimension strength is determined by the subspace level)
         public tens_rcrsv_dim_split_default    !internal tensor splitter for tensor operation splitting (guided by the existing internal tensor composition)
  !testing/debugging:
         public build_test_hspace
@@ -1204,6 +1205,56 @@
          if(present(ierr)) ierr=errc
          return
         end function tens_rcrsv_dim_strength_default
+!----------------------------------------------------------------------------------------------------------------------------------
+        function tens_rcrsv_dim_strength_leveled(this,dim_strength,ierr,strength_thresh,num_dims,split_dims) result(total_strength)
+!Leveled universal tensor dimension strength assessing function: Tensor dimension strength is determined by its subspace level.
+         implicit none
+         real(8):: total_strength                                !out: total tensor dimension strength (per tensor): >=0
+         class(tens_rcrsv_t), intent(in):: this                  !in: tensor
+         real(8), intent(inout):: dim_strength(1:)               !out: individual tensor dimension strength: >=0
+         integer(INTD), intent(out), optional:: ierr             !out: error code
+         real(8), intent(in), optional:: strength_thresh         !in: given strength threshold (defaults to zero)
+         integer(INTD), intent(out), optional:: num_dims         !out: number of tensor dimensions which split under the given strength threshold
+         integer(INTD), intent(inout), optional:: split_dims(1:) !out: tensor dimensions which split under the given strength threshold (ordered by decreasing strength)
+         class(h_space_t), pointer:: hsptr
+         integer(INTD):: errc,ns,i,j
+         integer(INTL):: subspace_id
+         integer:: n,trn(0:MAX_TENSOR_RANK)
+         real(8):: thresh
+
+         total_strength=0d0; ns=0
+         if(this%is_set(errc,num_dims=n)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(n.gt.0) then
+            do i=1,n
+             subspace_id=this%header%signature%space_idx(i)
+             hsptr=>this%header%signature%hspace(i)%hspace_p
+             if(associated(hsptr)) then
+              dim_strength(i)=1d0/(1d0+real(hsptr%get_subspace_level(subspace_id),8))
+             else
+              dim_strength(i)=1d0
+             endif
+             total_strength=total_strength+dim_strength(i)
+            enddo
+            if(present(split_dims)) then
+             thresh=0d0; if(present(strength_thresh)) thresh=strength_thresh
+             trn(0:n)=(/+1,(i,i=1,n)/)
+             if(n.gt.1) call merge_sort_key(n,dim_strength,trn)
+             do i=1,n
+              j=trn(n-i+1)
+              if(dim_strength(j).lt.thresh) exit
+              ns=ns+1; split_dims(ns)=j
+             enddo
+            endif
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(num_dims)) num_dims=ns
+         if(present(ierr)) ierr=errc
+         return
+        end function tens_rcrsv_dim_strength_leveled
 !-----------------------------------------------------------------------------------------------------------
         function tens_rcrsv_dim_split_default(tensor,subtensors,num_subtensors,strength_thresh) result(ierr)
 !Extracts constituent subtensors from a tensor and returns them in a vector.

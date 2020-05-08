@@ -274,7 +274,7 @@
           procedure, public:: get_id=>HSpaceGetId                       !returns the registered space id (negative means undefined)
           procedure, public:: get_space_dim=>HSpaceGetSpaceDim          !returns the dimension of the vector space
           procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces  !returns the total number of defined subspaces in the vector space
-          procedure, public:: get_root_id=>HSpaceGetRootId              !returns the id of the full space (root of the subspace aggregation tree)
+          procedure, public:: get_root_id=>HSpaceGetRootId              !returns the id of the full space subspace (root of the subspace aggregation tree)
           procedure, public:: get_ancestor_id=>HSpaceGetAncestorId      !returns the id of a specific ancestor subspace
           procedure, public:: get_subspace_level=>HSpaceGetSubspaceLevel!returns the distance from the root for the specific subspace
           procedure, public:: get_subspace=>HSpaceGetSubspace           !returns a pointer to the requested subspace of the hierarchical vector space

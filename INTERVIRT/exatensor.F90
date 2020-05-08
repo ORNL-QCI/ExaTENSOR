@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2020/05/07
+!REVISION: 2020/05/08
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -434,7 +434,14 @@
          if(errc.ne.0) then; call dil_process_finish(errc); ierr=-8; return; endif
         endif
         if(.not.associated(tens_dim_strength_assess)) then
-         errc=exatns_dim_strength_setup(tens_rcrsv_dim_strength_default,0d0)
+         select case(EXA_TENSOR_DIM_STRENGTH_ALG)
+         case(EXA_TENSOR_DIM_STRENGTH_ALG_DEFAULT)
+          errc=exatns_dim_strength_setup(tens_rcrsv_dim_strength_default,0d0)
+         case(EXA_TENSOR_DIM_STRENGTH_ALG_LEVELED)
+          errc=exatns_dim_strength_setup(tens_rcrsv_dim_strength_leveled,0d0) !it will actually use a dynamic threshold in TAVP-MNG based on the level of the latter
+         case default
+          errc=EXA_ERROR
+         end select
          if(errc.ne.0) then; call dil_process_finish(errc); ierr=-9; return; endif
         endif
 !Register scalar retrieving functor:

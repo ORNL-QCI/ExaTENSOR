@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/26
+!REVISION: 2020/05/08
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -3983,6 +3983,15 @@
 !Check whether this TAVP-MNG is at the bottom of TAVP-MNG hierarchy:
          this%tavp_is_top=tavp%is_top(ier); if(ier.ne.0.and.errc.eq.0) errc=-51
          this%tavp_is_bottom=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-50
+!Configure the tensor dimension strength spliting threshold:
+         select case(EXA_TENSOR_DIM_STRENGTH_ALG)
+         case(EXA_TENSOR_DIM_STRENGTH_ALG_DEFAULT)
+!$OMP ATOMIC WRITE
+          tens_dim_strength_thresh=0d0
+         case(EXA_TENSOR_DIM_STRENGTH_ALG_LEVELED)
+!$OMP ATOMIC WRITE
+          tens_dim_strength_thresh=1d0/(1d0+(1d0/real(MAX_TENSOR_RANK*2,8))+real(tavp%level,8))
+         end select
 !Acquire a timer:
          ier=timer_start(dec_timer,MAX_DECOMPOSE_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-49
 !Work loop:
