@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/08
+!REVISION: 2020/05/15
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -114,7 +114,7 @@
         integer(INTD), parameter, public:: EXA_SUBSPACE_BRANCH_FACTOR_DEFAULT=2 !default branching factor for construction of subspace aggregation trees
         integer(INTD), parameter, public:: EXA_TENSOR_DIM_STRENGTH_ALG_DEFAULT=0
         integer(INTD), parameter, public:: EXA_TENSOR_DIM_STRENGTH_ALG_LEVELED=1
-        integer(INTD), parameter, public:: EXA_TENSOR_DIM_STRENGTH_ALG=EXA_TENSOR_DIM_STRENGTH_ALG_LEVELED
+        integer(INTD), parameter, public:: EXA_TENSOR_DIM_STRENGTH_ALG=EXA_TENSOR_DIM_STRENGTH_ALG_DEFAULT
  !TAVP hierarchy configuration:
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=2048 !maximal size of a work group (max number of workers per manager)
         integer(INTD), public:: EXA_MANAGER_BRANCH_FACT=32   !branching factor for the managing hierarchy
