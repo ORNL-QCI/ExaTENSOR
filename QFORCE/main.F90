@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/07
+!REVISION: 2020/05/19
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -82,6 +82,7 @@
         end type tens_trans_test_t
 
         public test_exatensor
+        public test_exatensor_slicing
         public benchmark_exatensor_skinny
         public benchmark_exatensor_fat
         public benchmark_exatensor_cc
@@ -217,7 +218,7 @@
          type(tens_printer_t):: tens_printer
          type(talsh_tens_t):: local_tensor
          integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role,hsp(1:MAX_TENSOR_RANK)
-         integer(INTL):: l,ao_space_root,ssp(1:MAX_TENSOR_RANK),dvol
+         integer(INTL):: l,ao_space_root,dvol
          integer(INTL), allocatable:: mlndx(:)
          complex(8):: etens_value
          real(8):: tms,tmf,dnorm
@@ -514,6 +515,267 @@
          return
         end subroutine test_exatensor
 
+        subroutine test_exatensor_slicing()
+         implicit none
+         integer(INTL):: SEG_LIMIT=75 !max segment size
+         integer(INTD):: NAT_LEVELS=1 !number of NAT levels (depth of hierarchy)
+         integer(INTD), parameter:: TENSOR_DATA_KIND=EXA_DATA_KIND_C8 !tensor data kind
+         complex(8), parameter:: left_val=(1.234d-3,-2.567d-4),right_val=(-9.743d-4,3.576d-3)
+         type(color_symmetry_t), allocatable:: basis_symmetry(:)
+         type(subspace_basis_t):: basis_ao,basis_oc,basis_vi
+         class(h_space_t), pointer:: ao_space,oc_space,vi_space
+         type(tens_rcrsv_t):: atens,vtens,dtens,ctens,etens
+         type(tens_printer_t):: tens_printer
+         integer(INTD):: ierr,i,my_rank,comm_size,my_role,hsp(1:MAX_TENSOR_RANK),brf
+         integer(INTD):: ao_space_id,vi_space_id,oc_space_id
+         integer(INTL):: AO_SPACE_DIM,VI_SPACE_DIM,OC_SPACE_DIM
+         integer(INTL):: l,ao_space_root,vi_space_root,oc_space_root,nsub_ao,nsub_vi,nsub_oc
+         integer(INTL), allocatable:: subsp_ao(:),subsp_vi(:),subsp_oc(:)
+         complex(8):: etens_value
+         real(8):: tms,tmf
+
+!Create the MPI World:
+         call MPI_Comm_size(MPI_COMM_WORLD,comm_size,ierr)
+         call MPI_Comm_rank(MPI_COMM_WORLD,my_rank,ierr)
+!Read custom benchmark configuration parameters from a file, if provided:
+         AO_SPACE_DIM=41
+         VI_SPACE_DIM=24
+         OC_SPACE_DIM=6
+!Application creates a basis for each vector space:
+ !Atomic space:
+         if(my_rank.eq.comm_size-1) then
+          write(6,'("Creating a basis for AO vector space ... ")',ADVANCE='NO'); flush(6)
+         endif
+         call basis_ao%subspace_basis_ctor(AO_SPACE_DIM,ierr)
+         if(ierr.ne.0) call quit(ierr,'subspace_basis_t.subspace_basis_ctor() failed!')
+         do l=1_INTL,AO_SPACE_DIM !set basis functions
+          call basis_ao%set_basis_func(l,BASIS_ABSTRACT,ierr)
+          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.set_basis_func() failed!')
+         enddo
+         call basis_ao%finalize(ierr)
+         if(ierr.ne.0) call quit(ierr,'subspace_basis_t.finalize() failed!')
+         if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+ !Virtual space:
+         if(my_rank.eq.comm_size-1) then
+          write(6,'("Creating a basis for VI vector space ... ")',ADVANCE='NO'); flush(6)
+         endif
+         call basis_vi%subspace_basis_ctor(VI_SPACE_DIM,ierr)
+         if(ierr.ne.0) call quit(ierr,'subspace_basis_t.subspace_basis_ctor() failed!')
+         do l=1_INTL,VI_SPACE_DIM !set basis functions
+          call basis_vi%set_basis_func(l,BASIS_ABSTRACT,ierr)
+          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.set_basis_func() failed!')
+         enddo
+         call basis_vi%finalize(ierr)
+         if(ierr.ne.0) call quit(ierr,'subspace_basis_t.finalize() failed!')
+         if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+ !Occupied space:
+         if(my_rank.eq.comm_size-1) then
+          write(6,'("Creating a basis for OC vector space ... ")',ADVANCE='NO'); flush(6)
+         endif
+         call basis_oc%subspace_basis_ctor(OC_SPACE_DIM,ierr)
+         if(ierr.ne.0) call quit(ierr,'subspace_basis_t.subspace_basis_ctor() failed!')
+         do l=1_INTL,OC_SPACE_DIM !set basis functions
+          call basis_oc%set_basis_func(l,BASIS_ABSTRACT,ierr)
+          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.set_basis_func() failed!')
+         enddo
+         call basis_oc%finalize(ierr)
+         if(ierr.ne.0) call quit(ierr,'subspace_basis_t.finalize() failed!')
+         if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+!Application registers vector spaces:
+ !Atomic space:
+         if(my_rank.eq.comm_size-1) then
+          write(6,'("Registering the hierarchical vector space AO ... ")',ADVANCE='NO'); flush(6)
+         endif
+         brf=get_num_segments(AO_SPACE_DIM,SEG_LIMIT); brf=(brf+1)/(2**(NAT_LEVELS-1))+1
+         if(my_rank.eq.comm_size-1) then; write(6,'("with branching of ",i4,1x)',ADVANCE='NO') brf; flush(6); endif
+         ierr=exatns_space_register('space_ao',basis_ao,ao_space_id,ao_space,branch_factor=brf)
+         if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
+         ao_space_root=ao_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
+         call ao_space%get_level_composition(1,subsp_ao,nsub_ao,ierr)
+         if(ierr.ne.0) call quit(ierr,'h_space_t%get_level_composition() failed!')
+         if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+ !Virtual space:
+         if(my_rank.eq.comm_size-1) then
+          write(6,'("Registering the hierarchical vector space VI ... ")',ADVANCE='NO'); flush(6)
+         endif
+         brf=get_num_segments(VI_SPACE_DIM,SEG_LIMIT); brf=(brf+1)/(2**(NAT_LEVELS-1))+1
+         if(my_rank.eq.comm_size-1) then; write(6,'("with branching of ",i4,1x)',ADVANCE='NO') brf; flush(6); endif
+         ierr=exatns_space_register('space_vi',basis_vi,vi_space_id,vi_space,branch_factor=brf)
+         if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
+         vi_space_root=vi_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
+         call vi_space%get_level_composition(1,subsp_vi,nsub_vi,ierr)
+         if(ierr.ne.0) call quit(ierr,'h_space_t%get_level_composition() failed!')
+         if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+ !Occupied space:
+         if(my_rank.eq.comm_size-1) then
+          write(6,'("Registering the hierarchical vector space OC ... ")',ADVANCE='NO'); flush(6)
+         endif
+         brf=get_num_segments(OC_SPACE_DIM,SEG_LIMIT); brf=(brf+1)/(2**(NAT_LEVELS-1))+1
+         if(my_rank.eq.comm_size-1) then; write(6,'("with branching of ",i4,1x)',ADVANCE='NO') brf; flush(6); endif
+         ierr=exatns_space_register('space_oc',basis_oc,oc_space_id,oc_space,branch_factor=brf)
+         if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
+         oc_space_root=oc_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
+         call oc_space%get_level_composition(1,subsp_oc,nsub_oc,ierr)
+         if(ierr.ne.0) call quit(ierr,'h_space_t%get_level_composition() failed!')
+         if(my_rank.eq.comm_size-1) then; write(6,'("Ok")'); flush(6); endif
+!Application runs ExaTENSOR within MPI_COMM_WORLD:
+         ierr=exatns_start(MPI_COMM_WORLD)
+         if(ierr.eq.EXA_SUCCESS) then
+          ierr=exatns_process_role(my_role)
+          if(my_role.eq.EXA_DRIVER) then
+!Driver drives the tensor workload:
+ !Create tensors:
+  !etens (scalar):
+           write(6,'("Creating scalar etens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(etens,'etens',TENSOR_DATA_KIND)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !ctens:
+           write(6,'("Creating tensor ctens over hierarchical vector spaces ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(ctens,'ctens',(/ao_space_id,vi_space_id/),&
+                                    &(/ao_space_root,vi_space_root/),TENSOR_DATA_KIND)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !atens:
+           write(6,'("Creating tensor atens over hierarchical vector spaces ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(atens,'atens',(/ao_space_id,ao_space_id,ao_space_id,ao_space_id/),&
+                                    &(/ao_space_root,ao_space_root,ao_space_root,subsp_ao(1)/),TENSOR_DATA_KIND)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !vtens:
+           write(6,'("Creating tensor vtens over hierarchical vector spaces ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(vtens,'vtens',(/vi_space_id,ao_space_id,ao_space_id,ao_space_id/),&
+                                    &(/vi_space_root,ao_space_root,ao_space_root,subsp_ao(1)/),TENSOR_DATA_KIND)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !dtens:
+           write(6,'("Creating tensor dtens over hierarchical vector spaces ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(dtens,'dtens',(/vi_space_id,vi_space_id,ao_space_id,ao_space_id/),&
+                                    &(/vi_space_root,vi_space_root,ao_space_root,subsp_ao(1)/),TENSOR_DATA_KIND)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+ !Initialize tensors:
+  !ctens:
+           write(6,'("Initializing tensor ctens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_init(ctens,left_val)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !atens:
+           write(6,'("Initializing tensor atens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_init(atens,right_val)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !vtens:
+           write(6,'("Initializing tensor vtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_init(vtens,(0d0,0d0))
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !dtens:
+           write(6,'("Initializing tensor dtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_init(dtens,(0d0,0d0))
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+ !Perform tensor contractions:
+  !vtens:
+           write(6,'("Contracting vtens+=ctens*atens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_contract(vtens,ctens,atens,'V(a,q,r,s)+=C+(p,a)*A(p,q,r,s)',(5d-1,0d0))
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !vtens (repeat):
+           write(6,'("Contracting vtens+=ctens*atens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_contract(vtens,ctens,atens,'V(a,q,r,s)+=C+(p,a)*A(p,q,r,s)',(5d-1,0d0))
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !dtens:
+           write(6,'("Contracting dtens+=vtens*ctens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_contract(dtens,vtens,ctens,'D(a,b,r,s)+=V(a,q,r,s)*C(q,b)*')
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !etens:
+           write(6,'("Contracting etens+=dtens*dtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_contract(etens,dtens,dtens,'E()+=D+(a,b,r,s)*D(a,b,r,s)*')
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+ !Retrieve scalar etens:
+           write(6,'("Retrieving directly scalar etens ... ")'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_get_scalar(etens,etens_value)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_get_scalar() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: Value = (",D21.14,1x,D21.14,"):",F16.4," sec")') etens_value,tmf-tms; flush(6)
+           !write(6,'("Reference value = ",D21.14)')&
+           !&(dble(AO_SPACE_DIM)**2)*(dble(OC_SPACE_DIM)**2)*(dble(VI_SPACE_DIM)**6)*(abs(left_val)**2)*(abs(right_val*right_val)**2)
+ !Destroy tensors:
+  !dtens:
+           write(6,'("Destroying tensor dtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(dtens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !vtens:
+           write(6,'("Destroying tensor vtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(vtens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !atens:
+           write(6,'("Destroying tensor atens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(atens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !ctens:
+           write(6,'("Destroying tensor ctens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(ctens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !etens:
+           write(6,'("Destroying scalar etens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(etens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+ !Stop ExaTENSOR runtime (by Driver):
+           ierr=exatns_stop()
+          endif
+         else
+          write(6,*) 'Process ',my_rank,' terminated with error ',ierr
+         endif
+         return
+        end subroutine test_exatensor_slicing
+
         subroutine benchmark_exatensor_skinny()
          implicit none
          integer(INTL), parameter:: TEST_SPACE_DIM=64
@@ -526,7 +788,7 @@
          type(tens_rcrsv_t):: etens,dtens,ltens,rtens
          type(tens_printer_t):: tens_printer
          integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role,hsp(1:MAX_TENSOR_RANK)
-         integer(INTL):: l,ao_space_root,ssp(1:MAX_TENSOR_RANK)
+         integer(INTL):: l,ao_space_root
          complex(8):: etens_value
          real(8):: tms,tmf
 
@@ -709,7 +971,7 @@
          type(tens_rcrsv_t):: etens,dtens,ltens,rtens
          type(tens_printer_t):: tens_printer
          integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role,hsp(1:MAX_TENSOR_RANK)
-         integer(INTL):: l,ao_space_root,ssp(1:MAX_TENSOR_RANK)
+         integer(INTL):: l,ao_space_root
          complex(8):: etens_value
          real(8):: tms,tmf
 
@@ -894,7 +1156,7 @@
          integer(INTD):: ierr,i,my_rank,comm_size,my_role,hsp(1:MAX_TENSOR_RANK),brf
          integer(INTD):: ao_space_id,oc_space_id,vi_space_id
          integer(INTL):: AO_SPACE_DIM,VI_SPACE_DIM,OC_SPACE_DIM
-         integer(INTL):: l,ssp(1:MAX_TENSOR_RANK),ao_space_root,oc_space_root,vi_space_root
+         integer(INTL):: l,ao_space_root,oc_space_root,vi_space_root
          complex(8):: etens_value
          real(8):: tms,tmf
 
@@ -1192,6 +1454,7 @@
         if(mpi_th_provided.eq.MPI_THREAD_MULTIPLE) then
          if(TEST_CORRECTNESS) then
           call test_exatensor()
+          call test_exatensor_slicing()
           call benchmark_exatensor_skinny()
           call benchmark_exatensor_fat()
          endif

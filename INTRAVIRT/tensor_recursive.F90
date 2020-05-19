@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/08
+!REVISION: 2020/05/19
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5767,10 +5767,8 @@
  !Insert unsplit dimensions:
              jj=0
              do jd=1,nd
-              if(firo(jd).gt.0) then
-               firo(jd)=firo(jd)+jj
-              else
-               firo(jd)=firo(jd-1)+abs(swid(jd-1)); jj=jj+1
+              if(firo(jd).le.0) then
+               jj=jj+1; firo(jd)=nsb+jj
               endif
              enddo
              nsb=nsb+jj
@@ -6108,10 +6106,8 @@
  !Insert unsplit dimensions:
              jj=0
              do jd=1,nd
-              if(firo(jd).gt.0) then
-               firo(jd)=firo(jd)+jj
-              else
-               firo(jd)=firo(jd-1)+abs(swid(jd-1)); jj=jj+1
+              if(firo(jd).le.0) then
+               jj=jj+1; firo(jd)=nsb+jj
               endif
              enddo
              nsb=nsb+jj
