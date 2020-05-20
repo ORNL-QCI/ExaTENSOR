@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/19
+!REVISION: 2020/05/20
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -524,11 +524,11 @@
          type(color_symmetry_t), allocatable:: basis_symmetry(:)
          type(subspace_basis_t):: basis_ao,basis_oc,basis_vi
          class(h_space_t), pointer:: ao_space,oc_space,vi_space
-         type(tens_rcrsv_t):: atens,vtens,dtens,ctens,etens
+         type(tens_rcrsv_t):: atens,vtens,dtens,ctens,etens,wtens,gtens,stens,gslice,sslice
          type(tens_printer_t):: tens_printer
          integer(INTD):: ierr,i,my_rank,comm_size,my_role,hsp(1:MAX_TENSOR_RANK),brf
          integer(INTD):: ao_space_id,vi_space_id,oc_space_id
-         integer(INTL):: AO_SPACE_DIM,VI_SPACE_DIM,OC_SPACE_DIM
+         integer(INTL):: AO_SPACE_DIM,VI_SPACE_DIM,OC_SPACE_DIM,subs(1:MAX_TENSOR_RANK)
          integer(INTL):: l,ao_space_root,vi_space_root,oc_space_root,nsub_ao,nsub_vi,nsub_oc
          integer(INTL), allocatable:: subsp_ao(:),subsp_vi(:),subsp_oc(:)
          complex(8):: etens_value
@@ -664,6 +664,33 @@
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !wtens:
+           write(6,'("Creating tensor wtens over hierarchical vector spaces ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(wtens,'wtens',(/vi_space_id,vi_space_id,vi_space_id,oc_space_id,oc_space_id,oc_space_id/),&
+                                    &(/subsp_vi(1),subsp_vi(1),subsp_vi(1),oc_space_root,oc_space_root,oc_space_root/),&
+                                    &TENSOR_DATA_KIND)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !gtens:
+           write(6,'("Creating tensor gtens over hierarchical vector spaces ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(gtens,'gtens',(/vi_space_id,oc_space_id,vi_space_id,vi_space_id/),&
+                                    &(/vi_space_root,oc_space_root,vi_space_root,vi_space_root/),&
+                                    &TENSOR_DATA_KIND)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !stens:
+           write(6,'("Creating tensor stens over hierarchical vector spaces ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(stens,'stens',(/vi_space_id,vi_space_id,oc_space_id,oc_space_id/),&
+                                    &(/vi_space_root,vi_space_root,oc_space_root,oc_space_root/),&
+                                    &TENSOR_DATA_KIND)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Initialize tensors:
   !ctens:
            write(6,'("Initializing tensor ctens ... ")',ADVANCE='NO'); flush(6)
@@ -693,7 +720,41 @@
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !wtens:
+           write(6,'("Initializing tensor wtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_init(wtens,(0d0,0d0))
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !gtens:
+           write(6,'("Initializing tensor gtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_init(gtens,left_val)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !stens:
+           write(6,'("Initializing tensor stens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_init(stens,right_val)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_init() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Perform tensor contractions:
+  !wtens:
+           write(6,'("Contracting wtens+=gtens*stens ... ")',ADVANCE='NO'); flush(6)
+           subs(1:4)=(/vi_space_root,oc_space_root,subsp_vi(1),subsp_vi(1)/)
+           call gslice%tens_rcrsv_ctor(gtens,subs(1:4),ierr)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'G slice tens_rcrsv_ctor failed!')
+           subs(1:4)=(/vi_space_root,subsp_vi(1),oc_space_root,oc_space_root/)
+           call sslice%tens_rcrsv_ctor(stens,subs(1:4),ierr)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'S slice tens_rcrsv_ctor failed!')
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_contract(wtens,gtens,stens,'W(a,b,c,i,j,k)+=G+(e,i,a,b)*S(e,c,j,k)')
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
   !vtens:
            write(6,'("Contracting vtens+=ctens*atens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
@@ -732,6 +793,27 @@
            !write(6,'("Reference value = ",D21.14)')&
            !&(dble(AO_SPACE_DIM)**2)*(dble(OC_SPACE_DIM)**2)*(dble(VI_SPACE_DIM)**6)*(abs(left_val)**2)*(abs(right_val*right_val)**2)
  !Destroy tensors:
+  !stens:
+           write(6,'("Destroying tensor stens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(stens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !gtens:
+           write(6,'("Destroying tensor gtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(gtens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+  !wtens:
+           write(6,'("Destroying tensor wtens ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_destroy(wtens)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           tmf=MPI_Wtime()
+           write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
   !dtens:
            write(6,'("Destroying tensor dtens ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
