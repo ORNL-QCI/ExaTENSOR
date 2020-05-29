@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/15
+!REVISION: 2020/05/29
 
 !Copyright (C) 2013-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5249,7 +5249,7 @@
 	 aloop: do while(i.le.l)
 	  do while(cptrn(i:i).ne.'('); i=i+1; if(i.gt.l) exit aloop; enddo !find opening parenthesis (next tensor)
 	  if(i.gt.2) then
-	   if(cptrn(i-1:i-1).eq.'+'.and.alphanumeric(cptrn(i-2:i-2))) conj=conj+(2**(n+1)) !tensor complex conjugation flag
+	   if(cptrn(i-1:i-1).eq.'+'.and.alphanumeric_underscore(cptrn(i-2:i-2))) conj=conj+(2**(n+1)) !tensor complex conjugation flag
 	  endif
 	  ks=i; i=i+1; n=n+1; k=1 !found '(': beginning of tensor argument #n
 	  if(n.gt.2) then; ierr=1; return; endif !trap: no more than two input arguments
