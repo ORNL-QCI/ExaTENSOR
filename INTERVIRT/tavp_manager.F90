@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/08
+!REVISION: 2020/06/03
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -1219,23 +1219,25 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetCommStat
-!---------------------------------------------------------
-        subroutine TensOprndAcquireRsc(this,ierr,init_rsc)
+!---------------------------------------------------------------------
+        function TensOprndAcquireRsc(this,ierr,init_rsc) result(bytes)
 !Acquires local resources for the remote tensor operand.
          implicit none
+         integer(INTL):: bytes                       !out: number of bytes acquired
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: init_rsc    !in: if TRUE, the acquired resource will be initialized (not used)
          integer(INTD):: errc
 
+         bytes=0 !no local resources are currently needed
          if(this%is_active(errc)) then
-          if(errc.ne.0) errc=-2 !No local resources are currently needed
+          if(errc.ne.0) errc=-2
          else
           errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndAcquireRsc
+        end function TensOprndAcquireRsc
 !----------------------------------------------
         subroutine TensOprndPrefetch(this,ierr)
 !Starts prefetching the (remote) tensor operand.

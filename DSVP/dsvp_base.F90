@@ -1,9 +1,9 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2019/01/15
+!REVISION: 2020/06/03
 
-!Copyright (C) 2014-2019 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2019 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -342,13 +342,14 @@
           integer(INTD), intent(out), optional:: req  !out: communication request handle
          end function ds_oprnd_comm_i
    !acquire_rsc:
-         subroutine ds_oprnd_acqr_i(this,ierr,init_rsc)
-          import:: ds_oprnd_t,INTD
+         function ds_oprnd_acqr_i(this,ierr,init_rsc) result(bytes)
+          import:: ds_oprnd_t,INTD,INTL
           implicit none
+          integer(INTL):: bytes                       !out: number of bytes acquired
           class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
           logical, intent(in), optional:: init_rsc    !in: optional resource initialization flag
-         end subroutine ds_oprnd_acqr_i
+         end function ds_oprnd_acqr_i
    !self:
          subroutine ds_oprnd_self_i(this,ierr)
           import:: ds_oprnd_t,INTD

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/20
+!REVISION: 2020/06/03
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -339,6 +339,7 @@
          integer(INTD), public:: num_ports=2                          !number of ports: Port 0 <- Decoder (Tens,Ctrl,Aux), Port 1 <- Communicator (Tens)
          integer(INTL), private:: host_ram_size=TAVP_WRK_MIN_HOST_MEM*1048576_INTL !size of the usable Host RAM memory in bytes
          integer(INTL), private:: nvram_size=0_INTL                   !size of the usable NVRAM memory (if any) in bytes
+         integer(INTL), private:: bytes_in_use=0_INTL                 !total number of bytes in use
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()    !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: staged_list                       !list of staged instructions ready for subsequent processing
          type(list_iter_t), private:: stg_list                        !iterator for <staged_list>
@@ -1652,10 +1653,11 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkSetTensorLayout
-!-----------------------------------------------------------------
-        subroutine TensEntryWrkAcquireResource(this,ierr,init_rsc)
+!-----------------------------------------------------------------------------
+        function TensEntryWrkAcquireResource(this,ierr,init_rsc) result(bytes)
 !Acquires resource for the tensor cache entry if it has not been acquired yet.
          implicit none
+         integer(INTL):: bytes                         !out: number of bytes acquired
          class(tens_entry_wrk_t), intent(inout):: this !inout: active tensor cache entry
          integer(INTD), intent(out), optional:: ierr   !out: error code or TRY_LATER
          logical, intent(in), optional:: init_rsc      !in: if TRUE, the memory resource will be initialized to zero
@@ -1666,6 +1668,7 @@
          class(tens_layout_t), pointer:: layout
          logical:: init_zero
 
+         bytes=0
          call this%lock()
          if(this%resource%is_empty(errc)) then
           if(errc.eq.0) then
@@ -1680,6 +1683,7 @@
                init_zero=.FALSE.; if(present(init_rsc)) init_zero=init_rsc
                call this%resource%allocate_buffer(buf_size,errc,set_to_zero=init_zero)
                if(errc.eq.0) then
+                bytes=buf_size
                 if(init_zero) call this%set_up_to_date(.TRUE.)
                 if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
@@ -1712,7 +1716,7 @@
          call this%unlock()
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensEntryWrkAcquireResource
+        end function TensEntryWrkAcquireResource
 !---------------------------------------------------------------------------------
         subroutine TensEntryWrkReleaseResource(this,ierr,error_if_active,released)
 !Releases resource for the tensor cache entry if it has not been released yet.
@@ -2713,12 +2717,13 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetCommStat
-!---------------------------------------------------------
-        subroutine TensOprndAcquireRsc(this,ierr,init_rsc)
+!---------------------------------------------------------------------
+        function TensOprndAcquireRsc(this,ierr,init_rsc) result(bytes)
 !Acquires local resource for a tensor operand.
 !If the resource has already been acquired, does nothing (<init_rsc> is ignored).
 !If the resource component is not set, an error will be returned.
          implicit none
+         integer(INTL):: bytes                       !out: number of bytes acquired
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
          integer(INTD), intent(out), optional:: ierr !out: error code or TRY_LATER
          logical, intent(in), optional:: init_rsc    !in: if TRUE, the memory resource will be explicitly initialized to zero upon allocation
@@ -2730,6 +2735,7 @@
          logical:: init_zero
 
          call prof_push('Acquire'//CHAR_NULL,10)
+         bytes=0
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock()
@@ -2746,6 +2752,7 @@
                   init_zero=.FALSE.; if(present(init_rsc)) init_zero=init_rsc
                   call this%resource%allocate_buffer(buf_size,errc,set_to_zero=init_zero)
                   if(errc.eq.0) then
+                   bytes=buf_size
                    if(associated(this%cache_entry).and.init_zero) call this%cache_entry%set_up_to_date(.TRUE.)
                    if(DEBUG.gt.0) then
 !$OMP CRITICAL (IO)
@@ -2792,7 +2799,7 @@
          if(present(ierr)) ierr=errc
          call prof_pop()
          return
-        end subroutine TensOprndAcquireRsc
+        end function TensOprndAcquireRsc
 !----------------------------------------------
         subroutine TensOprndPrefetch(this,ierr)
 !Starts prefetching a remote tensor operand using a local resource.
@@ -2805,6 +2812,7 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code or TRY_LATER
          integer(INTD):: errc,comm_stat,req
+         integer(INTL):: bytes
          class(DataDescr_t), pointer:: descr
          type(C_PTR):: cptr
          logical:: remot
@@ -2823,7 +2831,7 @@
                  if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
                   if(descr%is_set(errc)) then
                    if(errc.eq.0) then
-                    if(this%resource%is_empty()) call this%acquire_rsc(errc)
+                    if(this%resource%is_empty()) bytes=this%acquire_rsc(errc)
                     if(errc.eq.0) then
                      comm_stat=this%get_comm_stat(errc)
                      if(errc.eq.0.and.comm_stat.eq.DS_OPRND_NO_COMM) then
@@ -6568,8 +6576,9 @@
           expired=timer_expired(wait_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-87; exit wloop; endif
           if(expired) then
 !$OMP CRITICAL (IO)
-           write(CONS_OUT,'("#WARNING(TAVP-WRK:Resourcer)[",i6,"]: No instruction has been issued recently: Memory block = ",l1)')&
-           &impir,mem_block
+           write(CONS_OUT,'("#WARNING(TAVP-WRK:Resourcer)[",i6,"]: No instruction has been issued recently: '//&
+           &'Memory block = ",l1,": Host RAM usage = ",i13,": Resource usage (bytes) = ",i13)')&
+           &impir,mem_block,host_ram_used,this%bytes_in_use
 !$OMP END CRITICAL (IO)
            flush(CONS_OUT)
            ier=timer_reset(wait_timer,MAX_RESOURCER_WAIT_TIME)
@@ -7727,6 +7736,7 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code or TRY_LATER
          logical, intent(in), optional:: omit_output       !in: if TRUE, the output operand(s) will be ommitted (defaults to FALSE)
          integer(INTD):: errc,ier,n,l
+         integer(INTL):: bytes
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_rcrsv_t), pointer:: tensor
          class(tens_cache_entry_t), pointer:: cache_entry
@@ -7745,9 +7755,10 @@
             class is(tens_oprnd_t)
              temp=oprnd%is_temporary(ier)
              if(ier.eq.0) then
-             !call oprnd%acquire_rsc(ier,init_rsc=(op_output.and.temp)) !initialization to zero is only done for temporary output operands
-              call oprnd%acquire_rsc(ier,init_rsc=.FALSE.) !tensor initialization is delegated to Dispatcher
+             !bytes=oprnd%acquire_rsc(ier,init_rsc=(op_output.and.temp)) !initialization to zero is only done for temporary output operands
+              bytes=oprnd%acquire_rsc(ier,init_rsc=.FALSE.) !tensor initialization is delegated to Dispatcher
               if(ier.eq.0) then
+               this%bytes_in_use=this%bytes_in_use+bytes
                if(DEBUG.gt.0) then
                 pres=oprnd%is_present()
                 tensor=>oprnd%get_tensor(ier); call tensor%get_name(tname,l,ier)
@@ -7797,8 +7808,10 @@
          class(tens_instr_t), intent(inout):: tens_instr   !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,n,l
+         integer(INTL):: bytes
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_rcrsv_t), pointer:: tensor
+         class(tens_resrc_t), pointer:: resource
          character(TEREC_MAX_TENS_NAME_LEN+8):: tname
 
          errc=0
@@ -7810,8 +7823,18 @@
            rloop: do while(n.gt.0)
             n=n-1; oprnd=>tens_instr%get_operand(n,errc)
             if(errc.eq.DSVP_SUCCESS) then
+             bytes=0
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              resource=>oprnd%get_resource()
+              if(associated(resource)) then
+               if(.not.resource%is_empty()) bytes=resource%get_mem_size()
+              endif
+             end select
              call oprnd%release_rsc(errc)
-             if(errc.ne.0) then
+             if(errc.eq.0) then
+              this%bytes_in_use=this%bytes_in_use-bytes
+             else
               if(VERBOSE) then
                select type(oprnd)
                class is(tens_oprnd_t)
