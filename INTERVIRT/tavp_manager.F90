@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/06/03
+!REVISION: 2020/06/09
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -1293,22 +1293,24 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndSync
-!------------------------------------------------
-        subroutine TensOprndReleaseRsc(this,ierr)
+!------------------------------------------------------------
+        function TensOprndReleaseRsc(this,ierr) result(bytes)
 !Releases local resources acquired for the remote tensor operand.
          implicit none
+         integer(INTL):: bytes                       !out: number of bytes released
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
+         bytes=0 !no local resources are currently needed
          if(this%is_active(errc)) then
-          if(errc.ne.0) errc=-2 !No local resources are currently needed
+          if(errc.ne.0) errc=-2
          else
           errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndReleaseRsc
+        end function TensOprndReleaseRsc
 !----------------------------------------------
         subroutine TensOprndDestruct(this,ierr)
 !Destructs the tensor operand.
@@ -1316,10 +1318,11 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         integer(INTL):: bytes
 !$OMP FLUSH
          if(this%is_active(errc)) then
           if(errc.eq.0) then
-           call this%release_rsc(errc)
+           bytes=this%release_rsc(errc)
            if(errc.eq.0) then
             this%owner_id(:)=-1
             if(associated(this%cache_entry)) then

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/06/03
+!REVISION: 2020/06/09
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -3204,8 +3204,8 @@
         !call prof_pop()
          return
         end function TensOprndSync
-!------------------------------------------------
-        subroutine TensOprndReleaseRsc(this,ierr)
+!------------------------------------------------------------
+        function TensOprndReleaseRsc(this,ierr) result(bytes)
 !Releases local tensor resource occupied by the tensor operand,
 !unless there are other active tensor operands sharing the same resource.
 !In the latter case, nothing will be done and no error raised.
@@ -3213,20 +3213,24 @@
 !Note that the resource object itself (either allocated or unallocated) is
 !still associated with this tensor operand, until it is destructed.
          implicit none
+         integer(INTL):: bytes                       !out: number of bytes released
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (can be empty)
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,sts
          logical:: rls
 
+         bytes=0
 !$OMP FLUSH(this)
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            call this%lock()
            if(associated(this%resource)) then
+            bytes=this%resource%get_mem_size()
             sts=this%get_comm_stat(errc)
             if(errc.eq.0) then
              if(associated(this%cache_entry)) then
               call this%cache_entry%release_resource(errc,error_if_active=.FALSE.,released=rls)
+              if(.not.rls) bytes=0
               if(errc.eq.0) then
                if(rls.and.(sts.ne.DS_OPRND_NO_COMM)) then !trap
                 if(VERBOSE) then
@@ -3246,8 +3250,10 @@
                if(sts.eq.DS_OPRND_NO_COMM) then
                 call this%resource%free_buffer(errc); if(errc.ne.0) errc=-5 !free the resource memory buffer
                else
-                errc=-4
+                bytes=0; errc=-4
                endif
+              else
+               bytes=0
               endif
              endif
             else
@@ -3257,7 +3263,7 @@
 !$OMP END CRITICAL (IO)
               flush(CONS_OUT)
              endif
-             errc=-3
+             bytes=0; errc=-3
             endif
            endif
            call this%unlock()
@@ -3276,7 +3282,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndReleaseRsc
+        end function TensOprndReleaseRsc
 !----------------------------------------------
         subroutine TensOprndDestruct(this,ierr)
 !Destructs the tensor operand.
@@ -3284,12 +3290,13 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         integer(INTL):: bytes
 
 !$OMP FLUSH(this)
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            this%talsh_tens=>NULL()
-           call this%release_rsc(errc); if(errc.ne.0) errc=-3
+           bytes=this%release_rsc(errc); if(errc.ne.0) errc=-3
            if(associated(this%resource)) then
             call this%resource%decr_ref_count()
             this%resource=>NULL()
@@ -7811,7 +7818,6 @@
          integer(INTL):: bytes
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_rcrsv_t), pointer:: tensor
-         class(tens_resrc_t), pointer:: resource
          character(TEREC_MAX_TENS_NAME_LEN+8):: tname
 
          errc=0
@@ -7823,15 +7829,7 @@
            rloop: do while(n.gt.0)
             n=n-1; oprnd=>tens_instr%get_operand(n,errc)
             if(errc.eq.DSVP_SUCCESS) then
-             bytes=0
-             select type(oprnd)
-             class is(tens_oprnd_t)
-              resource=>oprnd%get_resource()
-              if(associated(resource)) then
-               if(.not.resource%is_empty()) bytes=resource%get_mem_size()
-              endif
-             end select
-             call oprnd%release_rsc(errc)
+             bytes=oprnd%release_rsc(errc)
              if(errc.eq.0) then
               this%bytes_in_use=this%bytes_in_use-bytes
              else

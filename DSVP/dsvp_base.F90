@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/06/03
+!REVISION: 2020/06/09
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -133,7 +133,7 @@
           procedure(ds_oprnd_self_i), deferred, public:: prefetch      !starts prefetching a remote domain-specific operand (acquires local resource!)
           procedure(ds_oprnd_self_i), deferred, public:: upload        !starts uploading the domain-specific operand to its remote location
           procedure(ds_oprnd_sync_i), deferred, public:: sync          !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
-          procedure(ds_oprnd_self_i), deferred, public:: release_rsc   !releases local resource, thus destroying the temporary local copy, but the operand stays defined
+          procedure(ds_oprnd_rles_i), deferred, public:: release_rsc   !releases local resource, thus destroying the temporary local copy, but the operand stays defined
           procedure(ds_oprnd_self_i), deferred, public:: destruct      !performs a complete destruction back to an empty (undefined) state
           procedure(ds_oprnd_print_i), deferred, public:: print_it     !prints
         end type ds_oprnd_t
@@ -350,6 +350,14 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
           logical, intent(in), optional:: init_rsc    !in: optional resource initialization flag
          end function ds_oprnd_acqr_i
+   !release_rsc:
+         function ds_oprnd_rles_i(this,ierr) result(bytes)
+          import:: ds_oprnd_t,INTD,INTL
+          implicit none
+          integer(INTL):: bytes                       !out: number of bytes released
+          class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end function ds_oprnd_rles_i
    !self:
          subroutine ds_oprnd_self_i(this,ierr)
           import:: ds_oprnd_t,INTD
@@ -927,6 +935,7 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: dissoc_only !in: if TRUE, no operand deallocation will be performed
          integer(INTD):: errc
+         integer(INTL):: bytes
          integer:: ier
          logical:: dis,synced
 
@@ -936,7 +945,7 @@
           if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
            synced=this%operand(op_num)%oprnd_ref%sync(errc,wait=.TRUE.) !complete a possible communication
            if(errc.ne.0) errc=DSVP_ERR_UNABLE_COMPLETE
-           call this%operand(op_num)%oprnd_ref%release_rsc(ier) !release local resource, if any
+           bytes=this%operand(op_num)%oprnd_ref%release_rsc(ier) !release local resource, if any
            if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_UNABLE_COMPLETE
            if(.not.dis) then
             deallocate(this%operand(op_num)%oprnd_ref,STAT=ier) !deallocate() will call the subtype dtor
