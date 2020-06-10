@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/19
+!REVISION: 2020/06/10
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -5263,7 +5263,7 @@
            endif
           endif
          else
-          errc=TEREC_INVALID_REQUEST
+          errc=TEREC_INVALID_ARGS
          endif
          if(present(ierr)) ierr=errc
          return

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/06/09
+!REVISION: 2020/06/10
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -6582,10 +6582,11 @@
  !Test for possible stalling due to persistent memory resource starvation:
           expired=timer_expired(wait_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-87; exit wloop; endif
           if(expired) then
+           tm=time_sys_sec()
 !$OMP CRITICAL (IO)
            write(CONS_OUT,'("#WARNING(TAVP-WRK:Resourcer)[",i6,"]: No instruction has been issued recently: '//&
-           &'Memory block = ",l1,": Host RAM usage = ",i13,": Resource usage (bytes) = ",i13)')&
-           &impir,mem_block,host_ram_used,this%bytes_in_use
+           &'Memory block = ",l1,": Host RAM usage = ",i13,": Resource usage (bytes) = ",i13,": Time [",F20.6,"]")')&
+           &impir,mem_block,host_ram_used,this%bytes_in_use,tm
 !$OMP END CRITICAL (IO)
            flush(CONS_OUT)
            ier=timer_reset(wait_timer,MAX_RESOURCER_WAIT_TIME)
@@ -9145,6 +9146,13 @@
                       if(errc.eq.0) then
                        call cache_entry%set_persistency(.TRUE.) !TENS_CREATE creates persistent tensors
                       else
+                       if(VERBOSE) then
+!$OMP CRITICAL (IO)
+                        write(CONS_OUT,'("#ERROR(TAVP-WRK:TENSOR_CREATE)[",i6,"]: Unable to set tensor location: Error ",i10)')&
+                        &impir,errc
+!$OMP END CRITICAL (IO)
+                        flush(CONS_OUT)
+                       endif
                        errc=-15
                       endif
                      else

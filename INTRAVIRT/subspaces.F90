@@ -1,7 +1,7 @@
 !ExaTENSOR: Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/08
+!REVISION: 2020/06/10
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -276,6 +276,7 @@
           procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces  !returns the total number of defined subspaces in the vector space
           procedure, public:: get_root_id=>HSpaceGetRootId              !returns the id of the full space subspace (root of the subspace aggregation tree)
           procedure, public:: get_ancestor_id=>HSpaceGetAncestorId      !returns the id of a specific ancestor subspace
+          procedure, public:: get_ancestor_id_of_level=>HSpaceGetAncestorIdOfLevel !returns the id of an ancestor subspace at a requested hierarchy level [0,1,2,...]
           procedure, public:: get_subspace_level=>HSpaceGetSubspaceLevel!returns the distance from the root for the specific subspace
           procedure, public:: get_subspace=>HSpaceGetSubspace           !returns a pointer to the requested subspace of the hierarchical vector space
           procedure, public:: get_aggr_tree=>HSpaceGetAggrTree          !returns a pointer to the subspace aggregation tree (->subspaces)
@@ -408,6 +409,7 @@
         private HSpaceGetNumSubspaces
         private HSpaceGetRootId
         private HSpaceGetAncestorId
+        private HSpaceGetAncestorIdOfLevel
         private HSpaceGetSubspaceLevel
         private HSpaceGetSubspace
         private HSpaceGetAggrTree
@@ -2505,6 +2507,36 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetAncestorId
+!----------------------------------------------------------------------------------------------------
+        function HSpaceGetAncestorIdOfLevel(this,subspace_id,ancestor_level,ierr) result(ancestor_id)
+!Returns the id of an ancestor subspace at a requested hierarchy level. If the requested hierarchy level
+!is lower than the current subspace level, returns -1.
+         implicit none
+         integer(INTL):: ancestor_id                   !out: ancestor id (sequential offset)
+         class(h_space_t), intent(inout):: this        !in: hierarchical vector space
+         integer(INTL), intent(in):: subspace_id       !in: subspace id
+         integer(INTD), intent(in):: ancestor_level    !in: requested ancestor level: [0,1,2,...]
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc,current_level
+
+         errc=0; ancestor_id=-1 !no ancestor
+         if(ancestor_level.ge.0) then
+          current_level=this%get_subspace_level(subspace_id,errc)
+          if(errc.eq.0) then
+           if(ancestor_level.lt.current_level) then !non-trivial ancestor
+            ancestor_id=this%get_ancestor_id(subspace_id,current_level-ancestor_level,errc)
+           elseif(ancestor_level.eq.current_level) then !ancestor itself
+            ancestor_id=subspace_id
+           endif
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceGetAncestorIdOfLevel
 !---------------------------------------------------------------------------
         function HSpaceGetSubspaceLevel(this,subspace_id,ierr) result(level)
 !Returns the distance from the root for a specific subspace.
