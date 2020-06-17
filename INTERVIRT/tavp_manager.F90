@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/06/09
+!REVISION: 2020/06/17
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -114,7 +114,7 @@
         integer(INTD), private:: CONS_OUT=6 !default output device
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
-        integer(INTD), private:: LOGGING=0  !logging mode: 0 - none, 1 - instruction dispatch
+        integer(INTD), private:: LOGGING=1  !logging mode: 0 - none, 1 - instruction dispatch
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=64_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTL), parameter, private:: MIN_BYTECODE_SPACE=1_INTL*(1024_INTL*1024_INTL) !min required free space (bytes) in the bytecode buffer (to check for potential overflow)
@@ -135,8 +135,8 @@
         logical, private:: DISPATCH_BALANCE=.FALSE.             !activates load-balanced dispatch for affinity-less tensor instructions (DISPATCH_RANDOM must be off)
         real(8), private:: DISPATCH_BALANCE_BIAS=32d0           !bias for the balancing function
         real(8), private:: DISPATCH_BALANCE_KURT=3d-1           !inverse kurtosis for the balancing function
-        integer(INTD), private:: MAX_ISSUE_INSTR=256            !max number of tensor instructions in the bytecode issued to a child node
-        integer(INTD), private:: MIN_ISSUE_INSTR=128            !min number of tensor instructions being currently processed by a child node
+        integer(INTD), private:: MAX_ISSUE_INSTR=24             !max number of tensor instructions in the bytecode issued to a child node
+        integer(INTD), private:: MIN_ISSUE_INSTR=8              !min number of tensor instructions being currently processed by a child node
  !Collector:
         integer(INTD), private:: MAX_COLLECT_INSTR=8192         !max number of active tensor (sub-)instructions in the collection phase
  !Retirer:
