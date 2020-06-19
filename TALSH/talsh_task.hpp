@@ -61,12 +61,18 @@ public:
      Negative id on return means device is undefined. **/
  int getExecutionDevice(int * device_kind);
 
+ /** Returns the total number of tensor arguments used in the TAL-SH task. **/
+ unsigned int getNumTensorArguments() const;
+
+ /** Returns a specific tensor argument used in the TAL-SH task or nullptr if it does not exist. **/
+ const Tensor * getTensorArgument(unsigned int arg_num) const;
+
+ /** Returns all tensor arguments and their images used in the TAL-SH task or NULL if none. **/
+ const talshTensArg_t * getTensorArgumentImages(int * num_arguments);
+
  /** Returns the tensor argument coherence control value used in the TAL-SH task.
      Negative value on return means undefined. **/
  int getTensorArgumentCoherence();
-
- /** Returns the tensor arguments used in the TAL-SH task or NULL if none. **/
- const talshTensArg_t * getTensorArguments(int * num_arguments);
 
  /** Returns a pointer to the underlying C TAL-SH task implementation. **/
  talsh_task_t * getTalshTaskPtr();

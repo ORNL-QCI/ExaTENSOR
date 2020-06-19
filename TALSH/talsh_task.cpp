@@ -112,15 +112,28 @@ int TensorTask::getExecutionDevice(int * device_kind)
 }
 
 
-int TensorTask::getTensorArgumentCoherence()
+unsigned int TensorTask::getNumTensorArguments() const
 {
- return talshTaskArgCoherence(&talsh_task_);
+ return num_tensors_;
 }
 
 
-const talshTensArg_t * TensorTask::getTensorArguments(int * num_arguments)
+const Tensor * TensorTask::getTensorArgument(unsigned int arg_num) const
+{
+ if(arg_num < num_tensors_) return used_tensors_[arg_num];
+ return nullptr;
+}
+
+
+const talshTensArg_t * TensorTask::getTensorArgumentImages(int * num_arguments)
 {
  return talshTaskTensArgs(&talsh_task_,num_arguments);
+}
+
+
+int TensorTask::getTensorArgumentCoherence()
+{
+ return talshTaskArgCoherence(&talsh_task_);
 }
 
 
