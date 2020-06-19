@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2020/01/23
+REVISION: 2020/06/19
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -103,6 +103,24 @@ bool TensorTask::test(int * status)
  }
  if(res) this->clean();
  return res;
+}
+
+
+int TensorTask::getExecutionDevice(int * device_kind)
+{
+ return talshTaskDevId(&talsh_task_,device_kind);
+}
+
+
+int TensorTask::getTensorArgumentCoherence()
+{
+ return talshTaskArgCoherence(&talsh_task_);
+}
+
+
+const talshTensArg_t * TensorTask::getTensorArguments(int * num_arguments)
+{
+ return talshTaskTensArgs(&talsh_task_,num_arguments);
 }
 
 
