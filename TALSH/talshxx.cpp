@@ -207,8 +207,20 @@ bool Tensor::sync(TensorTask * task_handle, const int device_kind, const int dev
     errc = talshTensorPlace(&(pimpl_->tensor_),device_id,device_kind,NULL,COPY_M,task_hl);
    }
   }
-  assert(errc == TALSH_SUCCESS);
-  if(exclusive){
+  if(errc != TALSH_SUCCESS) res = false;
+  if(errc != TALSH_SUCCESS && errc != TRY_LATER && errc != DEVICE_UNABLE)
+   std::cout << "#ERROR(talsh::Tensor::sync): talshTensorPlace error " << errc << std::endl;
+  assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
+  if(task_handle != nullptr){
+   if(errc == TALSH_SUCCESS){
+    task_handle->used_tensors_[0] = this;
+    task_handle->num_tensors_ = 1;
+    this->resetWriteTask(task_handle);
+   }else{
+    task_handle->clean();
+   }
+  }
+  if(exclusive && res){
    errc = talshTensorDiscardOther(&(pimpl_->tensor_),device_id,device_kind);
    assert(errc == TALSH_SUCCESS);
   }
@@ -372,7 +384,7 @@ int Tensor::extractSlice(TensorTask * task_handle,         //out: task handle as
   //++left; ++right; ++(*this);
   errc = talshTensorSlice(dtens,ltens,offsets.data(),device_id,device_kind,COPY_MT,accum,task_hl);
   if(errc != TALSH_SUCCESS && errc != TRY_LATER && errc != DEVICE_UNABLE)
-   std::cout << "#ERROR(talsh::Tensor::extractSlice): talshTensorSlice error " << errc << std::endl; //debug
+   std::cout << "#ERROR(talsh::Tensor::extractSlice): talshTensorSlice error " << errc << std::endl;
   assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
   if(errc == TALSH_SUCCESS){
    task_handle->used_tensors_[0] = &slice;
@@ -385,7 +397,7 @@ int Tensor::extractSlice(TensorTask * task_handle,         //out: task handle as
  }else{ //synchronous
   errc = talshTensorSlice(dtens,ltens,offsets.data(),device_id,device_kind,COPY_MT,accum);
   if(errc != TALSH_SUCCESS && errc != TRY_LATER && errc != DEVICE_UNABLE)
-   std::cout << "#ERROR(talsh::Tensor::extractSlice): talshTensorSlice error " << errc << std::endl; //debug
+   std::cout << "#ERROR(talsh::Tensor::extractSlice): talshTensorSlice error " << errc << std::endl;
   assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
  }
  return errc;
@@ -411,7 +423,7 @@ int Tensor::insertSlice(TensorTask * task_handle,         //out: task handle ass
   //++left; ++right; ++(*this);
   errc = talshTensorInsert(dtens,ltens,offsets.data(),device_id,device_kind,COPY_MT,accum,task_hl);
   if(errc != TALSH_SUCCESS && errc != TRY_LATER && errc != DEVICE_UNABLE)
-   std::cout << "#ERROR(talsh::Tensor::insertSlice): talshTensorInsert error " << errc << std::endl; //debug
+   std::cout << "#ERROR(talsh::Tensor::insertSlice): talshTensorInsert error " << errc << std::endl;
   assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
   if(errc == TALSH_SUCCESS){
    task_handle->used_tensors_[0] = this;
@@ -424,7 +436,7 @@ int Tensor::insertSlice(TensorTask * task_handle,         //out: task handle ass
  }else{ //synchronous
   errc = talshTensorInsert(dtens,ltens,offsets.data(),device_id,device_kind,COPY_MT,accum);
   if(errc != TALSH_SUCCESS && errc != TRY_LATER && errc != DEVICE_UNABLE)
-   std::cout << "#ERROR(talsh::Tensor::insertSlice): talshTensorInsert error " << errc << std::endl; //debug
+   std::cout << "#ERROR(talsh::Tensor::insertSlice): talshTensorInsert error " << errc << std::endl;
   assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
  }
  return errc;
@@ -449,7 +461,7 @@ int Tensor::copyBody(TensorTask * task_handle,    //out: task handle associated 
   //++left; ++(*this);
   errc = talshTensorCopy(contr_ptrn,dtens,ltens,device_id,device_kind,COPY_MT,task_hl);
   if(errc != TALSH_SUCCESS && errc != TRY_LATER && errc != DEVICE_UNABLE)
-   std::cout << "#ERROR(talsh::Tensor::copyBody): talshTensorCopy error " << errc << std::endl; //debug
+   std::cout << "#ERROR(talsh::Tensor::copyBody): talshTensorCopy error " << errc << std::endl;
   assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
   if(errc == TALSH_SUCCESS){
    task_handle->used_tensors_[0] = this;
@@ -462,7 +474,7 @@ int Tensor::copyBody(TensorTask * task_handle,    //out: task handle associated 
  }else{ //synchronous
   errc = talshTensorCopy(contr_ptrn,dtens,ltens,device_id,device_kind,COPY_MT);
   if(errc != TALSH_SUCCESS && errc != TRY_LATER && errc != DEVICE_UNABLE)
-   std::cout << "#ERROR(talsh::Tensor::copyBody): talshTensorCopy error " << errc << std::endl; //debug
+   std::cout << "#ERROR(talsh::Tensor::copyBody): talshTensorCopy error " << errc << std::endl;
   assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
  }
  return errc;
