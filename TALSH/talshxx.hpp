@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2020/06/19
+REVISION: 2020/06/22
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -198,6 +198,9 @@ public:
 
  /** Returns the tensor volume (number of elements). **/
  std::size_t getVolume() const;
+
+ /** Returns the size of the tensor body in bytes. **/
+ std::size_t getSize() const;
 
  /** Returns tensor signature (base offset for each tensor dimension).
      The default tensor signature is all zero offsets. **/

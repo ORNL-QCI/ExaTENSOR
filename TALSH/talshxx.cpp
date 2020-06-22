@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2020/06/19
+REVISION: 2020/06/22
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -122,6 +122,17 @@ int Tensor::getOrder() const
 std::size_t Tensor::getVolume() const
 {
  return talshTensorVolume(&(pimpl_->tensor_));
+}
+
+
+/** Returns the size of the tensor body in bytes. **/
+std::size_t Tensor::getSize() const
+{
+ std::size_t sz = 0;
+ int data_kind = this->getElementType();
+ int data_kind_size = 0;
+ if(talshValidDataKind(data_kind,&data_kind_size) == YEP) sz = this->getVolume() * data_kind_size;
+ return sz;
 }
 
 
