@@ -60,8 +60,9 @@ Tensor::Impl::Impl(const std::vector<std::size_t> & signature, //tensor signatur
  int errc = talshTensorClean(&tensor_); assert(errc == TALSH_SUCCESS);
  const int rank = static_cast<int>(dims.size());
  errc = talshTensorConstruct(&tensor_,data_kind,rank,dims.data(),talshFlatDevId(DEV_HOST,0),NULL,0,init_func);
- if(errc != TALSH_SUCCESS) std::cout << "#ERROR(talsh::Tensor::Tensor): talshTensorConstruct error " << errc << std::endl << std::flush;
- assert(errc == TALSH_SUCCESS);
+ if(errc != TALSH_SUCCESS && errc != TRY_LATER)
+  std::cout << "#ERROR(talsh::Tensor::Tensor): talshTensorConstruct error " << errc << std::endl << std::flush;
+ assert(errc == TALSH_SUCCESS || errc == TRY_LATER);
  assert(signature.size() == dims.size());
  write_task_ = nullptr;
 }
