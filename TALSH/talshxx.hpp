@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2020/06/22
+REVISION: 2020/06/23
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -187,6 +187,10 @@ public:
 
  /** Dtor **/
  ~Tensor() = default;
+
+ /** Returns TRUE if the tensor is empty and cannot be used, which may
+     happen when no enough memory was available during tensor construction. **/
+ bool isEmpty() const;
 
  /** Returns the tensor element data type: {REAL32,REAL64,COMPLEX32,COMPLEX64}. **/
  int getElementType() const;

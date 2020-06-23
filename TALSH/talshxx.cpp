@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2020/06/22
+REVISION: 2020/06/23
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -91,6 +91,14 @@ Tensor::Tensor(const std::vector<int> & dims,              //tensor dimension ex
                talsh_tens_init_i init_func):               //user-defined tensor initialization function
  Tensor(std::vector<std::size_t>(dims.size(),0),dims,data_kind,init_func)
 {
+}
+
+
+/** Returns TRUE if the tensor is empty and cannot be used, which may
+    happen when no enough memory was available during tensor construction. **/
+bool Tensor::isEmpty() const
+{
+ return (talshTensorIsEmpty(&(pimpl_->tensor_)) != NOPE);
 }
 
 
