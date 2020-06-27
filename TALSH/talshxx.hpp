@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2020/06/23
+REVISION: 2020/06/27
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -212,6 +212,9 @@ public:
  /** Returns tensor signature (base offset for each tensor dimension).
      The default tensor signature is all zero offsets. **/
  const std::vector<std::size_t> & getDimOffsets() const;
+
+ /** Resets tensor signature (base offset for each tensor dimension). **/
+ void resetDimOffsets(const std::vector<std::size_t> & offsets);
 
  /** Returns tensor dimension extents (and tensor order). **/
  const int * getDimExtents(unsigned int & num_dims) const; //num_dims returns by reference (ugly)

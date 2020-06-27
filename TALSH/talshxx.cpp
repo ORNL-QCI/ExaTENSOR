@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2020/06/23
+REVISION: 2020/06/27
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -149,6 +149,14 @@ std::size_t Tensor::getSize() const
 const std::vector<std::size_t> & Tensor::getDimOffsets() const
 {
  return pimpl_->signature_;
+}
+
+
+/** Resets tensor dimension base offsets. **/
+void Tensor::resetDimOffsets(const std::vector<std::size_t> & offsets)
+{
+ pimpl_->signature_ = offsets;
+ return;
 }
 
 
