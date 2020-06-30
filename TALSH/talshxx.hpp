@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2020/06/27
+REVISION: 2020/06/30
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -136,7 +136,7 @@ public:
         const std::vector<int> & dims,                      //tensor dimension extents: dims[0:rank-1]
         const std::vector<T> & ext_data);                   //imported data (its type will define tensor element data kind)
 
-  /** Full Ctor with user-defined initialization (TAL-SH provides tensor data storage) **/
+ /** Full Ctor with user-defined initialization (TAL-SH provides tensor data storage) **/
  Tensor(const std::vector<std::size_t> & signature,         //tensor signature (identifier): signature[0:rank-1]
         const std::vector<int> & dims,                      //tensor dimension extents: dims[0:rank-1]
         int data_kind,                                      //tensor data kind
