@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/06/10
+!REVISION: 2020/07/13
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -6697,7 +6697,7 @@
            integer(INTD), intent(out):: jerr
            integer(INTD):: jn
            integer(INTL):: offset(1:MAX_TENSOR_RANK),addr
-           real(4), pointer:: body(:)
+           real(4), pointer, contiguous:: body(:)
 
            jerr=GFC_SUCCESS
            call c_f_pointer(body_p,body,(/vol/)) !body(1:vol)
@@ -6720,7 +6720,7 @@
            integer(INTD), intent(out):: jerr
            integer(INTD):: jn
            integer(INTL):: offset(1:MAX_TENSOR_RANK),addr
-           real(8), pointer:: body(:)
+           real(8), pointer, contiguous:: body(:)
 
            jerr=GFC_SUCCESS
            call c_f_pointer(body_p,body,(/vol/)) !body(1:vol)
@@ -6743,7 +6743,7 @@
            integer(INTD), intent(out):: jerr
            integer(INTD):: jn
            integer(INTL):: offset(1:MAX_TENSOR_RANK),addr
-           complex(4), pointer:: body(:)
+           complex(4), pointer, contiguous:: body(:)
 
            jerr=GFC_SUCCESS
            call c_f_pointer(body_p,body,(/vol/)) !body(1:vol)
@@ -6766,7 +6766,7 @@
            integer(INTD), intent(out):: jerr
            integer(INTD):: jn
            integer(INTL):: offset(1:MAX_TENSOR_RANK),addr
-           complex(8), pointer:: body(:)
+           complex(8), pointer, contiguous:: body(:)
 
            jerr=GFC_SUCCESS
            call c_f_pointer(body_p,body,(/vol/)) !body(1:vol)
@@ -6791,11 +6791,16 @@
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
-           if(real(abs(body(1)),8).ge.this%print_thresh) then
-            if(nd.eq.0) then
-             write(this%print_dev,'(1x,D16.7)') body(1)
-            else
-             write(this%print_dev,'(1x,D16.7,1x,64(1x,i6))') body(1),bases(1:nd)
+           if(is_nan_r4(body(1))) then
+            write(this%print_dev,'("#ERROR(TensPrinterApply:print_scalar_r4): NaN detected!")')
+            jerr=TEREC_OBJ_UNDEFINED
+           else
+            if(real(abs(body(1)),8).ge.this%print_thresh) then
+             if(nd.eq.0) then
+              write(this%print_dev,'(1x,D16.7)') body(1)
+             else
+              write(this%print_dev,'(1x,D16.7,1x,64(1x,i6))') body(1),bases(1:nd)
+             endif
             endif
            endif
            return
@@ -6807,11 +6812,16 @@
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
-           if(abs(body(1)).ge.this%print_thresh) then
-            if(nd.eq.0) then
-             write(this%print_dev,'(1x,D23.14)') body(1)
-            else
-             write(this%print_dev,'(1x,D23.14,1x,64(1x,i6))') body(1),bases(1:nd)
+           if(is_nan_r8(body(1))) then
+            write(this%print_dev,'("#ERROR(TensPrinterApply:print_scalar_r8): NaN detected!")')
+            jerr=TEREC_OBJ_UNDEFINED
+           else
+            if(abs(body(1)).ge.this%print_thresh) then
+             if(nd.eq.0) then
+              write(this%print_dev,'(1x,D23.14)') body(1)
+             else
+              write(this%print_dev,'(1x,D23.14,1x,64(1x,i6))') body(1),bases(1:nd)
+             endif
             endif
            endif
            return
@@ -6823,11 +6833,16 @@
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
-           if(real(abs(body(1)),8).ge.this%print_thresh) then
-            if(nd.eq.0) then
-             write(this%print_dev,'(1x,(D16.7,1x,D16.7))') body(1)
-            else
-             write(this%print_dev,'(1x,(D16.7,1x,D16.7),1x,64(1x,i6))') body(1),bases(1:nd)
+           if(is_nan_c4(body(1))) then
+            write(this%print_dev,'("#ERROR(TensPrinterApply:print_scalar_c4): NaN detected!")')
+            jerr=TEREC_OBJ_UNDEFINED
+           else
+            if(real(abs(body(1)),8).ge.this%print_thresh) then
+             if(nd.eq.0) then
+              write(this%print_dev,'(1x,(D16.7,1x,D16.7))') body(1)
+             else
+              write(this%print_dev,'(1x,(D16.7,1x,D16.7),1x,64(1x,i6))') body(1),bases(1:nd)
+             endif
             endif
            endif
            return
@@ -6839,11 +6854,16 @@
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
-           if(abs(body(1)).ge.this%print_thresh) then
-            if(nd.eq.0) then
-             write(this%print_dev,'(1x,(D23.14,1x,D23.14))') body(1)
-            else
-             write(this%print_dev,'(1x,(D23.14,1x,D23.14),1x,64(1x,i6))') body(1),bases(1:nd)
+           if(is_nan_c8(body(1))) then
+            write(this%print_dev,'("#ERROR(TensPrinterApply:print_scalar_c8): NaN detected!")')
+            jerr=TEREC_OBJ_UNDEFINED
+           else
+            if(abs(body(1)).ge.this%print_thresh) then
+             if(nd.eq.0) then
+              write(this%print_dev,'(1x,(D23.14,1x,D23.14))') body(1)
+             else
+              write(this%print_dev,'(1x,(D23.14,1x,D23.14),1x,64(1x,i6))') body(1),bases(1:nd)
+             endif
             endif
            endif
            return
