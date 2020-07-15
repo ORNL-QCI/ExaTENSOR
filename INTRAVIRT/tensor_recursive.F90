@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/07/13
+!REVISION: 2020/07/14
 
 !Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -6787,7 +6787,7 @@
 
           subroutine print_scalar_r4(jerr)
            integer(INTD), intent(out):: jerr
-           real(4), pointer:: body(:)
+           real(4), pointer, contiguous:: body(:)
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
@@ -6808,7 +6808,7 @@
 
           subroutine print_scalar_r8(jerr)
            integer(INTD), intent(out):: jerr
-           real(8), pointer:: body(:)
+           real(8), pointer, contiguous:: body(:)
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
@@ -6829,7 +6829,7 @@
 
           subroutine print_scalar_c4(jerr)
            integer(INTD), intent(out):: jerr
-           complex(4), pointer:: body(:)
+           complex(4), pointer, contiguous:: body(:)
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
@@ -6837,7 +6837,7 @@
             write(this%print_dev,'("#ERROR(TensPrinterApply:print_scalar_c4): NaN detected!")')
             jerr=TEREC_OBJ_UNDEFINED
            else
-            if(real(abs(body(1)),8).ge.this%print_thresh) then
+            if(real(sqrt((real(body(1))**2)+(aimag(body(1))**2)),8).ge.this%print_thresh) then
              if(nd.eq.0) then
               write(this%print_dev,'(1x,(D16.7,1x,D16.7))') body(1)
              else
@@ -6850,7 +6850,7 @@
 
           subroutine print_scalar_c8(jerr)
            integer(INTD), intent(out):: jerr
-           complex(8), pointer:: body(:)
+           complex(8), pointer, contiguous:: body(:)
 
            jerr=TEREC_SUCCESS
            call c_f_pointer(body_p,body,(/1/))
@@ -6858,7 +6858,7 @@
             write(this%print_dev,'("#ERROR(TensPrinterApply:print_scalar_c8): NaN detected!")')
             jerr=TEREC_OBJ_UNDEFINED
            else
-            if(abs(body(1)).ge.this%print_thresh) then
+            if(sqrt((real(body(1))**2)+(aimag(body(1))**2)).ge.this%print_thresh) then
              if(nd.eq.0) then
               write(this%print_dev,'(1x,(D23.14,1x,D23.14))') body(1)
              else
