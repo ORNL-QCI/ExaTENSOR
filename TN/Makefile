@@ -321,7 +321,7 @@ FFLAGS_INTEL_PRF = -c -g -O3 -fpp -vec-threshold4 -traceback -qopenmp -mkl=paral
 FFLAGS_CRAY_DEV = -c -g -fopenmp -J OBJ
 FFLAGS_CRAY_OPT = -c -O3 -fopenmp -J OBJ
 FFLAGS_CRAY_PRF = -c -g -O3 -fopenmp -J OBJ
-FFLAGS_GNU_DEV = -c -fopenmp -g -Og -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -ffpe-trap=invalid,zero,overflow
+FFLAGS_GNU_DEV = -c -fopenmp -g -Og -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -ffpe-trap=invalid,zero,overflow -fsanitize=address
 FFLAGS_GNU_OPT = -c -fopenmp -O3
 FFLAGS_GNU_PRF = -c -fopenmp -g -O3
 FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -Mallocatable=03 -g -O0
@@ -337,7 +337,11 @@ MY_INC = -I../TALSH
 MY_LIB = ../TALSH/libtalsh.a
 
 #THREADS:
-LTHREAD_GNU   = -lgomp
+ifeq ($(BUILD_TYPE),DEV)
+LTHREAD_GNU   = -fopenmp -fsanitize=address
+else
+LTHREAD_GNU   = -fopenmp
+endif
 LTHREAD_PGI   = -mp -lpthread
 LTHREAD_INTEL = -liomp5
 LTHREAD_CRAY  = -fopenmp
