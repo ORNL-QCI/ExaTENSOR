@@ -22,6 +22,8 @@ export GPU_CUDA ?= NOCUDA
 export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
+#Only for Linux DEV builds with GNU: [YES|NO]:
+export LINUX_GNU_ASAN ?= NO
 
 
 #ADJUST EXTRAS (optional):

@@ -16,6 +16,8 @@ export GPU_CUDA ?= NOCUDA
 export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
+#Only for Linux DEV builds with GNU: [YES|NO]:
+export LINUX_GNU_ASAN ?= NO
 
 
 #SET YOUR LOCAL PATHS (for direct build without Cray compiler wrappers):
@@ -137,6 +139,15 @@ endif
 endif
 endif
 
+#SANITIZERS:
+ifeq ($(LINUX_GNU_ASAN),YES)
+ ASAN_COMPILE = -fsanitize=address -fno-omit-frame-pointer
+ ASAN_CXX = -Wno-maybe-uninitialized -Wno-unused-result
+else
+ ASAN_COMPILE = -I.
+ ASAN_CXX = -I.
+endif
+
 #MPI INCLUDES:
 MPI_INC_MPICH = -I$(PATH_MPICH_INC)
 MPI_INC_OPENMPI = -I$(PATH_OPENMPI_INC)
@@ -226,7 +237,7 @@ CFLAGS_INTEL_PRF = -c -g -O3 -qopenmp
 CFLAGS_CRAY_DEV = -c -g -O0 -fopenmp -D_DEBUG
 CFLAGS_CRAY_OPT = -c -O3 -fopenmp
 CFLAGS_CRAY_PRF = -c -g -O3 -fopenmp
-CFLAGS_GNU_DEV = -c -g -O0 -fopenmp -D_DEBUG
+CFLAGS_GNU_DEV = -c -g -O0 -fopenmp -D_DEBUG $(ASAN_COMPILE)
 CFLAGS_GNU_OPT = -c -O3 -fopenmp
 CFLAGS_GNU_PRF = -c -g -O3 -fopenmp
 CFLAGS_PGI_DEV = -c -g -O0 -D_DEBUG -silent -w
@@ -238,7 +249,7 @@ CFLAGS_IBM_PRF = -c -g -O3 -qsmp=omp
 CFLAGS = $(CFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) $(PIC_FLAG)
 
 #CPP FLAGS:
-CPPFLAGS = $(CFLAGS) -std=c++11
+CPPFLAGS = $(CFLAGS) -std=c++11 $(ASAN_CXX)
 
 #FORTRAN FLAGS:
 FFLAGS_INTEL_DEV = -c -g -O0 -fpp -vec-threshold4 -traceback -qopenmp -mkl=parallel
@@ -247,7 +258,7 @@ FFLAGS_INTEL_PRF = -c -g -O3 -fpp -vec-threshold4 -traceback -qopenmp -mkl=paral
 FFLAGS_CRAY_DEV = -c -g -fopenmp -J OBJ
 FFLAGS_CRAY_OPT = -c -O3 -fopenmp -J OBJ
 FFLAGS_CRAY_PRF = -c -g -O3 -fopenmp -J OBJ
-FFLAGS_GNU_DEV = -c -fopenmp -g -Og -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -ffpe-trap=invalid,zero,overflow
+FFLAGS_GNU_DEV = -c -fopenmp -g -Og -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -ffpe-trap=invalid,zero,overflow $(ASAN_COMPILE)
 FFLAGS_GNU_OPT = -c -fopenmp -O3
 FFLAGS_GNU_PRF = -c -fopenmp -g -O3
 FFLAGS_PGI_DEV = -c -Mcache_align -Mbounds -Mchkptr -Mstandard -Mallocatable=03 -g -O0
@@ -259,11 +270,7 @@ FFLAGS_IBM_PRF = -c -qsmp=omp -g -O3
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)-D$(EXA_OS) $(PIC_FLAG)
 
 #THREADS:
-ifeq ($(BUILD_TYPE),DEV)
-LTHREAD_GNU   = -fopenmp
-else
-LTHREAD_GNU   = -fopenmp
-endif
+LTHREAD_GNU   = -fopenmp $(ASAN_COMPILE)
 LTHREAD_PGI   = -mp -lpthread
 LTHREAD_INTEL = -liomp5
 LTHREAD_CRAY  = -fopenmp
