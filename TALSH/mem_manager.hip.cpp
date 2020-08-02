@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2020/07/21
+REVISION: 2020/07/30
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,7 +33,7 @@ FOR DEVELOPERS ONLY:
 **/
 
 #include "mem_manager.h"
-#include "device_algebra.h"
+#include "device_algebra.hip.h"
 #include "tensor_algebra.h"
 
 #include <cstdio>
@@ -194,7 +194,7 @@ OUTPUT:
  int i,j,err_code;
  const char *err_msg;
 #ifndef NO_GPU
- cudaError_t err=cudaSuccess;
+ hipError_t err=hipSuccess;
 #endif
 
 #pragma omp flush
@@ -207,8 +207,8 @@ OUTPUT:
  hsize=*arg_buf_size; hsize-=hsize%mem_alloc_dec; err_code=1;
  while(hsize > mem_alloc_dec){
 #ifndef NO_GPU
-  err=cudaHostAlloc(&arg_buf_host,hsize,cudaHostAllocPortable);
-  if(err != cudaSuccess){
+  err=hipHostMalloc(&arg_buf_host,hsize,hipHostMallocPortable);
+  if(err != hipSuccess){
    hsize-=mem_alloc_dec;
   }else{
    *arg_buf_size=hsize; arg_buf_host_size=hsize; err_code=0;
@@ -246,7 +246,7 @@ OUTPUT:
 #ifndef NO_GPU
 //Allocate GPUs buffers, if needed:
   if(gpu_beg >= 0 && gpu_end >= gpu_beg){ //GPU exist for this MPI process
-   err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return 6;
+   err=hipGetDeviceCount(&i); if(err != hipSuccess) return 6;
    if(gpu_end < MAX_GPUS_PER_NODE && gpu_end < i){
     err_code=init_gpus(gpu_beg,gpu_end); if(err_code < 0) return 7;
 // Constant memory banks for all GPUs:
@@ -255,23 +255,23 @@ OUTPUT:
     mem_alloc_dec=MEM_ALIGN*BLCK_BUF_TOP_GPU; for(i=1;i<BLCK_BUF_DEPTH_GPU;i++) mem_alloc_dec*=BLCK_BUF_BRANCH_GPU;
     for(i=gpu_beg;i<=gpu_end;i++){
      if(gpu_is_mine(i) != 0){ //Initialize only my GPUs
-      err=cudaSetDevice(i); if(err != cudaSuccess) return 9;
-      err=cudaGetLastError(); //check for pre-existing CUDA errors for this GPU
-      if(err != cudaSuccess){
-       err_msg=cudaGetErrorString(err);
+      err=hipSetDevice(i); if(err != hipSuccess) return 9;
+      err=hipGetLastError(); //check for pre-existing CUDA errors for this GPU
+      if(err != hipSuccess){
+       err_msg=hipGetErrorString(err);
        if(VERBOSE) printf("#ERROR(TALSH:mem_manager:arg_buf_allocate): CUDA pre-error: %s\n",err_msg);
        return 10;
       }
-      err=cudaMemGetInfo(&hsize,&total);
-      if(err != cudaSuccess){
-       err_msg=cudaGetErrorString(err);
+      err=hipMemGetInfo(&hsize,&total);
+      if(err != hipSuccess){
+       err_msg=hipGetErrorString(err);
        if(VERBOSE) printf("#ERROR(TALSH:mem_manager:arg_buf_allocate): CUDA error: %s\n",err_msg);
        return 10;
       }
       hsize=(size_t)(float(hsize)/100.0f*float(GPU_MEM_PART_USED)); hsize-=hsize%mem_alloc_dec; err_code=1;
       while(hsize > mem_alloc_dec){
-       err=cudaMalloc(&arg_buf_gpu[i],hsize);
-       if(err != cudaSuccess){
+       err=hipMalloc(&arg_buf_gpu[i],hsize);
+       if(err != hipSuccess){
         hsize-=mem_alloc_dec;
        }else{
         arg_buf_gpu_size[i]=hsize; err_code=0;
@@ -318,7 +318,7 @@ int arg_buf_deallocate(int gpu_beg, int gpu_end)
 {
  int i,err_code;
 #ifndef NO_GPU
- cudaError_t err=cudaSuccess;
+ hipError_t err=hipSuccess;
 #endif
 
 #pragma omp flush
@@ -333,8 +333,8 @@ int arg_buf_deallocate(int gpu_beg, int gpu_end)
  arg_buf_host_size=0; num_args_host=0; occ_size_host=0; args_size_host=0; //clear Host memory statistics
  i=mi_entry_stop(); if(i != 0) err_code+=100000; //deactivate multi-index bank
 #ifndef NO_GPU
- err=cudaFreeHost(arg_buf_host);
- if(err != cudaSuccess){
+ err=hipHostFree(arg_buf_host);
+ if(err != hipSuccess){
   if(VERBOSE) printf("\n#ERROR(mem_manager:arg_buf_deallocate): Host argument buffer deallocation failed!");
   err_code+=1000;
  }
@@ -342,10 +342,10 @@ int arg_buf_deallocate(int gpu_beg, int gpu_end)
   for(i=gpu_beg;i<=gpu_end;i++){
    if(i < MAX_GPUS_PER_NODE){
     if(gpu_is_mine(i) != 0){
-     err=cudaSetDevice(i); if(err == cudaSuccess){
+     err=hipSetDevice(i); if(err == hipSuccess){
       arg_buf_gpu_size[i]=0; num_args_gpu[i]=0; occ_size_gpu[i]=0; args_size_gpu[i]=0; //clear GPU memory statistics
-      err=cudaFree(arg_buf_gpu[i]);
-      if(err != cudaSuccess){
+      err=hipFree(arg_buf_gpu[i]);
+      if(err != hipSuccess){
        if(VERBOSE) printf("\n#ERROR(mem_manager:arg_buf_deallocate): GPU# %d argument buffer deallocation failed!",i);
        err_code++;
       }
@@ -1038,7 +1038,7 @@ int slab_construct(slab_t * slab, size_t slab_entry_size, size_t slab_max_entrie
 {
  size_t j,l;
 #ifndef NO_GPU
- cudaError_t err;
+ hipError_t err;
 #endif
 
  if(slab == NULL || slab_entry_size == 0 || slab_max_entries == 0) return -1;
@@ -1059,8 +1059,8 @@ int slab_construct(slab_t * slab, size_t slab_entry_size, size_t slab_max_entrie
   slab->slab_base=(void*)malloc((slab->entry_size)*slab_max_entries);
   slab->mem_mapped=0;
  }else{
-  err=cudaHostAlloc(&(slab->slab_base),(slab->entry_size)*slab_max_entries,cudaHostAllocPortable|cudaHostAllocMapped);
-  if(err == cudaSuccess){slab->mem_mapped=1;}else{slab->slab_base=NULL;}
+  err=hipHostMalloc(&(slab->slab_base),(slab->entry_size)*slab_max_entries,hipHostMallocPortable|hipHostMallocMapped);
+  if(err == hipSuccess){slab->mem_mapped=1;}else{slab->slab_base=NULL;}
  }
 #else
  slab->slab_base=(void*)malloc((slab->entry_size)*slab_max_entries);
@@ -1164,7 +1164,7 @@ int slab_destruct(slab_t * slab)
 {
  int errc;
 #ifndef NO_GPU
- cudaError_t err;
+ hipError_t err;
 #endif
 
  errc=0;
@@ -1175,7 +1175,7 @@ int slab_destruct(slab_t * slab)
   if(slab->mem_mapped == 0){
    free(slab->slab_base); slab->slab_base=NULL;
   }else{
-   err=cudaFreeHost(slab->slab_base); if(err != cudaSuccess) errc=NOT_CLEAN;
+   err=hipHostFree(slab->slab_base); if(err != hipSuccess) errc=NOT_CLEAN;
   }
 #else
   free(slab->slab_base); slab->slab_base=NULL;
@@ -1231,7 +1231,7 @@ int host_mem_free(void *host_ptr)
 
 int host_mem_alloc_pin(void **host_ptr, size_t tsize){
 #ifndef NO_GPU
- cudaError_t err=cudaHostAlloc(host_ptr,tsize,cudaHostAllocPortable); if(err != cudaSuccess) return 1;
+ hipError_t err=hipHostMalloc(host_ptr,tsize,hipHostMallocPortable); if(err != hipSuccess) return 1;
 #else
  *host_ptr=(void*)malloc(tsize); if(*host_ptr == NULL) return 1;
 #endif
@@ -1240,7 +1240,7 @@ int host_mem_alloc_pin(void **host_ptr, size_t tsize){
 
 int host_mem_free_pin(void *host_ptr){
 #ifndef NO_GPU
- cudaError_t err=cudaFreeHost(host_ptr); if(err != cudaSuccess) return 1;
+ hipError_t err=hipHostFree(host_ptr); if(err != hipSuccess) return 1;
 #else
  free(host_ptr); host_ptr=NULL;
 #endif
@@ -1249,9 +1249,9 @@ int host_mem_free_pin(void *host_ptr){
 
 int host_mem_register(void *host_ptr, size_t tsize){
 #ifndef NO_GPU
- cudaError_t err = cudaHostRegister(host_ptr,tsize,cudaHostRegisterPortable);
- if(err != cudaSuccess){
-  const char * err_msg = cudaGetErrorString(err);
+ hipError_t err = hipHostRegister(host_ptr,tsize,hipHostRegisterPortable);
+ if(err != hipSuccess){
+  const char * err_msg = hipGetErrorString(err);
   printf("\n#ERROR(TALSH:mem_manager:host_mem_register): %s",err_msg);
   return 1;
  }
@@ -1263,9 +1263,9 @@ int host_mem_register(void *host_ptr, size_t tsize){
 
 int host_mem_unregister(void *host_ptr){
 #ifndef NO_GPU
- cudaError_t err = cudaHostUnregister(host_ptr);
- if(err != cudaSuccess){
-  const char * err_msg = cudaGetErrorString(err);
+ hipError_t err = hipHostUnregister(host_ptr);
+ if(err != hipSuccess){
+  const char * err_msg = hipGetErrorString(err);
   printf("\n#ERROR(TALSH:mem_manager:host_mem_unregister): %s",err_msg);
   return 1;
  }
@@ -1514,14 +1514,14 @@ int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id)
     A return status NOT_CLEAN is not critical. **/
 {
  int i;
- cudaError_t err;
+ hipError_t err;
  i=-1;
  if(gpu_id >= 0 && gpu_id < MAX_GPUS_PER_NODE){
-  err=cudaGetDevice(&i); if(err != cudaSuccess) return 1;
-  err=cudaSetDevice(gpu_id); if(err != cudaSuccess){err=cudaSetDevice(i); return 2;}
+  err=hipGetDevice(&i); if(err != hipSuccess) return 1;
+  err=hipSetDevice(gpu_id); if(err != hipSuccess){err=hipSetDevice(i); return 2;}
  }
- err=cudaMalloc(dev_ptr,tsize); if(err != cudaSuccess){if(i >= 0) err=cudaSetDevice(i); return TRY_LATER;}
- if(i >= 0){err=cudaSetDevice(i); if(err != cudaSuccess) return NOT_CLEAN;}
+ err=hipMalloc(dev_ptr,tsize); if(err != hipSuccess){if(i >= 0) err=hipSetDevice(i); return TRY_LATER;}
+ if(i >= 0){err=hipSetDevice(i); if(err != hipSuccess) return NOT_CLEAN;}
  return 0;
 }
 
@@ -1530,14 +1530,14 @@ int gpu_mem_free(void *dev_ptr, int gpu_id)
     A return status NOT_CLEAN is not critical. **/
 {
  int i;
- cudaError_t err;
+ hipError_t err;
  i=-1;
  if(gpu_id >= 0 && gpu_id < MAX_GPUS_PER_NODE){
-  err=cudaGetDevice(&i); if(err != cudaSuccess) return 1;
-  err=cudaSetDevice(gpu_id); if(err != cudaSuccess){err=cudaSetDevice(i); return 2;}
+  err=hipGetDevice(&i); if(err != hipSuccess) return 1;
+  err=hipSetDevice(gpu_id); if(err != hipSuccess){err=hipSetDevice(i); return 2;}
  }
- err=cudaFree(dev_ptr); if(err != cudaSuccess){if(i >= 0) err=cudaSetDevice(i); return 3;}
- if(i >= 0){err=cudaSetDevice(i); if(err != cudaSuccess) return NOT_CLEAN;}
+ err=hipFree(dev_ptr); if(err != hipSuccess){if(i >= 0) err=hipSetDevice(i); return 3;}
+ if(i >= 0){err=hipSetDevice(i); if(err != hipSuccess) return NOT_CLEAN;}
  return 0;
 }
 #endif /*NO_GPU*/

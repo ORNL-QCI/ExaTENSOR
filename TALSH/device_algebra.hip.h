@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2020/07/21
+REVISION: 2020/07/30
 
 Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -70,17 +70,12 @@ FOR DEVELOPERS ONLY:
 
 #ifndef NO_GPU
 
-#include <cuda.h>
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
-#include <cublas_v2.h>
+#include <hipblas.h>
 
 #ifdef USE_CUTT
-#include "cutt.h"
-#endif
-
-#ifdef USE_CUTENSOR
-#include "cutensor.h"
+#include "cutt.hip.h"
 #endif
 
 #endif /*NO_GPU*/

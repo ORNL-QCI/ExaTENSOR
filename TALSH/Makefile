@@ -11,15 +11,17 @@ export WRAP ?= NOWRAP
 #Compiler: [GNU|INTEL|CRAY|IBM|PGI]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT|PRF]:
-export BUILD_TYPE ?= OPT
+export BUILD_TYPE ?= DEV
 #MPI library base: [NONE]:
 export MPILIB ?= NONE
 #BLAS: [ATLAS|MKL|OPENBLAS|ACML|LIBSCI|ESSL|NONE]:
-export BLASLIB ?= NONE
+export BLASLIB ?= OPENBLAS
 #NVIDIA GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
 #NVIDIA GPU architecture (two digits, >=35):
-export GPU_SM_ARCH ?= 35
+export GPU_SM_ARCH ?= 50
+#HIP portability layer [YES|NO]:
+export USE_HIP ?= NO
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 #Only for Linux DEV builds with GNU: [YES|NO]:
@@ -29,7 +31,7 @@ export LINUX_GNU_ASAN ?= NO
 #ADJUST EXTRAS (optional):
 
 #LAPACK: [YES|NO]:
-export WITH_LAPACK ?= NO
+export WITH_LAPACK ?= YES
 #Fast GPU tensor transpose (cuTT library): [YES|NO]:
 export WITH_CUTT ?= NO
 #In-place GPU tensor contraction (cuTensor library): [YES|NO]
@@ -68,7 +70,7 @@ export PATH_BLAS_MKL ?= $(PATH_INTEL)/mkl/lib/intel64
 export PATH_BLAS_MKL_DEP ?= $(PATH_INTEL)/compilers_and_libraries/linux/lib/intel64_lin
 export PATH_BLAS_MKL_INC ?= $(PATH_INTEL)/mkl/include/intel64/lp64
 # Set this path if you have chosen OpenBLAS:
-export PATH_BLAS_OPENBLAS ?= /usr/lib/x86_64-linux-gnu
+export PATH_BLAS_OPENBLAS ?= /usr/local/blas/openblas/lib
 # Set this path if you have chosen ACML:
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 # Set this path if you have chosen Cray LibSci:
@@ -82,8 +84,8 @@ export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-3/xlf/16.1.1/lib
 export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-3/xlsmp/5.1.1/lib
 
 #LAPACK (only set these if you have chosen WITH_LAPACK=YES above):
-export PATH_LAPACK_LIB ?= /usr/lib/x86_64-linux-gnu
-export LAPACK_LIBS ?= -llapack
+export PATH_LAPACK_LIB ?= $(PATH_BLAS_OPENBLAS)
+export LAPACK_LIBS ?= -L.
 
 #CUDA (set these only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
@@ -97,6 +99,15 @@ export PATH_CUDA ?= /usr/local/cuda
 export PATH_CUTT ?= /home/dima/src/cutt
 # cuTensor path (only if you use cuTensor library):
 export PATH_CUTENSOR ?= /home/dima/src/cutensor
+
+#HIP (set these only if you build with HIP):
+export PATH_ROCM ?= /opt/rocm
+# Only reset these if HIP files are spread in system directories:
+ export PATH_HIP_INC ?= $(PATH_ROCM)/hip/include
+ export PATH_HIPBLAS_INC ?= $(PATH_ROCM)/hipblas/include
+ export PATH_HIP_LIB ?= $(PATH_ROCM)/hip/lib
+ export PATH_HIPBLAS_LIB ?= $(PATH_ROCM)/hipblas/lib
+ export PATH_HIP_BIN ?= $(PATH_ROCM)/hip/bin
 
 #YOU ARE DONE! MAKE IT!
 
@@ -166,6 +177,7 @@ CPPCOMP = $(COMP_PREF) $(CPP_$(WRAP))
 endif
 #CUDA compiler:
 CUDA_COMP = nvcc
+HIP_COMP = hipcc
 
 #COMPILER INCLUDES:
 INC_GNU = -I.
@@ -296,6 +308,20 @@ CUDA_LINK_CUDA = $(CUDA_LINK_$(WRAP))
 CUDA_LINK_NOCUDA = -L.
 CUDA_LINK = $(CUDA_LINK_$(GPU_CUDA))
 
+#HIP INCLUDES:
+ifeq ($(USE_HIP),YES)
+HIP_INC = -DUSE_HIP -I$(PATH_HIP_INC) -I$(PATH_HIPBLAS_INC)
+else
+HIP_INC = -I.
+endif
+
+#HIP LIBS:
+ifeq ($(USE_HIP),YES)
+HIP_LINK = -L$(PATH_HIP_LIB) -L$(PATH_HIPBLAS_LIB) -lhipblas
+else
+HIP_LINK = -L.
+endif
+
 #Platform independence:
 PIC_FLAG_GNU = -fPIC
 PIC_FLAG_PGI = -fpic
@@ -418,12 +444,19 @@ LTHREAD_IBM   = -lxlsmp
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:
-LFLAGS = $(MPI_LINK) $(LA_LINK) $(LTHREAD) $(CUDA_LINK) $(LIB)
-
+ifeq ($(USE_HIP),YES)
+LFLAGS = $(MPI_LINK) $(LA_LINK) $(LTHREAD) $(HIP_LINK) $(CUDA_LINK) $(LIB)
 OBJS =  ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/combinatoric.o ./OBJ/symm_index.o ./OBJ/timer.o ./OBJ/timers.o ./OBJ/nvtx_profile.o \
 	./OBJ/byte_packet.o ./OBJ/tensor_algebra.o ./OBJ/tensor_algebra_cpu.o ./OBJ/tensor_algebra_cpu_phi.o \
-	./OBJ/tensor_dil_omp.o ./OBJ/mem_manager.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/talshf.o ./OBJ/talshc.o \
-	./OBJ/talsh_task.o ./OBJ/talshxx.o
+	./OBJ/mem_manager.hip.o ./OBJ/tensor_algebra_gpu.o ./OBJ/tensor_algebra_gpu_nvidia.hip.o \
+	./OBJ/talshf.o ./OBJ/talshc.o ./OBJ/talsh_task.o ./OBJ/talshxx.o
+else
+LFLAGS = $(MPI_LINK) $(LA_LINK) $(LTHREAD) $(CUDA_LINK) $(LIB)
+OBJS =  ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/combinatoric.o ./OBJ/symm_index.o ./OBJ/timer.o ./OBJ/timers.o ./OBJ/nvtx_profile.o \
+	./OBJ/byte_packet.o ./OBJ/tensor_algebra.o ./OBJ/tensor_algebra_cpu.o ./OBJ/tensor_algebra_cpu_phi.o \
+	./OBJ/mem_manager.o ./OBJ/tensor_algebra_gpu.o ./OBJ/tensor_algebra_gpu_nvidia.o \
+	./OBJ/talshf.o ./OBJ/talshc.o ./OBJ/talsh_task.o ./OBJ/talshxx.o
+endif
 
 $(NAME): lib$(NAME).a ./OBJ/test.o ./OBJ/main.o
 	$(FCOMP) ./OBJ/main.o ./OBJ/test.o lib$(NAME).a $(LFLAGS) -o test_$(NAME).x
@@ -493,7 +526,13 @@ endif
 ./OBJ/mem_manager.o: mem_manager.cpp mem_manager.h tensor_algebra.h device_algebra.h
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) mem_manager.cpp -o ./OBJ/mem_manager.o
 
-./OBJ/tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu talsh_complex.h tensor_algebra.h device_algebra.h
+./OBJ/mem_manager.hip.o: mem_manager.hip.cpp mem_manager.h tensor_algebra.h device_algebra.hip.h
+	$(HIP_COMP) -ccbin $(CUDA_HOST_COMPILER) $(INC) $(MPI_INC) $(HIP_INC) $(CUDA_INC) $(CUDA_FLAGS) mem_manager.hip.cpp -o ./OBJ/mem_manager.hip.o
+
+./OBJ/tensor_algebra_gpu.o: tensor_algebra_gpu.cpp mem_manager.h tensor_algebra.h
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) tensor_algebra_gpu.cpp -o ./OBJ/tensor_algebra_gpu.o
+
+./OBJ/tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h device_algebra.h talsh_complex.h
 ifeq ($(GPU_CUDA),CUDA)
 	$(CUDA_COMP) -ccbin $(CUDA_HOST_COMPILER) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) --ptx --source-in-ptx tensor_algebra_gpu_nvidia.cu -o ./OBJ/tensor_algebra_gpu_nvidia.ptx
 	$(CUDA_COMP) -ccbin $(CUDA_HOST_COMPILER) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu -o ./OBJ/tensor_algebra_gpu_nvidia.o
@@ -502,6 +541,9 @@ else
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) tensor_algebra_gpu_nvidia.cpp -o ./OBJ/tensor_algebra_gpu_nvidia.o
 	rm -f tensor_algebra_gpu_nvidia.cpp
 endif
+
+./OBJ/tensor_algebra_gpu_nvidia.hip.o: tensor_algebra_gpu_nvidia.hip.cu tensor_algebra.h device_algebra.hip.h talsh_complex.hip.h
+	$(HIP_COMP) -ccbin $(CUDA_HOST_COMPILER) $(INC) $(MPI_INC) $(HIP_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.hip.cu -o ./OBJ/tensor_algebra_gpu_nvidia.hip.o
 
 ./OBJ/talshf.o: talshf.F90 ./OBJ/tensor_algebra_cpu_phi.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/mem_manager.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) talshf.F90 -o ./OBJ/talshf.o

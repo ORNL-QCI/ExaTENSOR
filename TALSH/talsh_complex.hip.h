@@ -31,14 +31,14 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #ifndef NO_GPU
-#include <cuComplex.h>
+#include <hip/hip_complex.h>
 #endif
 
 //DECLARATIONS:
 // Complex number:
 #ifndef NO_GPU
-typedef cuFloatComplex talshComplex4;
-typedef cuDoubleComplex talshComplex8;
+typedef hipFloatComplex talshComplex4;
+typedef hipDoubleComplex talshComplex8;
 #else
 #ifdef __cplusplus
 typedef std::complex<float> talshComplex4;
@@ -86,11 +86,11 @@ inline void talshComplex8DivEq(talshComplex8 * x, talshComplex8 y);
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ talshComplex4 talshComplex4Set(float real, float imag)
 {
- return make_cuFloatComplex(real,imag);
+ return make_hipFloatComplex(real,imag);
 }
 __host__ __device__ __forceinline__ talshComplex8 talshComplex8Set(double real, double imag)
 {
- return make_cuDoubleComplex(real,imag);
+ return make_hipDoubleComplex(real,imag);
 }
 #else
 #ifdef __cplusplus
@@ -120,11 +120,11 @@ talshComplex8 talshComplex8Set(double real, double imag)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ float talshComplex4Real(talshComplex4 cmplx)
 {
- return cuCrealf(cmplx);
+ return hipCrealf(cmplx);
 }
 __host__ __device__ __forceinline__ double talshComplex8Real(talshComplex8 cmplx)
 {
- return cuCreal(cmplx);
+ return hipCreal(cmplx);
 }
 #else
 #ifdef __cplusplus
@@ -152,11 +152,11 @@ double talshComplex8Real(talshComplex8 cmplx)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ float talshComplexReal(talshComplex4 cmplx)
 {
- return cuCrealf(cmplx);
+ return hipCrealf(cmplx);
 }
 __host__ __device__ __forceinline__ double talshComplexReal(talshComplex8 cmplx)
 {
- return cuCreal(cmplx);
+ return hipCreal(cmplx);
 }
 #else
 #ifdef __cplusplus
@@ -184,11 +184,11 @@ double talshComplexReal(talshComplex8 cmplx)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ float talshComplex4Imag(talshComplex4 cmplx)
 {
- return cuCimagf(cmplx);
+ return hipCimagf(cmplx);
 }
 __host__ __device__ __forceinline__ double talshComplex8Imag(talshComplex8 cmplx)
 {
- return cuCimag(cmplx);
+ return hipCimag(cmplx);
 }
 #else
 #ifdef __cplusplus
@@ -216,11 +216,11 @@ double talshComplex8Imag(talshComplex8 cmplx)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ float talshComplexImag(talshComplex4 cmplx)
 {
- return cuCimagf(cmplx);
+ return hipCimagf(cmplx);
 }
 __host__ __device__ __forceinline__ double talshComplexImag(talshComplex8 cmplx)
 {
- return cuCimag(cmplx);
+ return hipCimag(cmplx);
 }
 #else
 #ifdef __cplusplus
@@ -248,11 +248,11 @@ double talshComplexImag(talshComplex8 cmplx)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ talshComplex4 talshComplex4Conjg(talshComplex4 cmplx)
 {
- return cuConjf(cmplx);
+ return hipConjf(cmplx);
 }
 __host__ __device__ __forceinline__ talshComplex8 talshComplex8Conjg(talshComplex8 cmplx)
 {
- return cuConj(cmplx);
+ return hipConj(cmplx);
 }
 #else
 #ifdef __cplusplus
@@ -282,11 +282,11 @@ talshComplex8 talshComplex8Conjg(talshComplex8 cmplx)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ float talshComplex4Abs(talshComplex4 cmplx)
 {
- return cuCabsf(cmplx);
+ return hipCabsf(cmplx);
 }
 __host__ __device__ __forceinline__ double talshComplex8Abs(talshComplex8 cmplx)
 {
- return cuCabs(cmplx);
+ return hipCabs(cmplx);
 }
 #else
 #ifdef __cplusplus
@@ -314,12 +314,12 @@ double talshComplex8Abs(talshComplex8 cmplx)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ float talshComplex4Asq(talshComplex4 cmplx)
 {
- float rl = cuCrealf(cmplx); float im = cuCimagf(cmplx);
+ float rl = hipCrealf(cmplx); float im = hipCimagf(cmplx);
  return (rl*rl + im*im);
 }
 __host__ __device__ __forceinline__ double talshComplex8Asq(talshComplex8 cmplx)
 {
- double rl = cuCreal(cmplx); double im = cuCimag(cmplx);
+ double rl = hipCreal(cmplx); double im = hipCimag(cmplx);
  return (rl*rl + im*im);
 }
 #else
@@ -350,11 +350,11 @@ double talshComplex8Asq(talshComplex8 cmplx)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ talshComplex4 talshComplex4Add(talshComplex4 x, talshComplex4 y)
 {
- return cuCaddf(x,y);
+ return hipCaddf(x,y);
 }
 __host__ __device__ __forceinline__ talshComplex8 talshComplex8Add(talshComplex8 x, talshComplex8 y)
 {
- return cuCadd(x,y);
+ return hipCadd(x,y);
 }
 #else
 #ifdef __cplusplus
@@ -382,12 +382,12 @@ talshComplex8 talshComplex8Add(talshComplex8 x, talshComplex8 y)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ void talshComplex4AddEq(talshComplex4 * x, talshComplex4 y)
 {
- *x = cuCaddf(*x,y);
+ *x = hipCaddf(*x,y);
  return;
 }
 __host__ __device__ __forceinline__ void talshComplex8AddEq(talshComplex8 * x, talshComplex8 y)
 {
- *x = cuCadd(*x,y);
+ *x = hipCadd(*x,y);
  return;
 }
 #else
@@ -420,11 +420,11 @@ void talshComplex8AddEq(talshComplex8 * x, talshComplex8 y)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ talshComplex4 talshComplex4Sub(talshComplex4 x, talshComplex4 y)
 {
- return cuCsubf(x,y);
+ return hipCsubf(x,y);
 }
 __host__ __device__ __forceinline__ talshComplex8 talshComplex8Sub(talshComplex8 x, talshComplex8 y)
 {
- return cuCsub(x,y);
+ return hipCsub(x,y);
 }
 #else
 #ifdef __cplusplus
@@ -452,11 +452,11 @@ talshComplex8 talshComplex8Sub(talshComplex8 x, talshComplex8 y)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ talshComplex4 talshComplex4Mul(talshComplex4 x, talshComplex4 y)
 {
- return cuCmulf(x,y);
+ return hipCmulf(x,y);
 }
 __host__ __device__ __forceinline__ talshComplex8 talshComplex8Mul(talshComplex8 x, talshComplex8 y)
 {
- return cuCmul(x,y);
+ return hipCmul(x,y);
 }
 #else
 #ifdef __cplusplus
@@ -488,11 +488,11 @@ talshComplex8 talshComplex8Mul(talshComplex8 x, talshComplex8 y)
 #ifndef NO_GPU
 __host__ __device__ __forceinline__ talshComplex4 talshComplex4Div(talshComplex4 x, talshComplex4 y)
 {
- return cuCdivf(x,y);
+ return hipCdivf(x,y);
 }
 __host__ __device__ __forceinline__ talshComplex8 talshComplex8Div(talshComplex8 x, talshComplex8 y)
 {
- return cuCdiv(x,y);
+ return hipCdiv(x,y);
 }
 #else
 #ifdef __cplusplus
