@@ -19,5 +19,5 @@ elif [ $PMIX_RANK -eq 255 ]; then
 elif [ $PMIX_RANK -eq 256 ]; then
  nvprof --openmp-profiling off -o trace.%q{OMPI_COMM_WORLD_RANK} ./Qforce.x
 else
- ./Qforce.x
+ exec ./Qforce.x
 fi
