@@ -1,0 +1,633 @@
+Successfully initialized [2.608281]
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 0
+[2.608382](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 0: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=0]{
+ A{0:0,0:0}{1024,1024}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [2.608487]
+DAG front node progressed to 1 out of total of 18
+DAG node detected with all dependencies resolved: 1
+[2.608503](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 1: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=1]{
+ B{0:0,0:0}{1024,1024}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [2.608518]
+DAG front node progressed to 2 out of total of 18
+DAG node detected with all dependencies resolved: 2
+[2.608528](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 2: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=2]{
+ C{0:0,0:0}{1024,1024}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [2.608542]
+DAG front node progressed to 3 out of total of 18
+DAG node detected with all dependencies resolved: 3
+[2.608552](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 3: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=3]{
+ D{0:0,0:0}{1024,1024}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [2.608565]
+DAG front node progressed to 4 out of total of 18
+DAG node detected with all dependencies resolved: 4
+[2.608576](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 4: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=4]{
+ E{0:0,0:0}{1024,1024}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [2.608589]
+DAG front node progressed to 5 out of total of 18
+DAG node detected with all dependencies resolved: 5
+[2.608600](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 5: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=5]{
+ F{0:0,0:0}{1024,1024}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [2.608615]
+DAG front node progressed to 6 out of total of 18
+DAG node detected with all dependencies resolved: 6
+[2.608623](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 6: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=6]{
+ G{0:0,0:0}{1024,1024}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [2.608636]
+DAG front node progressed to 7 out of total of 18
+DAG node detected with all dependencies resolved: 7
+[2.608644](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 7: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=7]{
+ H{0:0,0:0}{1024,1024}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [2.608659]
+DAG front node progressed to 8 out of total of 18
+DAG node detected with all dependencies resolved: 8
+[2.608669](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 8: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=8]{
+ I{0:0,0:0}{1024,1024}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [2.608682]
+DAG front node progressed to 9 out of total of 18
+DAG node detected with all dependencies resolved: 9
+[2.608697](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 9: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=9]{
+ A{0:0,0:0}{1024,1024}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [2.609122]
+DAG front node progressed to 10 out of total of 18
+DAG node detected with all dependencies resolved: 10
+[2.609138](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 10: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=10]{
+ B{0:0,0:0}{1024,1024}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [2.609522]
+DAG front node progressed to 11 out of total of 18
+DAG node detected with all dependencies resolved: 11
+[2.609535](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 11: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=11]{
+ C{0:0,0:0}{1024,1024}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [2.609874]
+DAG front node progressed to 12 out of total of 18
+DAG node detected with all dependencies resolved: 12
+[2.609890](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 12: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=12]{
+ D{0:0,0:0}{1024,1024}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [2.610272]
+DAG front node progressed to 13 out of total of 18
+DAG node detected with all dependencies resolved: 13
+[2.610286](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 13: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=13]{
+ E{0:0,0:0}{1024,1024}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [2.610682]
+DAG front node progressed to 14 out of total of 18
+DAG node detected with all dependencies resolved: 14
+[2.610697](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 14: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=14]{
+ F{0:0,0:0}{1024,1024}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [2.611041]
+DAG front node progressed to 15 out of total of 18
+DAG node detected with all dependencies resolved: 15
+[2.611053](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 15: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=15]{
+ G{0:0,0:0}{1024,1024}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [2.611429]
+DAG front node progressed to 16 out of total of 18
+DAG node detected with all dependencies resolved: 16
+[2.611441](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 16: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=16]{
+ H{0:0,0:0}{1024,1024}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [2.611825]
+DAG front node progressed to 17 out of total of 18
+DAG node detected with all dependencies resolved: 17
+[2.611837](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 17: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=17]{
+ I{0:0,0:0}{1024,1024}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [2.612174]
+DAG front node progressed to 18 out of total of 18
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 18
+[2.612263](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 18: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=18]{
+ C(i,j)+=A(k,i)*B(k,j)
+ C{0:0,0:0}{1024,1024}
+ A{0:0,0:0}{1024,1024}
+ B{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [2.652959]
+DAG front node progressed to 19 out of total of 23
+DAG node detected with all dependencies resolved: 19
+[2.652996](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 19: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=19]{
+ C(i,j)+=A(i,k)*B(k,j)
+ C{0:0,0:0}{1024,1024}
+ A{0:0,0:0}{1024,1024}
+ B{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [2.712950]
+DAG front node progressed to 20 out of total of 23
+DAG node detected with all dependencies resolved: 20
+[2.712978](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 20: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=20]{
+ C(i,j)+=A(k,i)*B(j,k)
+ C{0:0,0:0}{1024,1024}
+ A{0:0,0:0}{1024,1024}
+ B{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [2.748935]
+DAG front node progressed to 21 out of total of 23
+DAG node detected with all dependencies resolved: 21
+[2.748961](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 21: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=21]{
+ C(i,j)+=A(i,k)*B(j,k)
+ C{0:0,0:0}{1024,1024}
+ A{0:0,0:0}{1024,1024}
+ B{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [2.775823]
+DAG front node progressed to 22 out of total of 23
+DAG node detected with all dependencies resolved: 22
+[2.775851](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 22: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=22]{
+ C(i,j)+=A(k,i)*B(k,j)
+ C{0:0,0:0}{1024,1024}
+ A{0:0,0:0}{1024,1024}
+ B{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [2.799890]
+DAG front node progressed to 23 out of total of 23
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 23
+[2.812731](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 23: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=23]{
+ I(i,j)+=G(j,k)*H(i,k)
+ I{0:0,0:0}{1024,1024}
+ G{0:0,0:0}{1024,1024}
+ H{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [2.897788]
+DAG front node progressed to 24 out of total of 26
+DAG node detected with all dependencies resolved: 24
+[2.897817](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 24: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=24]{
+ F(i,j)+=D(j,k)*E(i,k)
+ F{0:0,0:0}{1024,1024}
+ D{0:0,0:0}{1024,1024}
+ E{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [2.942740]
+DAG front node progressed to 25 out of total of 26
+DAG node detected with all dependencies resolved: 25
+[2.942770](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 25: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=25]{
+ C(i,j)+=A(j,k)*B(i,k)
+ C{0:0,0:0}{1024,1024}
+ A{0:0,0:0}{1024,1024}
+ B{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [2.977741]
+DAG front node progressed to 26 out of total of 26
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 26
+[2.980963](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 26: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=26]{
+ I(i,j)+=G(j,k)*H(i,k)
+ I{0:0,0:0}{1024,1024}
+ G{0:0,0:0}{1024,1024}
+ H{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [3.030757]
+DAG front node progressed to 27 out of total of 29
+DAG node detected with all dependencies resolved: 27
+[3.030786](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 27: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=27]{
+ I(i,j)+=D(j,k)*E(i,k)
+ I{0:0,0:0}{1024,1024}
+ D{0:0,0:0}{1024,1024}
+ E{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [3.070740]
+DAG front node progressed to 28 out of total of 29
+DAG node detected with all dependencies resolved: 28
+[3.070768](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 28: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=28]{
+ I(i,j)+=A(j,k)*B(i,k)
+ I{0:0,0:0}{1024,1024}
+ A{0:0,0:0}{1024,1024}
+ B{0:0,0:0}{1024,1024}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.073742e+00
+ GWord estimate = 3.145728e-03
+}
+: Status = 0: Syncing ... Success [3.101634]
+DAG front node progressed to 29 out of total of 29
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 29
+[3.108191](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 29: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=29]{
+ I{0:0,0:0}{1024,1024}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.108241]
+DAG front node progressed to 30 out of total of 30
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 30
+[3.116950](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 30: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=30]{
+ H{0:0,0:0}{1024,1024}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.116969]
+DAG front node progressed to 31 out of total of 32
+DAG node detected with all dependencies resolved: 31
+[3.116978](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 31: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=31]{
+ G{0:0,0:0}{1024,1024}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.116994]
+DAG front node progressed to 32 out of total of 32
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 32
+[3.117009](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 32: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=32]{
+ F{0:0,0:0}{1024,1024}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.117026]
+DAG front node progressed to 33 out of total of 34
+DAG node detected with all dependencies resolved: 33
+[3.117036](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 33: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=33]{
+ E{0:0,0:0}{1024,1024}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.117052]
+DAG front node progressed to 34 out of total of 35
+DAG node detected with all dependencies resolved: 34
+[3.117064](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 34: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=34]{
+ D{0:0,0:0}{1024,1024}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.117080]
+DAG front node progressed to 35 out of total of 36
+DAG node detected with all dependencies resolved: 35
+[3.117089](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 35: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=35]{
+ C{0:0,0:0}{1024,1024}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.117104]
+DAG front node progressed to 36 out of total of 37
+DAG node detected with all dependencies resolved: 36
+[3.117116](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 36: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=36]{
+ B{0:0,0:0}{1024,1024}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.117134]
+DAG front node progressed to 37 out of total of 38
+DAG node detected with all dependencies resolved: 37
+[3.117151](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 37: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=37]{
+ A{0:0,0:0}{1024,1024}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.117168]
+DAG front node progressed to 38 out of total of 38
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 38
+[3.117185](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 38: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=38]{
+ A{0:0,0:0,0:0}{1024,1024,32}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [3.117203]
+DAG front node progressed to 39 out of total of 44
+DAG node detected with all dependencies resolved: 39
+[3.117215](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 39: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=39]{
+ B{0:0,0:0,0:0}{1024,1024,32}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [3.117229]
+DAG front node progressed to 40 out of total of 44
+DAG node detected with all dependencies resolved: 40
+[3.117241](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 40: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=40]{
+ C{0:0,0:0}{1024,1024}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [3.117254]
+DAG front node progressed to 41 out of total of 44
+DAG node detected with all dependencies resolved: 41
+[3.117267](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 41: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=41]{
+ A{0:0,0:0,0:0}{1024,1024,32}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.355443e-02
+}
+: Status = 0: Syncing ... Success [3.129026]
+DAG front node progressed to 42 out of total of 44
+DAG node detected with all dependencies resolved: 42
+[3.129047](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 42: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=42]{
+ B{0:0,0:0,0:0}{1024,1024,32}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.355443e-02
+}
+: Status = 0: Syncing ... Success [3.140793]
+DAG front node progressed to 43 out of total of 44
+DAG node detected with all dependencies resolved: 43
+[3.140814](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 43: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=43]{
+ C{0:0,0:0}{1024,1024}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.141152]
+DAG front node progressed to 44 out of total of 44
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 44
+[3.141187](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 44: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=44]{
+ C(i,j)+=A(j,k,l)*B(i,k,l)
+ C{0:0,0:0}{1024,1024}
+ A{0:0,0:0,0:0}{1024,1024,32}
+ B{0:0,0:0,0:0}{1024,1024,32}
+ (1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 3.435974e+01
+ GWord estimate = 6.815744e-02
+}
+: Status = 0: Syncing ... Deferred
+[3.445719](LazyGraphExecutor)[EXEC_THREAD]: Synced tensor operation 44: Opcode = 7
+DAG front node progressed to 45 out of total of 45
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 45
+[3.445755](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 45: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=45]{
+ C{0:0,0:0}{1024,1024}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.048576e-03
+}
+: Status = 0: Syncing ... Success [3.448255]
+DAG front node progressed to 46 out of total of 47
+DAG node detected with all dependencies resolved: 46
+[3.448266](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 46: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=46]{
+ B{0:0,0:0,0:0}{1024,1024,32}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.355443e-02
+}
+: Status = 0: Syncing ... Success [3.448285]
+DAG front node progressed to 47 out of total of 48
+DAG node detected with all dependencies resolved: 47
+[3.448294](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 47: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=47]{
+ A{0:0,0:0,0:0}{1024,1024,32}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.355443e-02
+}
+: Status = 0: Syncing ... Success [3.448312]
+DAG front node progressed to 48 out of total of 48
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 48
+[3.448339](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 48: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=48]{
+ D{0:0,0:0,0:0,0:0}{32,32,32,1}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [3.448371]
+DAG front node progressed to 49 out of total of 55
+DAG node detected with all dependencies resolved: 49
+[3.448384](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 49: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=49]{
+ L{0:0,0:0,0:0}{32,32,32}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [3.448398]
+DAG front node progressed to 50 out of total of 55
+DAG node detected with all dependencies resolved: 50
+[3.448410](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 50: Opcode = 1: Details:
+TensorOperation(opcode=1)[id=50]{
+ R{0:0,0:0,0:0}{32,32,1}
+ TensorElementType = 2
+}
+: Status = 0: Syncing ... Success [3.448422]
+DAG front node progressed to 51 out of total of 55
+DAG node detected with all dependencies resolved: 51
+[3.448433](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 51: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=51]{
+ D{0:0,0:0,0:0,0:0}{32,32,32,1}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.276800e-05
+}
+: Status = 0: Syncing ... Success [3.448628]
+DAG front node progressed to 52 out of total of 55
+DAG node detected with all dependencies resolved: 52
+[3.448640](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 52: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=52]{
+ L{0:0,0:0,0:0}{32,32,32}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.276800e-05
+}
+: Status = 0: Syncing ... Success [3.448667]
+DAG front node progressed to 53 out of total of 55
+DAG node detected with all dependencies resolved: 53
+[3.448681](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 53: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=53]{
+ R{0:0,0:0,0:0}{32,32,1}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.024000e-06
+}
+: Status = 0: Syncing ... Success [3.448701]
+DAG front node progressed to 54 out of total of 55
+DAG node detected with all dependencies resolved: 54
+[3.448710](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 54: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=54]{
+ D{0:0,0:0,0:0,0:0}{32,32,32,1}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.276800e-05
+}
+: Status = 0: Syncing ... Success [3.448768]
+DAG front node progressed to 55 out of total of 56
+DAG node detected with all dependencies resolved: 55
+[3.448775](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 55: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=55]{
+ D{0:0,0:0,0:0,0:0}{32,32,32,1}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.276800e-05
+}
+: Status = 0: Syncing ... Success [3.448805]
+DAG front node progressed to 56 out of total of 56
+DAG entry list of dependency free nodes:
+DAG entry list of dependency free nodes:
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 56
+[3.448865](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 56: Opcode = 9: Details:
+TensorOperation(opcode=9)[id=56]{
+ D(u0,u1,u2,u3)=L(u0,c0,u1)*R(u2,c0,u3)
+ L{0:0,0:0,0:0}{32,32,32}
+ R{0:0,0:0,0:0}{32,32,1}
+ D{0:0,0:0,0:0,0:0}{32,32,32,1}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 6.656000e-05
+}
+: Status = 0: Syncing ... Success [3.464921]
+DAG front node progressed to 57 out of total of 58
+DAG node detected with all dependencies resolved: 57
+[3.464948](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 57: Opcode = 7: Details:
+TensorOperation(opcode=7)[id=57]{
+ D(u0,u1,u2,u3)+=L(u0,c0,u1)*R(u2,c0,u3)
+ D{0:0,0:0,0:0,0:0}{32,32,32,1}
+ L{0:0,0:0,0:0}{32,32,32}
+ R{0:0,0:0,0:0}{32,32,1}
+ (-1.000000,0.000000) (1.000000,0.000000)
+ GFlop estimate = 1.048576e-03
+ GWord estimate = 6.656000e-05
+}
+: Status = 0: Syncing ... Success [3.568929]
+DAG front node progressed to 58 out of total of 59
+DAG node detected with all dependencies resolved: 58
+[3.568954](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 58: Opcode = 3: Details:
+TensorOperation(opcode=3)[id=58]{
+ D{0:0,0:0,0:0,0:0}{32,32,32,1}
+ (0.000000,0.000000)
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.276800e-05
+}
+: Status = 0: Syncing ... Success [3.569020]
+DAG front node progressed to 59 out of total of 59
+DAG entry list of dependency free nodes:
+DAG node detected with all dependencies resolved: 59
+[3.569050](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 59: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=59]{
+ R{0:0,0:0,0:0}{32,32,1}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 1.024000e-06
+}
+: Status = 0: Syncing ... Success [3.569070]
+DAG front node progressed to 60 out of total of 61
+DAG node detected with all dependencies resolved: 60
+[3.569081](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 60: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=60]{
+ L{0:0,0:0,0:0}{32,32,32}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.276800e-05
+}
+: Status = 0: Syncing ... Success [3.569098]
+DAG front node progressed to 61 out of total of 62
+DAG node detected with all dependencies resolved: 61
+[3.569118](LazyGraphExecutor)[EXEC_THREAD]: Submitting tensor operation 61: Opcode = 2: Details:
+TensorOperation(opcode=2)[id=61]{
+ D{0:0,0:0,0:0,0:0}{32,32,32,1}
+ GFlop estimate = 0.000000e+00
+ GWord estimate = 3.276800e-05
+}
+: Status = 0: Syncing ... Success [3.569135]
+DAG front node progressed to 62 out of total of 62
