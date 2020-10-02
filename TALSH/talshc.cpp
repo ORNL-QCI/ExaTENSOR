@@ -5648,8 +5648,8 @@ int talshTensorDecomposeSVD(const char * cptrn,   //in: C-string: symbolic decom
  if(errc) return TALSH_INVALID_ARGS;
  if(drnk <= 0 || lrnk <= 0 || rrnk <= 0) return TALSH_INVALID_ARGS;
  cpl=lrnk+rrnk;
- //get_contr_permutations(0,0,lrnk,rrnk,contr_ptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc);
- get_contraction_permutations(0,0,lrnk,rrnk,contr_ptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&nhu,&errc);
+ get_contr_permutations(0,0,lrnk,rrnk,contr_ptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc);
+ //get_contraction_permutations(0,0,lrnk,rrnk,contr_ptrn,0,dprm,lprm,rprm,&ncd,&nlu,&nru,&nhu,&errc);
  if(errc) return TALSH_FAILURE;
  if(nlu <= 0 || nru <= 0 || ncd <= 0) return TALSH_INVALID_ARGS;
  dtr=permutation_trivial(drnk,&(dprm[1]),1); //base 1
