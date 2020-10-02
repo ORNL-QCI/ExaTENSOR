@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/10/02
+!REVISION: 2020/10/01
 
 !Copyright (C) 2013-2020 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
@@ -3723,7 +3723,7 @@
         integer, intent(in), optional:: ord_rest(1:*)             !in: index ordering restrictions (for contracted indices only)
         logical, intent(in), optional:: accumulative              !in: whether or not the tensor contraction is accumulative (into destination tensor)
 !----------------------------------------------------------
-        logical, parameter:: ENABLE_HYPERCONTRACTION=.FALSE.
+        logical, parameter:: ENABLE_HYPERCONTRACTION=.TRUE.
 !-------------------------------------------------
         integer, parameter:: PARTIAL_CONTRACTION=1
         integer, parameter:: FULL_CONTRACTION=2
