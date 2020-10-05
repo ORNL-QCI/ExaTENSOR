@@ -26,7 +26,7 @@
         public
 
 !TENSOR ALGEBRA LIMITS (keep consistent with tensor_algebra.h):
-        integer(C_INT), parameter, public:: MAX_TENSOR_RANK=48    !max allowed tensor rank (max number of indices in a tensor)
+        integer(C_INT), parameter, public:: MAX_TENSOR_RANK=56    !max allowed tensor rank (max number of indices in a tensor)
         integer(C_INT), parameter, public:: MAX_TENSOR_OPERANDS=4 !max number of tensor operands in a tensor operation
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: MAX_TENSOR_RANK,MAX_TENSOR_OPERANDS

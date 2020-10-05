@@ -68,7 +68,7 @@ FOR DEVELOPERS ONLY:
 #include <ctime>
 
 //GLOBAL PARAMETERS:
-#define MAX_TENSOR_RANK 48 //max allowed tensor rank: Must be multiple of 4
+#define MAX_TENSOR_RANK 56 //max allowed tensor rank: Must be multiple of 4
 #define MAX_TENSOR_OPERANDS 4 //max allowed number of tensor operands in a tensor operation
 #define MAX_CONTRACTION_PATTERN_LEN 1024 //max allowed length of a symbolic tensor contraction pattern
 #define MAX_MLNDS_PER_TENS 4 //max number of multi-indices per tensor block (dims, divs, grps, prmn)
