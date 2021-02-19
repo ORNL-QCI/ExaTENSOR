@@ -1,9 +1,9 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/06/17
+!REVISION: 2021/02/19
 
-!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -132,7 +132,7 @@
  !Dispatcher:
         logical, private:: DISPATCH_WAIT_ALL=.TRUE.             !activates MPI_Waitall() in synchronizing instruction dispatch to lower-level TAVPs
         logical, private:: DISPATCH_RANDOM=.FALSE.              !activates random dispatch for affinity-less tensor instructions
-        logical, private:: DISPATCH_BALANCE=.FALSE.             !activates load-balanced dispatch for affinity-less tensor instructions (DISPATCH_RANDOM must be off)
+        logical, private:: DISPATCH_BALANCE=.FALSE.             !activates load-balanced dispatch for affinity-less tensor instructions
         real(8), private:: DISPATCH_BALANCE_BIAS=32d0           !bias for the balancing function
         real(8), private:: DISPATCH_BALANCE_KURT=3d-1           !inverse kurtosis for the balancing function
         integer(INTD), private:: MAX_ISSUE_INSTR=24             !max number of tensor instructions in the bytecode issued to a child node
@@ -5439,19 +5439,27 @@
             if(owner_ids(ja).eq.this%dispatch_rank(jj)) then; chnl=jj; exit aloop; endif
            enddo
           enddo aloop
-          if(chnl.lt.0) then !all tensor arguments are remote, no affinity
+          if(chnl.lt.0) then !all tensor arguments are remote or non-existing, no affinity
            if(DISPATCH_RANDOM) then
-            chnl=map_by_random(jerr)
+            chnl=map_by_random(jerr) !random dispatch
            else
-            if(DISPATCH_BALANCE) then
-             chnl=alt
+            chnl=map_by_round(jerr) !round-robin dispatch
+           endif
+           if(opcode.eq.TAVP_INSTR_TENS_CREATE) then !non-existing argument
+            alt=chnl
+           else !existing remote arguments
+            if(DISPATCH_BALANCE) then !probabilistic work stealing for tensor contractions
+             call random_number(rnd)
+             bal=1d0/&
+             &(1d0+exp(-DISPATCH_BALANCE_KURT*(real(this%dispatch_count(chnl)-this%dispatch_count(alt),8)-DISPATCH_BALANCE_BIAS)))
+             if(rnd.lt.bal) chnl=alt
             else
-             chnl=map_by_round(jerr)
+             alt=chnl
             endif
            endif
-          else !load balancing and other restrictions
+          else !affinity detected, dynamic load balancing and other restrictions
            if(opcode.eq.TAVP_INSTR_TENS_CONTRACT) then
-            if(DISPATCH_BALANCE) then !work stealing for tensor contractions
+            if(DISPATCH_BALANCE) then !probabilistic work stealing for tensor contractions
              call random_number(rnd)
              bal=1d0/&
              &(1d0+exp(-DISPATCH_BALANCE_KURT*(real(this%dispatch_count(chnl)-this%dispatch_count(alt),8)-DISPATCH_BALANCE_BIAS)))
@@ -5462,7 +5470,7 @@
            elseif(opcode.eq.TAVP_INSTR_TENS_DESTROY) then !tensor destruction must occur at their persistent location
             alt=chnl
            else
-            if(.not.DISPATCH_BALANCE) alt=chnl
+            alt=chnl
            endif
           endif
           return
