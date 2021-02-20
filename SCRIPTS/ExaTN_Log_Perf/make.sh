@@ -1,5 +1,5 @@
 #!/bin/bash
-rm *.o *.x
+rm *.o *.mod *.x
 gfortran -c -O3 stsubs.F90
 gfortran -c -O3 combinatoric.F90
 gfortran -c -O3 parse_prim.F90
