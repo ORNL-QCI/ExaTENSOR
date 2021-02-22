@@ -5146,30 +5146,30 @@
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
   !Encode a tensor instruction and dispatch it to the appropriate channel:
             channel=this%map_instr(tens_instr,ier,alt_channel); if(ier.ne.0.and.errc.eq.0) then; errc=-17; exit wloop; endif
-            if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
-             errc=-16; exit wloop !trap
-            endif
-            if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the primary channel is full
+            !if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
+            ! errc=-16; exit wloop !trap
+            !endif
+            !if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the primary channel is full
              call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-15; exit wloop; endif
-            else !try an alternative dispatch channel, if any
-             channel=alt_channel
-             if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
-              errc=-14; exit wloop !trap
-             endif
-             if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the alternative channel is full
-              call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
-             else !defer tensor instruction if both channels are full
-              defer=.TRUE.
-              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,iec)
-              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
-              ier=this%iqueue%next()
-              if(ier.eq.GFC_NO_MOVE) then
-               ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
-              endif
-              ier=this%iqueue%get_status()
-              cycle dloop
-             endif
-            endif
+            !else !try an alternative dispatch channel, if any
+             !channel=alt_channel
+             !if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
+              !errc=-14; exit wloop !trap
+             !endif
+             !if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the alternative channel is full
+              !call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
+             !else !defer tensor instruction if both channels are full
+              !defer=.TRUE.
+              !call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,iec)
+              !if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
+              !ier=this%iqueue%next()
+              !if(ier.eq.GFC_NO_MOVE) then
+              ! ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
+              !endif
+              !ier=this%iqueue%get_status()
+              !cycle dloop
+             !endif
+            !endif
            else !auxiliary/control instruction
   !Test whether there have been deferred tensor instructions (if yes, try to dispatch them again before any CTRL/AUX instruction may follow):
             if(defer) then
@@ -5215,9 +5215,6 @@
            ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
   !Issue (send) the bytecode to the child TAVPs:
            do i=1,this%num_ranks !loop over dispatch channels
-!            n=this%bytecode(i)%get_num_packets(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
-!            if(n.gt.0) then
-!             if(n.ge.MAX_ISSUE_INSTR.or.this%issue_count(i).le.MIN_ISSUE_INSTR.or.this%iqueue%get_status().eq.GFC_IT_EMPTY) then
             if(this%dispatch_count(i).gt.0) then
              if(this%dispatch_count(i).ge.MAX_ISSUE_INSTR.or.&
                &(this%dispatch_count(i).ge.MIN_ISSUE_INSTR.and.this%issue_count(i).le.MIN_ISSUE_INSTR).or.&
