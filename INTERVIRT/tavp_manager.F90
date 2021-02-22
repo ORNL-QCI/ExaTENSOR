@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2021/02/19
+!REVISION: 2021/02/22
 
 !Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
@@ -114,7 +114,7 @@
         integer(INTD), private:: CONS_OUT=6 !default output device
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
-        integer(INTD), private:: LOGGING=1  !logging mode: 0 - none, 1 - instruction dispatch
+        integer(INTD), private:: LOGGING=0  !logging mode: 0 - none, 1 - instruction dispatch
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=64_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTL), parameter, private:: MIN_BYTECODE_SPACE=1_INTL*(1024_INTL*1024_INTL) !min required free space (bytes) in the bytecode buffer (to check for potential overflow)
