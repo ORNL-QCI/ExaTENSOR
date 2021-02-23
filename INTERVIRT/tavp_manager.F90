@@ -5059,7 +5059,7 @@
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid,i,n,opcode,sts,iec,channel,alt_channel,uid
-         logical:: active,stopping,synced,defer
+         logical:: active,stopping,synced,defer,pause_dispatch
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
          class(tens_instr_t), pointer:: tens_instr
@@ -5146,9 +5146,9 @@
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
   !Encode a tensor instruction and dispatch it to the appropriate channel:
             channel=this%map_instr(tens_instr,ier,alt_channel); if(ier.ne.0.and.errc.eq.0) then; errc=-17; exit wloop; endif
-            !if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
-            ! errc=-16; exit wloop !trap
-            !endif
+            if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
+             errc=-16; exit wloop !trap
+            endif
             !if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the primary channel is full
              call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-15; exit wloop; endif
             !else !try an alternative dispatch channel, if any
@@ -5214,7 +5214,9 @@
            endif
            ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
   !Issue (send) the bytecode to the child TAVPs:
+           pause_dispatch=(this%num_ranks.gt.0)
            do i=1,this%num_ranks !loop over dispatch channels
+            if(this%issue_count(i).lt.MAX_ISSUE_INSTR*2) pause_dispatch=.FALSE.
             if(this%dispatch_count(i).gt.0) then
              if(this%dispatch_count(i).ge.MAX_ISSUE_INSTR.or.&
                &(this%dispatch_count(i).ge.MIN_ISSUE_INSTR.and.this%issue_count(i).le.MIN_ISSUE_INSTR).or.&
@@ -5223,8 +5225,14 @@
              endif
             endif
            enddo
-  !Synchronize the bytecode sends to each TAVP:
+  !Synchronize the bytecode sends to each child TAVP:
            synced=this%sync_issue(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-4; exit wloop; endif
+  !Pause dispatch if all child TAVP's have enough work:
+           do while(pause_dispatch)
+            do i=1,this%num_ranks !loop over dispatch channels
+             if(this%issue_count(i).lt.MAX_ISSUE_INSTR*2) then; pause_dispatch=.FALSE.; exit; endif
+            enddo
+           enddo
            ier=this%iqueue%get_status()
            if(stopping.and.ier.eq.GFC_IT_ACTIVE.and.errc.eq.0) then; errc=-3; exit wloop; endif !trap
            active=.not.stopping
