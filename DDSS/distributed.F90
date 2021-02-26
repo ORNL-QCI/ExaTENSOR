@@ -1,9 +1,9 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/04/19 (started 2015/03/18)
+!REVISION: 2021/02/26 (started 2015/03/18)
 
-!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -123,10 +123,10 @@
         integer(INT_MPI), parameter, private:: READ_SIGN=+1  !incoming traffic sign (reading direction)
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
-        logical, parameter, private:: LAZY_LOCKING=.TRUE.                 !lazy MPI window locking
-        logical, parameter, private:: TEST_AND_FLUSH=.FALSE.              !MPI_Test() will call MPI_Win_flush() on completion when entry reference count becomes 0 (not always necessary)
-        logical, parameter, private:: NO_FLUSH_AFTER_READ_EPOCH=.TRUE.    !if TRUE, there will be no MPI_Win_flush() after the read epoch, thus mandating external synchronization
-        logical, parameter, private:: NO_FLUSH_AFTER_WRITE_EPOCH=.FALSE.  !if TRUE, there will be no MPI_Win_flush() after the write epoch, thus mandating external synchronization
+        logical, private:: LAZY_LOCKING=.TRUE.                !lazy MPI window locking
+        logical, private:: TEST_AND_FLUSH=.FALSE.             !MPI_Test() will call MPI_Win_flush() on completion when entry reference count becomes 0 (not always necessary)
+        logical, private:: NO_FLUSH_AFTER_READ_EPOCH=.TRUE.   !if TRUE, there will be no MPI_Win_flush() after the read epoch, thus mandating external synchronization
+        logical, private:: NO_FLUSH_AFTER_WRITE_EPOCH=.FALSE. !if TRUE, there will be no MPI_Win_flush() after the write epoch, thus mandating external synchronization
         integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**27    !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096     !max number of outstanding one-sided data transfer requests per process
         integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0           !default communication tag (for P2P MPI communications)
@@ -332,6 +332,7 @@
 !FUNCTION VISIBILITY:
  !Global:
         public data_type_size
+        public ddss_reconfigure
         public ddss_flush_all
         public ddss_update_stat
         public ddss_print_stat
@@ -459,6 +460,21 @@
         if(present(ierr)) ierr=errc
         return
         end function data_type_size
+!--------------------------------------------------------------------------------------------------------
+        subroutine ddss_reconfigure(lazy_locks,flush_after_test,no_flush_after_read,no_flush_after_write)
+!Resets DDSS control variables.
+        implicit none
+        logical, intent(in):: lazy_locks
+        logical, intent(in):: flush_after_test
+        logical, intent(in):: no_flush_after_read
+        logical, intent(in):: no_flush_after_write
+
+        LAZY_LOCKING=lazy_locks
+        TEST_AND_FLUSH=flush_after_test
+        NO_FLUSH_AFTER_READ_EPOCH=no_flush_after_read
+        NO_FLUSH_AFTER_WRITE_EPOCH=no_flush_after_write
+        return
+        end subroutine ddss_reconfigure
 !--------------------------------------
         subroutine ddss_flush_all(ierr)
 !Flushes all active cached communication entries.

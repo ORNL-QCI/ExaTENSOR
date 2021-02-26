@@ -1,9 +1,9 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/06/10
+!REVISION: 2021/02/26
 
-!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -477,6 +477,7 @@
         public tavp_wrk_reset_output
         public tavp_wrk_reset_logging
         public tavp_wrk_zero_tensors
+        public tavp_wrk_local_updates
  !instr_time_t:
         private InstrTimeClean
         private InstrTimePrintIt
@@ -1042,6 +1043,14 @@
          TAVP_WRK_ZERO_ON_CREATE=zero_or_not
          return
         end subroutine tavp_wrk_zero_tensors
+!-----------------------------------------------------------
+        subroutine tavp_wrk_local_updates(local_accumulates)
+         implicit none
+         logical, intent(in):: local_accumulates
+         COMMUNICATOR_LOC_ACC=local_accumulates
+         if(.not.COMMUNICATOR_LOC_ACC) call ddss_reconfigure(.TRUE.,.FALSE.,.FALSE.,.FALSE.)
+         return
+        end subroutine tavp_wrk_local_updates
 ![instr_time_t]=============================
         subroutine InstrTimeClean(this,ierr)
 !Clears all time stamps.

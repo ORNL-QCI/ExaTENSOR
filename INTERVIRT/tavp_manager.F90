@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2021/02/22
+!REVISION: 2021/02/26
 
 !Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
@@ -130,13 +130,13 @@
         integer(INTD), private:: MAX_DECOMPOSE_CHLD_INSTR=16384 !max number of created child instructions in the decomposition phase
         real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3      !max time (sec) before passing instructions to Dispatcher
  !Dispatcher:
+        integer(INTD), private:: MAX_ISSUE_INSTR=24             !max number of tensor instructions in the bytecode issued to a child node
+        integer(INTD), private:: MIN_ISSUE_INSTR=8              !min number of tensor instructions being currently processed by a child node
         logical, private:: DISPATCH_WAIT_ALL=.TRUE.             !activates MPI_Waitall() in synchronizing instruction dispatch to lower-level TAVPs
         logical, private:: DISPATCH_RANDOM=.FALSE.              !activates random dispatch for affinity-less tensor instructions
         logical, private:: DISPATCH_BALANCE=.FALSE.             !activates load-balanced dispatch for affinity-less tensor instructions
-        real(8), private:: DISPATCH_BALANCE_BIAS=32d0           !bias for the balancing function
-        real(8), private:: DISPATCH_BALANCE_KURT=3d-1           !inverse kurtosis for the balancing function
-        integer(INTD), private:: MAX_ISSUE_INSTR=24             !max number of tensor instructions in the bytecode issued to a child node
-        integer(INTD), private:: MIN_ISSUE_INSTR=8              !min number of tensor instructions being currently processed by a child node
+        real(8), private:: DISPATCH_BALANCE_BIAS=8d0            !bias for the balancing function
+        real(8), private:: DISPATCH_BALANCE_KURT=2d-1           !inverse kurtosis for the balancing function
  !Collector:
         integer(INTD), private:: MAX_COLLECT_INSTR=8192         !max number of active tensor (sub-)instructions in the collection phase
  !Retirer:
@@ -563,7 +563,10 @@
          implicit none
          logical, intent(in):: dynamic_balance !in: whether or not to use dynamic load balancer
          DISPATCH_BALANCE=dynamic_balance
-         if(DISPATCH_BALANCE) DISPATCH_RANDOM=.FALSE.
+         if(DISPATCH_BALANCE) then
+          DISPATCH_RANDOM=.FALSE.
+          call ddss_reconfigure(.TRUE.,.FALSE.,.FALSE.,.FALSE.)
+         endif
          return
         end subroutine tavp_mng_reset_balancer
 ![tens_entry_mng_t]========================================
