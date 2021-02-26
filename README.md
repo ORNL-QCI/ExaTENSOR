@@ -25,6 +25,7 @@ PROGRAMMING MODEL: OOP FORTRAN 2003+, C/C++11, OpenMP 3+, MPI 3+, CUDA, ROCM.
 SUPPORTED COMPILERS: GNU 8.x.y, GNU 11+, Intel 18+, IBM XL 16+, Cray CCE.
 
 LIBRARY DEPENDENCIES:
+
  * MPI-3 (OpenMPI/4.1+ or MPICH/3.2.1+);
  * CPU BLAS (optional: ATLAS, OpenBLAS, MKL, ACML, ESSL, LibSci);
  * cuBLAS (optional);
@@ -41,6 +42,7 @@ DESCRIPTION: The ExaTENSOR framework further elaborates on the idea of
              the ExaTENSOR framework has been aiming at adaptive hierarchical
              tensor algebra (includes dense and block-sparse tensor algebra
              as special cases). The distinguishing key elements of ExaTENSOR:
+
  * Fully formalized design of domain-specific virtualization for
    heterogeneous compute nodes and full HPC systems;
  * Hierarchical virtualization of the full HPC system;
