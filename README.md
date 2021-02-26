@@ -96,6 +96,7 @@ RUN: An example script run.sh shows how to run ExaTENSOR for a test case (Qforce
      * QF_HOST_BUFFER_SIZE: Size of the pinned Host RAM pool (MB): Set it to QF_MEM_PER_PROCESS.
      * QF_GPUS_PER_PROCESS: Number of exclusively owned NVIDIA GPUs per MPI process.
      * QF_NUM_THREADS: Initial number of threads per MPI process (8 or more).
+     * OMP_STACKSIZE=200M: Set this if you experience sporadic segmentation faults in your application.
 
      At the bottom of run.sh, pick or specify your MPI execution command for Qforce.x,
      taking into account the number of MPI processes per node, oversubscription, binding, etc.
