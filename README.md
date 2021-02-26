@@ -85,6 +85,7 @@ RUN: An example script run.sh shows how to run ExaTENSOR for a test case (Qforce
      in order to run ExaTENSOR. The test configuration utilizes >= 4 MPI processes,
      each process running at least 5 OpenMP threads. This MPI test can still run on a
      single node via oversubscription of CPU cores. Environment variables to set:
+
      * QF_PATH: Path to the ExaTENSOR root directory.
      * QF_NUM_PROCS: Number of MPI processes, must be greater or equal to 4.
      * QF_PROCS_PER_NODE: Number of MPI processes per node (prefer binding to socket).
