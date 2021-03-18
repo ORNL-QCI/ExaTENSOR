@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2021/02/22
+!REVISION: 2021/02/26
 
 !Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
@@ -130,13 +130,13 @@
         integer(INTD), private:: MAX_DECOMPOSE_CHLD_INSTR=16384 !max number of created child instructions in the decomposition phase
         real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3      !max time (sec) before passing instructions to Dispatcher
  !Dispatcher:
+        integer(INTD), private:: MAX_ISSUE_INSTR=24             !max number of tensor instructions in the bytecode issued to a child node
+        integer(INTD), private:: MIN_ISSUE_INSTR=8              !min number of tensor instructions being currently processed by a child node
         logical, private:: DISPATCH_WAIT_ALL=.TRUE.             !activates MPI_Waitall() in synchronizing instruction dispatch to lower-level TAVPs
         logical, private:: DISPATCH_RANDOM=.FALSE.              !activates random dispatch for affinity-less tensor instructions
         logical, private:: DISPATCH_BALANCE=.FALSE.             !activates load-balanced dispatch for affinity-less tensor instructions
-        real(8), private:: DISPATCH_BALANCE_BIAS=32d0           !bias for the balancing function
-        real(8), private:: DISPATCH_BALANCE_KURT=3d-1           !inverse kurtosis for the balancing function
-        integer(INTD), private:: MAX_ISSUE_INSTR=24             !max number of tensor instructions in the bytecode issued to a child node
-        integer(INTD), private:: MIN_ISSUE_INSTR=8              !min number of tensor instructions being currently processed by a child node
+        real(8), private:: DISPATCH_BALANCE_BIAS=8d0            !bias for the balancing function
+        real(8), private:: DISPATCH_BALANCE_KURT=2d-1           !inverse kurtosis for the balancing function
  !Collector:
         integer(INTD), private:: MAX_COLLECT_INSTR=8192         !max number of active tensor (sub-)instructions in the collection phase
  !Retirer:
@@ -563,7 +563,10 @@
          implicit none
          logical, intent(in):: dynamic_balance !in: whether or not to use dynamic load balancer
          DISPATCH_BALANCE=dynamic_balance
-         if(DISPATCH_BALANCE) DISPATCH_RANDOM=.FALSE.
+         if(DISPATCH_BALANCE) then
+          DISPATCH_RANDOM=.FALSE.
+          call ddss_reconfigure(.TRUE.,.FALSE.,.FALSE.,.FALSE.)
+         endif
          return
         end subroutine tavp_mng_reset_balancer
 ![tens_entry_mng_t]========================================
@@ -5059,7 +5062,7 @@
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid,i,n,opcode,sts,iec,channel,alt_channel,uid
-         logical:: active,stopping,synced,defer
+         logical:: active,stopping,synced,defer,pause_dispatch
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
          class(tens_instr_t), pointer:: tens_instr
@@ -5149,27 +5152,27 @@
             if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
              errc=-16; exit wloop !trap
             endif
-            if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the primary channel is full
+            !if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the primary channel is full
              call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-15; exit wloop; endif
-            else !try an alternative dispatch channel, if any
-             channel=alt_channel
-             if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
-              errc=-14; exit wloop !trap
-             endif
-             if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the alternative channel is full
-              call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
-             else !defer tensor instruction if both channels are full
-              defer=.TRUE.
-              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,iec)
-              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
-              ier=this%iqueue%next()
-              if(ier.eq.GFC_NO_MOVE) then
-               ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
-              endif
-              ier=this%iqueue%get_status()
-              cycle dloop
-             endif
-            endif
+            !else !try an alternative dispatch channel, if any
+             !channel=alt_channel
+             !if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
+              !errc=-14; exit wloop !trap
+             !endif
+             !if(this%issue_count(channel).le.MAX_ISSUE_INSTR) then !check whether the alternative channel is full
+              !call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
+             !else !defer tensor instruction if both channels are full
+              !defer=.TRUE.
+              !call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,iec)
+              !if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
+              !ier=this%iqueue%next()
+              !if(ier.eq.GFC_NO_MOVE) then
+              ! ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
+              !endif
+              !ier=this%iqueue%get_status()
+              !cycle dloop
+             !endif
+            !endif
            else !auxiliary/control instruction
   !Test whether there have been deferred tensor instructions (if yes, try to dispatch them again before any CTRL/AUX instruction may follow):
             if(defer) then
@@ -5214,10 +5217,9 @@
            endif
            ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
   !Issue (send) the bytecode to the child TAVPs:
+           pause_dispatch=(this%num_ranks.gt.0)
            do i=1,this%num_ranks !loop over dispatch channels
-!            n=this%bytecode(i)%get_num_packets(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
-!            if(n.gt.0) then
-!             if(n.ge.MAX_ISSUE_INSTR.or.this%issue_count(i).le.MIN_ISSUE_INSTR.or.this%iqueue%get_status().eq.GFC_IT_EMPTY) then
+            if(this%issue_count(i).lt.MAX_ISSUE_INSTR*2) pause_dispatch=.FALSE.
             if(this%dispatch_count(i).gt.0) then
              if(this%dispatch_count(i).ge.MAX_ISSUE_INSTR.or.&
                &(this%dispatch_count(i).ge.MIN_ISSUE_INSTR.and.this%issue_count(i).le.MIN_ISSUE_INSTR).or.&
@@ -5226,8 +5228,14 @@
              endif
             endif
            enddo
-  !Synchronize the bytecode sends to each TAVP:
+  !Synchronize the bytecode sends to each child TAVP:
            synced=this%sync_issue(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-4; exit wloop; endif
+  !Pause dispatch if all child TAVP's have enough work:
+           do while(pause_dispatch)
+            do i=1,this%num_ranks !loop over dispatch channels
+             if(this%issue_count(i).lt.MAX_ISSUE_INSTR*2) then; pause_dispatch=.FALSE.; exit; endif
+            enddo
+           enddo
            ier=this%iqueue%get_status()
            if(stopping.and.ier.eq.GFC_IT_ACTIVE.and.errc.eq.0) then; errc=-3; exit wloop; endif !trap
            active=.not.stopping

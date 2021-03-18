@@ -236,7 +236,7 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/stsubs.o: stsubs.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(FFLAGS) stsubs.F90 -o ./OBJ/stsubs.o
 
-./OBJ/multords.o: multords.F90
+./OBJ/multords.o: multords.F90 ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(FFLAGS) multords.F90 -o ./OBJ/multords.o
 
 ./OBJ/combinatoric.o: combinatoric.F90
@@ -293,7 +293,7 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/gfc_graph.o: gfc_graph.F90 ./OBJ/gfc_base.o ./OBJ/gfc_vector.o ./OBJ/gfc_list.o ./OBJ/gfc_dictionary.o ./OBJ/combinatoric.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(FFLAGS) gfc_graph.F90 -o ./OBJ/gfc_graph.o
 
-./OBJ/main.o: main.F90 ./OBJ/dil_basic.o ./OBJ/timers.o
+./OBJ/main.o: main.F90 ./OBJ/dil_basic.o ./OBJ/timers.o ./OBJ/gfc_base.o ./OBJ/gfc_vector.o ./OBJ/gfc_list.o ./OBJ/gfc_dictionary.o ./OBJ/gfc_graph.o
 	$(FCOMP) $(INC) $(MPI_INC) $(FFLAGS) main.F90 -o ./OBJ/main.o
 
 

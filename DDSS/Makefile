@@ -336,7 +336,7 @@ endif
 ./OBJ/test_pack_prim.o: test_pack_prim.F90 ./OBJ/pack_prim.o ./OBJ/dil_basic.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) test_pack_prim.F90 -o ./OBJ/test_pack_prim.o
 
-./OBJ/main.o: main.F90
+./OBJ/main.o: main.F90 ./OBJ/dil_basic.o ./OBJ/timers.o ./OBJ/service_mpi.o ./OBJ/distributed.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) main.F90 -o ./OBJ/main.o
 
 

@@ -1,10 +1,10 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2020/05/08
+!REVISION: 2021/02/26
 
-!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -164,6 +164,7 @@
  !Control:
        public exatns_ctrl_reset_logging   !resets logging level for TAVP-MNG and TAVP-WRK (called by All before exatns_start)
        public exatns_ctrl_zero_tensors    !activates mandatory initializaton to zero for all created tensors (called by All before exatns_start)
+       public exatns_ctrl_reset_algorithm !resets the tensor contraction algorithm
        public exatns_start                !starts the ExaTENSOR DSVP (called by All)
        public exatns_stop                 !stops the ExaTENSOR DSVP (Driver only)
        public exatns_sync                 !synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions will be completed (Driver only)
@@ -334,6 +335,24 @@
         call tavp_wrk_zero_tensors(zero_or_not)
         return
        end subroutine exatns_ctrl_zero_tensors
+!-----------------------------------------------------------
+       subroutine exatns_ctrl_reset_algorithm(local_updates)
+        implicit none
+        logical, intent(in):: local_updates
+        integer(INTD):: errc
+
+        errc=exatns_sync()
+        if(local_updates) then
+         call tavp_mng_reset_balancer(.FALSE.)
+         call tavp_wrk_local_updates(.TRUE.)
+         call ddss_reconfigure(.TRUE.,.FALSE.,.TRUE.,.FALSE.)
+        else
+         call tavp_mng_reset_balancer(.TRUE.)
+         call tavp_wrk_local_updates(.FALSE.)
+         call ddss_reconfigure(.TRUE.,.FALSE.,.FALSE.,.FALSE.)
+        endif
+        return
+       end subroutine exatns_ctrl_reset_algorithm
 !----------------------------------------------------------
        function exatns_start(mpi_communicator) result(ierr) !called by all MPI processes
 !Starts the ExaTENSOR runtime within the given MPI communicator.
@@ -2329,17 +2348,22 @@
         class(tens_instr_mng_t), pointer:: tens_instr
         type(tens_contraction_t):: tens_contr
         integer:: drank,lrank,rrank
-        integer(INTD):: errc,cpl,conj_bits,contr_ptrn(1:MAX_TENSOR_RANK*2)
+        integer(INTD):: errc,cpl,conj_bits,contr_ptrn(1:MAX_TENSOR_RANK*2),dest_rank
         integer(INTL):: ip
         logical:: check
 
         ierr=EXA_SUCCESS
         write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP = ")',ADVANCE='NO')&
         &time_sys_sec()-start_time_stamp; flush(jo)
-        check=tensor0%is_set(errc); if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-12
+        check=tensor0%is_set(errc,num_dims=dest_rank); if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-12
         check=tensor1%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-11
         check=tensor2%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-10
         if(check.and.ierr.eq.EXA_SUCCESS) then
+         if(dest_rank.lt.4) then
+          call exatns_ctrl_reset_algorithm(.FALSE.)
+         else
+          call exatns_ctrl_reset_algorithm(.TRUE.)
+         endif
 !Convert the symbolic tensor contraction pattern into a digital one used by TAL-SH:
          call get_contr_pattern_dig(pattern,drank,lrank,rrank,contr_ptrn,ierr,conj_bits) !conj_bits: tensor conjugation bits {0:D,1:L,2:R}
          if(ierr.eq.0) then
