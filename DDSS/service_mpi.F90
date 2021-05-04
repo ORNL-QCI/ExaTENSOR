@@ -39,6 +39,7 @@
         implicit none
         public           !must be PUBLIC because of sharing the MPI header (safe)
         include 'mpif.h' !MPI Fortran interface
+        external MPI_Get,MPI_Rget,MPI_Accumulate,MPI_Raccumulate
 #endif
 !Parameters:
  !Internal:
