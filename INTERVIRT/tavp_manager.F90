@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2021/02/26
+!REVISION: 2021/05/06
 
 !Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
@@ -5351,6 +5351,8 @@
          integer(INTD):: errc,i,opcode,num_args
          class(ds_oprnd_t), pointer:: tens_oprnd
          integer(INTD):: owner_ids(0:MAX_TENSOR_OPERANDS-1),alt_ch
+         integer(INTL):: volumes(0:MAX_TENSOR_OPERANDS-1)
+         class(tens_rcrsv_t), pointer:: tensor
          class(DataDescr_t), pointer:: descr
 
          channel=-1; alt_ch=-1 !negative value means undefined
@@ -5368,6 +5370,9 @@
                select type(tens_oprnd)
                class is(tens_oprnd_t)
                 call tens_oprnd%lock()
+                volumes(i)=0_INTL
+                tensor=>tens_oprnd%get_tensor()
+                if(associated(tensor)) volumes(i)=tensor%get_volume()
                 if(this%tavp_is_bottom) then
                  descr=>tens_oprnd%get_data_descriptor(errc)
                  if(errc.eq.0) then
@@ -5431,7 +5436,7 @@
           integer(INTD), intent(out):: alt  !out: alternative dispatch channel
           integer(INTD), intent(out):: jerr !out: error code
           integer(INTD):: ja,jj
-          integer(INTL):: min_instr
+          integer(INTL):: min_instr,max_vol
           logical:: jf
           real(8):: rnd,bal
 
@@ -5442,11 +5447,25 @@
            if(this%dispatch_count(jj).lt.min_instr) then; alt=jj; min_instr=this%dispatch_count(jj); endif
           enddo
  !Determine the primary channel based on the tensor argument affinity:
-          aloop: do ja=0,num_args-1 !tensor arguments have affinity priority from 0 to the last argument (0 is normally the destination argument)
-           do jj=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
-            if(owner_ids(ja).eq.this%dispatch_rank(jj)) then; chnl=jj; exit aloop; endif
+          if(DISPATCH_BALANCE.or.DISPATCH_RANDOM) then
+           max_vol=0
+           do ja=0,num_args-1 !tensor arguments have affinity priority from 0 to the last argument (0 is normally the destination argument)
+            do jj=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+             if(owner_ids(ja).eq.this%dispatch_rank(jj)) then
+              if(volumes(ja).ge.max_vol) then
+               max_vol=volumes(ja); chnl=jj
+               exit
+              endif
+             endif
+            enddo
            enddo
-          enddo aloop
+          else
+           aloop: do ja=0,num_args-1 !tensor arguments have affinity priority from 0 to the last argument (0 is normally the destination argument)
+            do jj=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+             if(owner_ids(ja).eq.this%dispatch_rank(jj)) then; chnl=jj; exit aloop; endif
+            enddo
+           enddo aloop
+          endif
           if(chnl.lt.0) then !all tensor arguments are remote or non-existing, no affinity
            if(DISPATCH_RANDOM) then
             chnl=map_by_random(jerr) !random dispatch

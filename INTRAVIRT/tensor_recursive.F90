@@ -1,9 +1,9 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/07/14
+!REVISION: 2021/05/06
 
-!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -322,6 +322,7 @@
           procedure, public:: get_space_ids=>TensRcrsvGetSpaceIds    !returns space/subspace id for all tensor dimensions
           procedure, public:: get_dims=>TensRcrsvGetDims             !returns tensor dimension extents
           procedure, public:: get_bases=>TensRcrsvGetBases           !returns the base offset for each tensor dimension
+          procedure, public:: get_volume=>TensRcrsvGetVolume         !returns the formal volume of the tensor
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
           procedure, public:: has_structure=>TensRcrsvHasStructure   !returns TRUE if the tensor structure (list of one or more constituent subtensors) is defined
@@ -777,6 +778,7 @@
         private TensRcrsvGetSpaceIds
         private TensRcrsvGetDims
         private TensRcrsvGetBases
+        private TensRcrsvGetVolume
         private TensRcrsvAddSubtensor
         private TensRcrsvAddSubtensors
         private TensRcrsvHasStructure
@@ -4992,6 +4994,27 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvGetBases
+!---------------------------------------------------------
+        function TensRcrsvGetVolume(this,ierr) result(vol)
+!Returns the formal volume of the tensor.
+         implicit none
+         integer(INTL):: vol                         !out: tensor volume
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,num_dims,i
+         integer(INTL):: dims(1:MAX_TENSOR_RANK)
+
+         vol=0_INTL
+         call this%get_dims(dims,num_dims,errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          vol=1_INTL
+          do i=1,num_dims
+           vol=vol*dims(i)
+          enddo
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvGetVolume
 !------------------------------------------------------------
         subroutine TensRcrsvAddSubtensor(this,subtensor,ierr)
 !Registers a constituent subtensor by providing its tensor header.
