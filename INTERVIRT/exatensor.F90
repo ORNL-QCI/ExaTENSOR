@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2021/02/26
+!REVISION: 2021/05/07
 
 !Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
@@ -164,15 +164,17 @@
  !Control:
        public exatns_ctrl_reset_logging   !resets logging level for TAVP-MNG and TAVP-WRK (called by All before exatns_start)
        public exatns_ctrl_zero_tensors    !activates mandatory initializaton to zero for all created tensors (called by All before exatns_start)
-       public exatns_ctrl_reset_algorithm !resets the tensor contraction algorithm
+       public exatns_ctrl_reset_algorithm !resets the tensor contraction algorithm (called by All before exatns_start)
        public exatns_start                !starts the ExaTENSOR DSVP (called by All)
        public exatns_stop                 !stops the ExaTENSOR DSVP (Driver only)
-       public exatns_sync                 !synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions will be completed (Driver only)
+       public exatns_sync                 !synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions are completed (Driver only)
        public exatns_synced               !returns TRUE if all previously issued tensor instructions have completed (Driver only)
        public exatns_process_role         !returns the role of the current MPI process (called by Any)
        public exatns_virtual_depth        !returns the depth of the TAVP-MNG hierarchy (does not include TAVP-WRK level)
        public exatns_status               !returns the status of the ExaTENSOR runtime plus statistics, if needed (Driver only)
        public exatns_flush_communication  !flushes all unfinished MPI communications (Driver only)
+       public exatns_accumulate_local     !activates local accumulates and dispatch affinity based on the destination tensor argument (Driver only)
+       public exatns_accumulate_remote    !activates remote accumulates and dispatch affinity based on all tensor arguments + load balancing (Driver only)
        public exatns_dump_cache           !dumps the tensor cache content for each TAVP into its log file (Driver only, debug)
  !Parser/interpreter (Driver only):
        public exatns_interpret            !interprets TAProL code (string of TAProL statements)
@@ -1013,6 +1015,86 @@
         endif
         return
        end function exatns_flush_communication
+!-----------------------------------------------------
+       function exatns_accumulate_local() result(ierr)
+!Activates local accumulates and dispatch affinity based on the destination tensor argument.
+        implicit none
+        integer(INTD):: ierr !out: error code
+        integer(INTL):: ip
+        class(tens_instr_mng_t), pointer:: tens_instr
+
+        ierr=exatns_flush_communication()
+        if(ierr.eq.0) then
+         write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: ACCUMULATE LOCALLY: IP = ")',ADVANCE='NO')&
+         &time_sys_sec()-start_time_stamp; flush(jo)
+         tens_instr=>add_new_instruction(ip,ierr)
+         if(ierr.eq.0) then
+          write(jo,'(i11)') ip; flush(jo) !new instruction id number
+          call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_ACC_LOCAL,ierr,iid=ip)
+          if(ierr.eq.0) then
+           call issue_new_instruction(tens_instr,ierr)
+           if(ierr.eq.0) then
+            ierr=exatns_sync()
+            if(ierr.eq.EXA_SUCCESS) then
+             call tens_instr%set_status(DS_INSTR_RETIRED,ierr); if(ierr.ne.DSVP_SUCCESS) ierr=-6
+            else
+             ierr=-5
+            endif
+           else
+            ierr=-4
+           endif
+          else
+           ierr=-3
+          endif
+          tens_instr=>NULL()
+         else
+          ierr=-2
+         endif
+        else
+         ierr=-1
+        endif
+        return
+       end function exatns_accumulate_local
+!------------------------------------------------------
+       function exatns_accumulate_remote() result(ierr)
+!Activates remote accumulates and dispatch affinity based on all tensor arguments + load balancing.
+        implicit none
+        integer(INTD):: ierr !out: error code
+        integer(INTL):: ip
+        class(tens_instr_mng_t), pointer:: tens_instr
+
+        ierr=exatns_flush_communication()
+        if(ierr.eq.0) then
+         write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: ACCUMULATE REMOTELY: IP = ")',ADVANCE='NO')&
+         &time_sys_sec()-start_time_stamp; flush(jo)
+         tens_instr=>add_new_instruction(ip,ierr)
+         if(ierr.eq.0) then
+          write(jo,'(i11)') ip; flush(jo) !new instruction id number
+          call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_ACC_REMOTE,ierr,iid=ip)
+          if(ierr.eq.0) then
+           call issue_new_instruction(tens_instr,ierr)
+           if(ierr.eq.0) then
+            ierr=exatns_sync()
+            if(ierr.eq.EXA_SUCCESS) then
+             call tens_instr%set_status(DS_INSTR_RETIRED,ierr); if(ierr.ne.DSVP_SUCCESS) ierr=-6
+            else
+             ierr=-5
+            endif
+           else
+            ierr=-4
+           endif
+          else
+           ierr=-3
+          endif
+          tens_instr=>NULL()
+         else
+          ierr=-2
+         endif
+        else
+         ierr=-1
+        endif
+        return
+       end function exatns_accumulate_remote
 !-----------------------------------------------
        function exatns_dump_cache() result(ierr) !DEBUG only
 !Dumps the tensor cache content for each TAVP into its log file.
@@ -2355,18 +2437,19 @@
         ierr=EXA_SUCCESS
         write(jo,'("[",F11.4,"]#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP = ")',ADVANCE='NO')&
         &time_sys_sec()-start_time_stamp; flush(jo)
-        check=tensor0%is_set(errc,num_dims=dest_rank); if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-12
-        check=tensor1%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-11
-        check=tensor2%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-10
+        check=tensor0%is_set(errc,num_dims=dest_rank); if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-13
+        check=tensor1%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-12
+        check=tensor2%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-11
         if(check.and.ierr.eq.EXA_SUCCESS) then
          if(dest_rank.lt.4) then
-          call exatns_ctrl_reset_algorithm(.FALSE.)
+          errc=exatns_accumulate_remote()
          else
-          call exatns_ctrl_reset_algorithm(.TRUE.)
+          errc=exatns_accumulate_local()
          endif
+         if(errc.ne.EXA_SUCCESS) ierr=-10
 !Convert the symbolic tensor contraction pattern into a digital one used by TAL-SH:
-         call get_contr_pattern_dig(pattern,drank,lrank,rrank,contr_ptrn,ierr,conj_bits) !conj_bits: tensor conjugation bits {0:D,1:L,2:R}
-         if(ierr.eq.0) then
+         call get_contr_pattern_dig(pattern,drank,lrank,rrank,contr_ptrn,errc,conj_bits) !conj_bits: tensor conjugation bits {0:D,1:L,2:R}
+         if(errc.eq.0.and.ierr.eq.EXA_SUCCESS) then
           cpl=lrank+rrank
 !Construct the tensor operation object:
           call tens_contr%set_argument(tensor0,ierr)
@@ -2399,7 +2482,7 @@
            ierr=-6
           endif
          else
-          ierr=-5
+          if(ierr.eq.EXA_SUCCESS) ierr=-5
          endif
 !Construct the tensor instruction:
          if(ierr.eq.EXA_SUCCESS) then
