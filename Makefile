@@ -15,11 +15,11 @@ export BUILD_TYPE ?= OPT
 #MPI library base: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|OPENBLAS|ACML|LIBSCI|ESSL|NONE]:
-export BLASLIB ?= NONE
+export BLASLIB ?= OPENBLAS
 #NVIDIA GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= NOCUDA
+export GPU_CUDA ?= CUDA
 #NVIDIA GPU architecture (two digits, >=35):
-export GPU_SM_ARCH ?= 35
+export GPU_SM_ARCH ?= 86
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 #Only for Linux DEV builds with GNU: [YES|NO]:
@@ -29,7 +29,7 @@ export LINUX_GNU_ASAN ?= NO
 #ADJUST EXTRAS (optional):
 
 #LAPACK: [YES|NO]:
-export WITH_LAPACK ?= NO
+export WITH_LAPACK ?= YES
 #Fast GPU tensor transpose (cuTT library): [YES|NO]:
 export WITH_CUTT ?= NO
 #In-place GPU tensor contraction (cuTensor library): [YES|NO]:
@@ -50,7 +50,7 @@ export EXATN_SERVICE ?= NO
 
 #MPI library base (whichever you have, set one):
 # Set this if you use MPICH or its derivative (e.g. Cray-MPICH):
-export PATH_MPICH ?= /usr/local/mpi/mpich/3.2.1
+export PATH_MPICH ?= /usr/local/mpi/mpich/3.4.1
 #  Only reset these if MPICH files are spread in system directories:
  export PATH_MPICH_INC ?= $(PATH_MPICH)/include
  export PATH_MPICH_LIB ?= $(PATH_MPICH)/lib
@@ -72,7 +72,7 @@ export PATH_INTEL ?= /opt/intel
  export PATH_BLAS_MKL_DEP ?= $(PATH_INTEL)/compilers_and_libraries/linux/lib/intel64_lin
  export PATH_BLAS_MKL_INC ?= $(PATH_INTEL)/mkl/include/intel64/lp64
 # Set this path if you have chosen OpenBLAS:
-export PATH_BLAS_OPENBLAS ?= /usr/lib/x86_64-linux-gnu
+export PATH_BLAS_OPENBLAS ?= /usr/local/blas/openblas/develop/lib
 # Set this path if you have chosen ACML:
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 # Set this path if you have chosen Cray LibSci:
@@ -86,8 +86,8 @@ export PATH_IBM_XL_FOR ?= /sw/summit/xl/16.1.1-3/xlf/16.1.1/lib
 export PATH_IBM_XL_SMP ?= /sw/summit/xl/16.1.1-3/xlsmp/5.1.1/lib
 
 #LAPACK (only set these if you have chosen WITH_LAPACK=YES above):
-export PATH_LAPACK_LIB ?= /usr/lib/x86_64-linux-gnu
-export LAPACK_LIBS ?= -llapack
+export PATH_LAPACK_LIB ?= $(PATH_BLAS_OPENBLAS)
+export LAPACK_LIBS ?= -L.
 
 #CUDA (set these only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda

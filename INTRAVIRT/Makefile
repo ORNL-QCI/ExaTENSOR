@@ -347,9 +347,9 @@ FFLAGS_INTEL_PRF = -c -g -O3 -fpp -vec-threshold4 -traceback -qopenmp -mkl=paral
 FFLAGS_CRAY_DEV = -c -g -fopenmp -J OBJ
 FFLAGS_CRAY_OPT = -c -O3 -fopenmp -J OBJ
 FFLAGS_CRAY_PRF = -c -g -O3 -fopenmp -J OBJ
-FFLAGS_GNU_DEV = -c -fopenmp -g -Og -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -ffpe-trap=invalid,zero,overflow $(ASAN_COMPILE)
-FFLAGS_GNU_OPT = -c -fopenmp -O3
-FFLAGS_GNU_PRF = -c -fopenmp -g -O3
+FFLAGS_GNU_DEV = -c -fopenmp -g -Og -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -ffpe-trap=invalid,zero,overflow $(ASAN_COMPILE) -fallow-argument-mismatch
+FFLAGS_GNU_OPT = -c -fopenmp -O3 -fallow-argument-mismatch
+FFLAGS_GNU_PRF = -c -fopenmp -g -O3 -fallow-argument-mismatch
 FFLAGS_PGI_DEV = -c -Mcache_align -Mbounds -Mchkptr -Mstandard -Mallocatable=03 -g -O0
 FFLAGS_PGI_OPT = -c -Mcache_align -Mstandard -Mallocatable=03 -O3
 FFLAGS_PGI_PRF = -c -Mcache_align -Mstandard -Mallocatable=03 -g -O3
