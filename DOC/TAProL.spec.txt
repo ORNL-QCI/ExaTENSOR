@@ -1,9 +1,12 @@
 Tensor Algebra Programming Language/Protocol (TAProL) Specification
-AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
+AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
 REVISION: 2019/03/21
 
-Copyright (C) 2016-2019 Dmitry I. Liakh.
-Copyright (C) 2016-2019 Oak Ridge National Laboratory, UT-Battelle, LLC.
+Copyright (C) 2016-2022 Dmitry I. Liakh.
+Copyright (C) 2016-2022 Oak Ridge National Laboratory, UT-Battelle, LLC.
+
+LICENSE: BSD 3-Clause
+
 
 TAProL version 1.0 (2019/03/21)
 

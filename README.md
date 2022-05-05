@@ -1,5 +1,5 @@
 ExaTENSOR is a basic numerical tensor algebra library for
-distributed HPC systems equipped with multicore CPU and NVIDIA or AMD GPU.
+distributed HPC systems equipped with multicore CPU and NVIDIA (or AMD) GPU.
 The hierarchical task-based parallel runtime of ExaTENSOR
 is based on the virtual tensor algebra processor architecture,
 i.e. a software processor specialized to numerical tensor algebra
@@ -7,12 +7,12 @@ workloads on heterogeneous HPC systems (multicore/KNL, NVIDIA or AMD GPU).
 
 (Details can be found here: https://doi.org/10.1002/qua.25926)
 
-AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
+AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
 
-Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2022 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2022 Oak Ridge National Laboratory (UT-Battelle)
 
-LICENSE: GNU Lesser General Public License v.3
+LICENSE: BSD 3-Clause
 
 ___
 ** This is NOT a production version yet as the work on fixing performance
