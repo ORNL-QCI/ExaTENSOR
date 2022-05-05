@@ -2,10 +2,10 @@ GFC: Generic Fortran Containers: Implementation based on OOP Fortran-2003
      that heavily relies on dynamic polymorphism and RTTI.
 Author: Dmitry I. Lyakh (Liakh): liakhdi@ornl.gov
 
-Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2022 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2022 Oak Ridge National Laboratory (UT-Battelle)
 
-LICENSE: GNU Lesser General Public License v.3 (LGPLv3)
+LICENSE: BSD 3-Clause
 
 ISSUES:
  GFC heavily uses modern Fortran-2003 features which are

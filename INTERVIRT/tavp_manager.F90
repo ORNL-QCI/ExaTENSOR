@@ -1,24 +1,11 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2021/02/26
+!REVISION: 2021/05/07
 
-!Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2022 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2022 Oak Ridge National Laboratory (UT-Battelle)
 
-!This file is part of ExaTensor.
-
-!ExaTensor is free software: you can redistribute it and/or modify
-!it under the terms of the GNU Lesser General Public License as published
-!by the Free Software Foundation, either version 3 of the License, or
-!(at your option) any later version.
-
-!ExaTensor is distributed in the hope that it will be useful,
-!but WITHOUT ANY WARRANTY; without even the implied warranty of
-!MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-!GNU Lesser General Public License for more details.
-
-!You should have received a copy of the GNU Lesser General Public License
-!along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
+!LICENSE: BSD 3-Clause
 
        module tavp_manager
 !NOTES:
@@ -1444,7 +1431,9 @@
            case(TAVP_INSTR_CTRL_RESUME,&
                &TAVP_INSTR_CTRL_STOP,&
                &TAVP_INSTR_CTRL_DUMP_CACHE,&
-               &TAVP_INSTR_CTRL_FLUSH)
+               &TAVP_INSTR_CTRL_FLUSH,&
+               &TAVP_INSTR_CTRL_ACC_LOCAL,&
+               &TAVP_INSTR_CTRL_ACC_REMOTE)
             call construct_instr_ctrl(errc); if(errc.ne.0) errc=-11
            case(TAVP_INSTR_TENS_CREATE,&
                &TAVP_INSTR_TENS_DESTROY)
@@ -1744,7 +1733,9 @@
                  case(TAVP_INSTR_CTRL_RESUME,&
                      &TAVP_INSTR_CTRL_STOP,&
                      &TAVP_INSTR_CTRL_DUMP_CACHE,&
-                     &TAVP_INSTR_CTRL_FLUSH)
+                     &TAVP_INSTR_CTRL_FLUSH,&
+                     &TAVP_INSTR_CTRL_ACC_LOCAL,&
+                     &TAVP_INSTR_CTRL_ACC_REMOTE)
                   call encode_instr_ctrl(errc); if(errc.ne.0) errc=-13
                  case(TAVP_INSTR_TENS_CREATE,&
                      &TAVP_INSTR_TENS_DESTROY)
@@ -2813,7 +2804,9 @@
                  case(TAVP_INSTR_CTRL_RESUME,&
                      &TAVP_INSTR_CTRL_STOP,&
                      &TAVP_INSTR_CTRL_DUMP_CACHE,&
-                     &TAVP_INSTR_CTRL_FLUSH)
+                     &TAVP_INSTR_CTRL_FLUSH,&
+                     &TAVP_INSTR_CTRL_ACC_LOCAL,&
+                     &TAVP_INSTR_CTRL_ACC_REMOTE)
                  case(TAVP_INSTR_TENS_CREATE,&
                      &TAVP_INSTR_TENS_DESTROY)
                   call decode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-13
@@ -5191,6 +5184,10 @@
   !Check on control instructions:
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
              stopping=.TRUE.
+            elseif(opcode.eq.TAVP_INSTR_CTRL_ACC_LOCAL) then
+             call tavp_mng_reset_balancer(.FALSE.)
+            elseif(opcode.eq.TAVP_INSTR_CTRL_ACC_REMOTE) then
+             call tavp_mng_reset_balancer(.TRUE.)
             elseif(opcode.eq.TAVP_INSTR_CTRL_DUMP_CACHE) then
 !$OMP CRITICAL (IO)
              write(jo,'("#DEBUG(TAVP-MNG): TENSOR CACHE DUMP:")')
@@ -5351,6 +5348,8 @@
          integer(INTD):: errc,i,opcode,num_args
          class(ds_oprnd_t), pointer:: tens_oprnd
          integer(INTD):: owner_ids(0:MAX_TENSOR_OPERANDS-1),alt_ch
+         integer(INTL):: volumes(0:MAX_TENSOR_OPERANDS-1)
+         class(tens_rcrsv_t), pointer:: tensor
          class(DataDescr_t), pointer:: descr
 
          channel=-1; alt_ch=-1 !negative value means undefined
@@ -5368,6 +5367,9 @@
                select type(tens_oprnd)
                class is(tens_oprnd_t)
                 call tens_oprnd%lock()
+                volumes(i)=0_INTL
+                tensor=>tens_oprnd%get_tensor()
+                if(associated(tensor)) volumes(i)=tensor%get_volume()
                 if(this%tavp_is_bottom) then
                  descr=>tens_oprnd%get_data_descriptor(errc)
                  if(errc.eq.0) then
@@ -5431,7 +5433,7 @@
           integer(INTD), intent(out):: alt  !out: alternative dispatch channel
           integer(INTD), intent(out):: jerr !out: error code
           integer(INTD):: ja,jj
-          integer(INTL):: min_instr
+          integer(INTL):: min_instr,max_vol
           logical:: jf
           real(8):: rnd,bal
 
@@ -5442,11 +5444,25 @@
            if(this%dispatch_count(jj).lt.min_instr) then; alt=jj; min_instr=this%dispatch_count(jj); endif
           enddo
  !Determine the primary channel based on the tensor argument affinity:
-          aloop: do ja=0,num_args-1 !tensor arguments have affinity priority from 0 to the last argument (0 is normally the destination argument)
-           do jj=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
-            if(owner_ids(ja).eq.this%dispatch_rank(jj)) then; chnl=jj; exit aloop; endif
+          if(DISPATCH_BALANCE.or.DISPATCH_RANDOM) then
+           max_vol=0
+           do ja=0,num_args-1 !tensor arguments have affinity priority from 0 to the last argument (0 is normally the destination argument)
+            do jj=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+             if(owner_ids(ja).eq.this%dispatch_rank(jj)) then
+              if(volumes(ja).ge.max_vol) then
+               max_vol=volumes(ja); chnl=jj
+               exit
+              endif
+             endif
+            enddo
            enddo
-          enddo aloop
+          else
+           aloop: do ja=0,num_args-1 !tensor arguments have affinity priority from 0 to the last argument (0 is normally the destination argument)
+            do jj=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+             if(owner_ids(ja).eq.this%dispatch_rank(jj)) then; chnl=jj; exit aloop; endif
+            enddo
+           enddo aloop
+          endif
           if(chnl.lt.0) then !all tensor arguments are remote or non-existing, no affinity
            if(DISPATCH_RANDOM) then
             chnl=map_by_random(jerr) !random dispatch
@@ -6142,7 +6158,8 @@
              ier=tavp%cdecoder%load_port(0,this%ctrl_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-41; exit wloop; endif
              ier=this%iqueue%move_elem(this%ctrl_list)
              stopping=.TRUE.
-            case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_DUMP_CACHE,TAVP_INSTR_CTRL_FLUSH)
+            case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_DUMP_CACHE,TAVP_INSTR_CTRL_FLUSH,&
+                &TAVP_INSTR_CTRL_ACC_LOCAL,TAVP_INSTR_CTRL_ACC_REMOTE)
              call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-40; exit wloop; endif
              ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif

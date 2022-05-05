@@ -1,6 +1,7 @@
 !Useful parsing primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
 !REVISION: 2017-02-22
+!LICENSE: BSD 3-Clause
        module parse_prim
         use stsubs
         implicit none

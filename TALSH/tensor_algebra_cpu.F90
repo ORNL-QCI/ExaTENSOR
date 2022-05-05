@@ -1,24 +1,11 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2021/01/07
+!REVISION: 2022/01/27
 
-!Copyright (C) 2013-2021 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2013-2022 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2022 Oak Ridge National Laboratory (UT-Battelle)
 
-!This file is part of ExaTensor.
-
-!ExaTensor is free software: you can redistribute it and/or modify
-!it under the terms of the GNU Lesser General Public License as published
-!by the Free Software Foundation, either version 3 of the License, or
-!(at your option) any later version.
-
-!ExaTensor is distributed in the hope that it will be useful,
-!but WITHOUT ANY WARRANTY; without even the implied warranty of
-!MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-!GNU Lesser General Public License for more details.
-
-!You should have received a copy of the GNU Lesser General Public License
-!along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
+!LICENSE: BSD 3-Clause
 
 !GNU linking: -lblas -gfortran -lgomp
 !ACRONYMS:
@@ -4142,8 +4129,11 @@
 	  if(dtransp) then; call tensor_block_destroy(dta,j); if(j.ne.0) ierr=ierr+500+j; endif
 	 case(FULL_CONTRACTION)
 	  if(ltransp) then; call tensor_block_destroy(lta,j); if(j.ne.0) ierr=ierr+1000+j; endif
+	  if(rtransp) then; call tensor_block_destroy(rta,j); if(j.ne.0) ierr=ierr+1100+j; endif
 	 case(ADD_TENSOR)
-	  if(dtransp) then; call tensor_block_destroy(dta,j); if(j.ne.0) ierr=ierr+2000+j; endif
+	  if(ltransp) then; call tensor_block_destroy(lta,j); if(j.ne.0) ierr=ierr+2000+j; endif
+	  if(rtransp) then; call tensor_block_destroy(rta,j); if(j.ne.0) ierr=ierr+2100+j; endif
+	  if(dtransp) then; call tensor_block_destroy(dta,j); if(j.ne.0) ierr=ierr+2200+j; endif
 	 case(MULTIPLY_SCALARS)
 	 end select
  !Check NaN in output tensor:

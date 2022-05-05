@@ -8,25 +8,12 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2020/05/15
+!REVISION: 2021/05/07
 
-!Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2022 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2022 Oak Ridge National Laboratory (UT-Battelle)
 
-!This file is part of ExaTensor.
-
-!ExaTensor is free software: you can redistribute it and/or modify
-!it under the terms of the GNU Lesser General Public License as published
-!by the Free Software Foundation, either version 3 of the License, or
-!(at your option) any later version.
-
-!ExaTensor is distributed in the hope that it will be useful,
-!but WITHOUT ANY WARRANTY; without even the implied warranty of
-!MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-!GNU Lesser General Public License for more details.
-
-!You should have received a copy of the GNU Lesser General Public License
-!along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
+!LICENSE: BSD 3-Clause
 
 !NOTES:
 ! # Tensor Cache:
@@ -155,10 +142,12 @@
    !NOOP:
         integer(INTD), parameter, public:: TAVP_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction): Negative opcode
    !General control [0-15]:
-        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_RESUME=0     !resume TAVP execution (used for special purposes or has no effect)
-        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_STOP=1       !stop TAVP (finishes current instructions and shuts down TAVP)
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_RESUME=0     !resumes TAVP execution (used for special purposes or has no effect)
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_STOP=1       !stops TAVP (completes all current instructions and shuts down TAVP)
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_DUMP_CACHE=2 !dumps the cache of each TAVP into the log file
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_FLUSH=3      !flushes all unfinished MPI communications
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_ACC_LOCAL=4  !activates local accumulates and dispatch affinity based on the destination tensor argument
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_ACC_REMOTE=5 !activates remote accumulates and dispatch affinity based on all tensor arguments + load balance
    !Auxiliary space definitions [16-63]:
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_CREATE=16   !create a (hierarchical) vector space
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_DESTROY=17  !destroy a (hierarchical) vector space

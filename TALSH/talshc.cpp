@@ -1,24 +1,11 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C API implementation.
-REVISION: 2021/01/28
+REVISION: 2021/12/29
 
-Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2022 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2022 Oak Ridge National Laboratory (UT-Battelle)
 
-This file is part of ExaTensor.
-
-ExaTensor is free software: you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published
-by the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-ExaTensor is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License
-along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
-------------------------------------------------------------------------
+LICENSE: BSD 3-Clause
+-------------------------------------------------------------------
 
 FOR DEVELOPER(s):
  # TAL-SH runtime provides a device-kind unified API for performing basic
@@ -55,11 +42,8 @@ FOR DEVELOPER(s):
 **/
 
 #include "talsh.h"
-#include "talsh_complex.h"
-#include "device_algebra.h"
 #include "mem_manager.h"
 #include "timer.h"
-
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -67,6 +51,15 @@ FOR DEVELOPER(s):
 #ifndef NO_OMP
 #include <omp.h>
 #endif
+
+#ifdef USE_HIP
+#include "talsh_complex.hip.h"
+#include "device_algebra.hip.h"
+#else
+#include "talsh_complex.h"
+#include "device_algebra.h"
+#endif
+
 
 //PARAMETERS:
 static int VERBOSE=1;     //verbosity for errors
@@ -988,6 +981,41 @@ size_t talshDeviceBufferFreeSize(int dev_num,
 size_t talshDeviceBufferFreeSize_(int dev_num, int dev_kind) //Fortran wrapper
 {
  return talshDeviceBufferFreeSize(dev_num,dev_kind);
+}
+
+void * talshDeviceBufferBasePtr(int dev_num, int dev_kind)
+{
+ void * base_ptr = NULL;
+#pragma omp flush
+ if(talsh_on != 0){
+  if(dev_kind == DEV_NULL) dev_num=talshKindDevId(dev_num,&dev_kind);
+  switch(dev_kind){
+  case DEV_HOST:
+   base_ptr=get_arg_buf_ptr_host();
+   break;
+  case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
+   base_ptr=get_arg_buf_ptr_gpu(dev_num);
+#endif
+   break;
+  case DEV_INTEL_MIC:
+#ifndef NO_PHI
+    //`Implement
+#endif
+   break;
+  case DEV_AMD_GPU:
+#ifndef NO_AMD
+    //`Implement
+#endif
+   break;
+  }
+ }
+ return base_ptr;
+}
+
+void * talshDeviceBufferBasePtr_(int dev_num, int dev_kind) //Fortran wrapper
+{
+ return talshDeviceBufferBasePtr(dev_num,dev_kind);
 }
 
 double talshDeviceGetFlops(int dev_kind, int dev_id)
@@ -2941,7 +2969,7 @@ int talshTensorOpProgress(talsh_tens_op_t * tens_op, int * done)
    errc = talshTensorOpProgress(tens_op,done);
   }else{
    if(errc != TRY_LATER && VERBOSE)
-   printf("#ERROR(talshTensorOpProgress): RESOURCED->LOADED error for tensor operation %p\n",errc,tens_op);
+   printf("#ERROR(talshTensorOpProgress): RESOURCED->LOADED error %d for tensor operation %p\n",errc,tens_op);
   }
   break;
  case TALSH_OP_LOADED:
@@ -4793,7 +4821,7 @@ int talshTensorAdd(const char * cptrn,   //in: tensor addition pattern
   printf("%s",cptrn); printf(" ");
   talshTensorPrint(dtens); printf(" ");
   talshTensorPrint(ltens); printf(" ");
-  printf(": FMA Flop volume = %llu: Time (s) = ",talshTensorVolume(dtens));
+  printf(": FMA Flop volume = %lu: Time (s) = ",talshTensorVolume(dtens));
   tms=time_high_sec();
  }
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
@@ -5074,7 +5102,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
   talshTensorPrint(dtens); printf(" ");
   talshTensorPrint(ltens); printf(" ");
   talshTensorPrint(rtens); printf(" ");
-  printf(": FMA Flop volume = %llu: Time (s) = ",
+  printf(": FMA Flop volume = %lu: Time (s) = ",
          ((size_t)sqrt((double)(talshTensorVolume(dtens)*talshTensorVolume(ltens)*talshTensorVolume(rtens)))));
   tms=time_high_sec();
  }

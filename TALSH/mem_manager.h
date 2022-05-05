@@ -1,24 +1,12 @@
 /** ExaTensor::TAL-SH: Memory management API header.
-REVISION: 2020/07/21
+REVISION: 2021/12/29
 
-Copyright (C) 2014-2020 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2020 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2022 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2022 Oak Ridge National Laboratory (UT-Battelle)
 
-This file is part of ExaTensor.
+LICENSE: BSD 3-Clause
 
-ExaTensor is free software: you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published
-by the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-ExaTensor is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License
-along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
-------------------------------------------------------------------------
+-------------------------------------------------------------------
 **/
 
 #ifndef MEM_MANAGER_H_
@@ -47,6 +35,8 @@ extern "C"{
  int arg_buf_deallocate(int gpu_beg, int gpu_end); //generic
  int arg_buf_clean_host(); //Host only
  int arg_buf_clean_gpu(int gpu_num); //NVidia GPU only
+ void * get_arg_buf_ptr_host(); //Host only
+ void * get_arg_buf_ptr_gpu(int gpu_num); //Nvidia GPU only
  size_t get_arg_buf_size_host(); //Host only
  size_t get_arg_buf_size_gpu(int gpu_num); //Nvidia GPU only
  size_t get_blck_max_size_host(); //Host only

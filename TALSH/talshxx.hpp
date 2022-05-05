@@ -1,25 +1,10 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2021/01/28
+REVISION: 2021/12/29
 
-Copyright (C) 2014-2021 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2021 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2022 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2022 Oak Ridge National Laboratory (UT-Battelle)
 
-This file is part of ExaTensor.
-
-ExaTensor is free software: you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published
-by the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-ExaTensor is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public License
-along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
-------------------------------------------------------------------------
-**/
+LICENSE: BSD 3-Clause **/
 
 #ifndef TALSHXX_HPP_
 #define TALSHXX_HPP_
@@ -600,6 +585,10 @@ std::size_t getDeviceMaxTensorSize(const int device_kind = DEV_HOST, //in: devic
 // Max device memory buffer size (bytes) per specified device:
 std::size_t getDeviceMaxBufferSize(const int device_kind = DEV_HOST, //in: device kind
                                    const int device_id = 0);         //in: device id
+
+// Device argument buffer base pointer:
+void * getDeviceBufferBasePtr(const int device_kind = DEV_HOST, //in: device kind
+                              const int device_id = 0);         //in: device id
 
 // Return the current value of the total Flop count executed:
 double getTotalFlopCount();

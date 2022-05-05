@@ -70,7 +70,7 @@ export PATH_BLAS_MKL ?= $(PATH_INTEL)/mkl/lib/intel64
 export PATH_BLAS_MKL_DEP ?= $(PATH_INTEL)/compilers_and_libraries/linux/lib/intel64_lin
 export PATH_BLAS_MKL_INC ?= $(PATH_INTEL)/mkl/include/intel64/lp64
 # Set this path if you have chosen OpenBLAS:
-export PATH_BLAS_OPENBLAS ?= /usr/local/blas/openblas/lib
+export PATH_BLAS_OPENBLAS ?= /usr/local/blas/openblas/develop/lib
 # Set this path if you have chosen ACML:
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 # Set this path if you have chosen Cray LibSci:
@@ -96,11 +96,12 @@ export PATH_CUDA ?= /usr/local/cuda
 # Reset your CUDA Host compiler if needed:
  export CUDA_HOST_COMPILER ?= /usr/bin/g++
 # cuTT path (only if you use cuTT library):
-export PATH_CUTT ?= /home/dima/src/cutt
+export PATH_CUTT ?= /usr/local/cutt
 # cuTensor path (only if you use cuTensor library):
-export PATH_CUTENSOR ?= /home/dima/src/cutensor
+export PATH_CUTENSOR ?= /usr/local/cutensor
 
 #HIP (set these only if you build with HIP):
+#export PATH_ROCM ?= /sw/spock/spack-envs/views/rocm-4.2.0
 export PATH_ROCM ?= /opt/rocm
 # Only reset these if HIP files are spread in system directories:
  export PATH_HIP_INC ?= $(PATH_ROCM)/hip/include
@@ -310,17 +311,21 @@ CUDA_LINK = $(CUDA_LINK_$(GPU_CUDA))
 
 #HIP INCLUDES:
 ifeq ($(USE_HIP),YES)
-HIP_INC = -DUSE_HIP -I$(PATH_HIP_INC) -I$(PATH_HIPBLAS_INC)
+HIP_INC = -D__HIP_PLATFORM_AMD__ -DUSE_HIP -I$(PATH_HIP_INC) -I$(PATH_HIPBLAS_INC)
 else
 HIP_INC = -I.
 endif
 
+CUDA_INC += $(HIP_INC)
+
 #HIP LIBS:
 ifeq ($(USE_HIP),YES)
-HIP_LINK = -L$(PATH_HIP_LIB) -L$(PATH_HIPBLAS_LIB) -lhipblas
+HIP_LINK = -fPIC -L$(PATH_HIP_LIB) -L$(PATH_HIPBLAS_LIB) -lhipblas -lamdhip64
 else
 HIP_LINK = -L.
 endif
+
+CUDA_LINK += $(HIP_LINK)
 
 #Platform independence:
 PIC_FLAG_GNU = -fPIC
@@ -361,6 +366,8 @@ endif
 else
 CUDA_FLAGS = -D_FORCE_INLINES
 endif
+
+HIP_FLAGS = -c -g -O3 -D_FORCE_INLINES -fno-gpu-rdc -fPIC --amdgpu-target=gfx906,gfx908 #-fopenmp
 
 #Accelerator support:
 ifeq ($(TOOLKIT),IBM)
@@ -445,7 +452,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:
 ifeq ($(USE_HIP),YES)
-LFLAGS = $(MPI_LINK) $(LA_LINK) $(LTHREAD) $(HIP_LINK) $(CUDA_LINK) $(LIB)
+LFLAGS = $(MPI_LINK) $(LA_LINK) $(LTHREAD) $(HIP_LINK) $(LIB)
 OBJS =  ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/combinatoric.o ./OBJ/symm_index.o ./OBJ/timer.o ./OBJ/timers.o ./OBJ/nvtx_profile.o \
 	./OBJ/byte_packet.o ./OBJ/tensor_algebra.o ./OBJ/tensor_algebra_cpu.o ./OBJ/tensor_algebra_cpu_phi.o \
 	./OBJ/mem_manager.hip.o ./OBJ/tensor_algebra_gpu.o ./OBJ/tensor_algebra_gpu_nvidia.hip.o \
@@ -525,7 +532,7 @@ endif
 
 ifeq ($(USE_HIP),YES)
 ./OBJ/mem_manager.hip.o: mem_manager.hip.cpp mem_manager.h tensor_algebra.h device_algebra.hip.h
-	$(HIP_COMP) -ccbin $(CUDA_HOST_COMPILER) $(INC) $(MPI_INC) $(HIP_INC) $(CUDA_INC) $(CUDA_FLAGS) mem_manager.hip.cpp -o ./OBJ/mem_manager.hip.o
+	$(HIP_COMP) $(INC) $(MPI_INC) $(HIP_INC) $(HIP_FLAGS) mem_manager.hip.cpp -o ./OBJ/mem_manager.hip.o
 else
 ./OBJ/mem_manager.o: mem_manager.cpp mem_manager.h tensor_algebra.h device_algebra.h
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) mem_manager.cpp -o ./OBJ/mem_manager.o
@@ -536,7 +543,7 @@ endif
 
 ifeq ($(USE_HIP),YES)
 ./OBJ/tensor_algebra_gpu_nvidia.hip.o: tensor_algebra_gpu_nvidia.hip.cu tensor_algebra.h device_algebra.hip.h talsh_complex.hip.h
-	$(HIP_COMP) -ccbin $(CUDA_HOST_COMPILER) $(INC) $(MPI_INC) $(HIP_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.hip.cu -o ./OBJ/tensor_algebra_gpu_nvidia.hip.o
+	$(HIP_COMP) $(INC) $(MPI_INC) $(HIP_INC) $(HIP_FLAGS) tensor_algebra_gpu_nvidia.hip.cu -o ./OBJ/tensor_algebra_gpu_nvidia.hip.o
 else
 ./OBJ/tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h device_algebra.h talsh_complex.h
 ifeq ($(GPU_CUDA),CUDA)

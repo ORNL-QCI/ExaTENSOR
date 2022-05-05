@@ -117,9 +117,6 @@ ifeq ($(EXA_TALSH_ONLY),NO)
 	$(MAKE) -C ./DSVP
 	$(MAKE) -C ./INTRAVIRT
 	$(MAKE) -C ./INTERVIRT
-#ifeq ($(EXA_OS),LINUX)
-#	$(MAKE) -C ./TN
-#endif
 	$(MAKE) -C ./QFORCE
 endif
 #Gather headers, modules and libraries:
