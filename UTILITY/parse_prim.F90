@@ -9,7 +9,7 @@
 !PARAMETERS:
  !Limits:
         integer, parameter, public:: MAX_PARSE_RECUR_LEN=8192
-        integer, parameter, public:: MAX_TENSOR_RANK=32
+        integer, parameter, public:: MAX_TENSOR_RANK=64
         integer, parameter, public:: MAX_TENSOR_OPERANDS=4
         integer, parameter, public:: MAX_TENSOR_NAME_LEN=512
  !Arguments:
