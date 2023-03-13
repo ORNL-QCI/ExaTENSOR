@@ -17,9 +17,9 @@ export MPILIB ?= NONE
 #BLAS: [ATLAS|MKL|OPENBLAS|ACML|LIBSCI|ESSL|NONE]:
 export BLASLIB ?= OPENBLAS
 #NVIDIA GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= NOCUDA
+export GPU_CUDA ?= CUDA
 #NVIDIA GPU architecture (two digits, >=35):
-export GPU_SM_ARCH ?= 35
+export GPU_SM_ARCH ?= 86
 #HIP portability layer [YES|NO]:
 export USE_HIP ?= NO
 #Operating system: [LINUX|NO_LINUX]:
@@ -246,7 +246,11 @@ MPI_LINK = $(MPI_LINK_$(WRAP))
 #LINEAR ALGEBRA FLAGS:
 LA_LINK_ATLAS = -L$(PATH_BLAS_ATLAS) -lblas
 LA_LINK_OPENBLAS = -L$(PATH_BLAS_OPENBLAS) -lopenblas
+ifeq ($(TOOLKIT),GNU)
+LA_LINK_LIBSCI = -L$(PATH_BLAS_LIBSCI) -lsci_gnu_mp
+else
 LA_LINK_LIBSCI = -L$(PATH_BLAS_LIBSCI) -lsci_cray_mp
+endif
 ifeq ($(TOOLKIT),GNU)
 LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_gnu_thread -lmkl_core -lpthread -lm -ldl
 else
